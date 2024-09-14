@@ -1,7 +1,53 @@
 plugins {
 	id 'fabric-loom' version '1.7-SNAPSHOT'
 	id 'maven-publish'
+	id 'pmd'
+	id 'checkstyle'
+//	id 'jacoco'
+//	id("org.owasp.dependencycheck") version "10.0.4"
 }
+
+pmd {
+	consoleOutput = true
+	toolVersion = "7.0.0"
+	rulesMinimumPriority = 5
+	ruleSets = ["category/java/errorprone.xml", "category/java/bestpractices.xml"]
+}
+
+def configDir = "${project.rootDir}/config"
+checkstyle {
+	toolVersion = "10.12.4"
+	configFile file("$configDir/checkstyle/checkstyle.xml")
+}
+
+checkstyleMain {
+	source ='src/main/java'
+}
+
+checkstyleTest {
+	source ='src/test/java'
+}
+
+//jacoco {
+//	toolVersion = "0.8.12"
+//	reportsDirectory = layout.buildDirectory.dir('customJacocoReportDir')
+//}
+//
+//test {
+//	finalizedBy jacocoTestReport // report is always generated after tests run
+//}
+//jacocoTestReport {
+//	dependsOn test // tests are required to run before generating the report
+//}
+
+//dependencyCheck {
+//	nvd.apiKey = System.getenv('NVD_API_KEY')
+//	formats = ['HTML', 'JSON']
+//	failBuildOnCVSS = 7
+//	//suppressionFile = 'path/to/suppression.xml'
+//
+//	scanProjects = ["$projectDir/src"]
+//}
 
 version = project.mod_version
 group = project.maven_group
@@ -30,7 +76,6 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-	
 }
 
 processResources {
