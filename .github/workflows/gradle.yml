@@ -1,0 +1,45 @@
+# https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-gradle
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/gradle
+
+      # static code analysis
+      - name: "Static code analysis: code style"
+        run: ./gradlew checkstyleMain
+      - name: "Static code analysis: Programming Mistake Detector"
+        run: ./gradlew pmdMain
+
+      # test
+      #- name: "Test: code coverage"
+      #  run: ./gradlew jacocoTestReport
+
+      # build
+      - name: "Build: mod compilation"
+        run: |
+          ./gradlew build
+      - name: "Build: upload the mod artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: commandsspy-artifacts-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          path: build/libs/*.jar
+
+      # scan
+      #- name: "Scan: dependencies"
+      #  run: ./gradlew dependencyCheckAnalyze
+      #  env:
+      #    NVD_API_KEY: ${{ secrets.NVD_API_KEY }}

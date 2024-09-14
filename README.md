@@ -1,5 +1,4 @@
-# Source
-See [minecraft-fabric-commandsspy](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/) project by [ashwalk33r](https://github.com/ashwalk33r) at GitHub.
+[![Build](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/actions/workflows/gradle.yml/badge.svg)](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/actions/workflows/gradle.yml)
 
 # Release
 Find official mod releases at [modrinth](https://modrinth.com/mod/commandsspy/versions) versions page.

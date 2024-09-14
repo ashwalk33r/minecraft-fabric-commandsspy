@@ -13,6 +13,7 @@ import pl.m2x.commandsspy.CommandsSpy;
 
 @Mixin(CommandManager.class)
 public class CommandManagerMixin {
+    @SuppressWarnings({ "PMD.UnusedPrivateMethod", "PMD.UnusedFormalParameter" })
     @Inject(method = "execute", at = @At("HEAD"))
     private void onCommandExecute(ParseResults<ServerCommandSource> parseResults, String command, CallbackInfo ci) {
         ServerCommandSource source = parseResults.getContext().getSource();
