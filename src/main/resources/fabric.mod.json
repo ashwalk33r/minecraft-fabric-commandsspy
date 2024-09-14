@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "commandsspy",
+	"version": "${version}",
+	"name": "Commands Spy",
+	"description": "Log commands to server console.",
+	"authors": [
+		"Ultra_MC"
+	],
+	"contact": {
+		"homepage": "https://github.com/",
+		"sources": "https://github.com/"
+	},
+	"license": "MIT",
+	"icon": "assets/commandsspy/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"pl.m2x.commandsspy.CommandsSpy"
+		]
+	},
+	"mixins": [
+		"commandsspy.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.16.5",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
