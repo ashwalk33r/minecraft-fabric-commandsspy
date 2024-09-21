@@ -7,6 +7,8 @@ import org.apache.logging.log4j.core.Logger;
 
 public class CommandsSpy implements ModInitializer {
 	public static final Logger LOGGER = (Logger) LogManager.getLogger("CommandsSpy");
+	public static final CommandsSpyConfig CONFIG = CommandsSpyConfig.load();
+	public static final CommandsSpyBlacklist BLACKLIST = new CommandsSpyBlacklist(CONFIG.blacklist);
 
 	@Override
 	public void onInitialize() {
