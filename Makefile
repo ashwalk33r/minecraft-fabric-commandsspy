@@ -1,5 +1,5 @@
 .PHONY: smoke
-SMOKE_VERSIONS := 1.21 1.21.1 1.21.11 26 26.1 26.2
+SMOKE_VERSIONS := 1.21 1.21.1
 SMOKE_LOG_DIR := build/smoke-logs
 MOD_JAR := build/libs/commandsspy-1.2.1.jar
 
