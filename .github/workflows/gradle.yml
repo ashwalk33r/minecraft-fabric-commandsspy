@@ -5,6 +5,7 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -16,6 +17,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: "Verify action pins"
+        run: scripts/verify-action-pins.sh
       - uses: ./.github/actions/gradle
 
       # static code analysis
