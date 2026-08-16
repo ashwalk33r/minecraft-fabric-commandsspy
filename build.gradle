@@ -9,14 +9,14 @@ plugins {
 
 pmd {
 	consoleOutput = true
-	toolVersion = "7.0.0"
+	toolVersion = "7.26.0"
 	rulesMinimumPriority = 5
 	ruleSets = ["category/java/errorprone.xml", "category/java/bestpractices.xml"]
 }
 
 def configDir = "${project.rootDir}/config"
 checkstyle {
-	toolVersion = "10.12.4"
+	toolVersion = "13.10.0"
 	configFile file("$configDir/checkstyle/checkstyle.xml")
 }
 
@@ -29,7 +29,7 @@ checkstyleTest {
 }
 
 //jacoco {
-//	toolVersion = "0.8.12"
+//	toolVersion = "13.10.0"
 //	reportsDirectory = layout.buildDirectory.dir('customJacocoReportDir')
 //}
 //
