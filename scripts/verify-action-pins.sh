@@ -3,7 +3,6 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
-latest="$root/.superpowers/tooling/latest-pins.tsv"
 files=(
   "$root/.github/workflows/gradle.yml"
   "$root/.github/actions/gradle/action.yml"
@@ -17,10 +16,11 @@ actions=(
 )
 
 declare -A expected
-while IFS=$'\t' read -r name pin; do
-  [[ -n "${name:-}" && -n "${pin:-}" ]] || continue
-  expected["$name"]="$pin"
-done < "$latest"
+expected["actions/checkout"]="7.0.1"
+expected["actions/setup-java"]="5.7.0"
+expected["actions/upload-artifact"]="7.0.1"
+expected["gradle/actions/wrapper-validation"]="6.3.0"
+expected["gradle/actions/setup-gradle"]="6.3.0"
 
 for file in "${files[@]}"; do
   [[ -f "$file" ]] || { echo "ERROR: missing target file $file" >&2; exit 1; }
@@ -28,7 +28,7 @@ done
 
 for name in "${actions[@]}"; do
   pin="${expected[$name]:-}"
-  [[ -n "$pin" ]] || { echo "ERROR: missing latest pin for $name in $latest" >&2; exit 1; }
+  [[ -n "$pin" ]] || { echo "ERROR: missing expected pin for $name" >&2; exit 1; }
   version="v$pin"
 
   found_latest=0
