@@ -1,0 +1,24 @@
+name: Artifact Hosting
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  host-artifact:
+    name: "Build and host artifact"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/gradle
+      - name: "Build: mod compilation"
+        run: ./gradlew build
+      - name: "Upload: built mod artifact (30 days)"
+        uses: actions/upload-artifact@v5
+        with:
+          name: commandsspy-hosted-artifact-${{ github.sha }}
+          path: build/libs/*.jar
+          retention-days: 30
