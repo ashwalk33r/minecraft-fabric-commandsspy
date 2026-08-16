@@ -36,16 +36,32 @@ RCON executing "/save-all" is logged in server logs:
 #### Initial config
 ```
 {
-"blacklist": [],
+"commandsBlacklist": [],
+"playersBlacklist": [],
+"playersWhitelist": [],
 "logArguments": false
 }
 ```
 
-#### blacklist
-To prevent logging certain commands, add them to the blacklist.
+> **Migration note:** The old `blacklist` key is automatically read as `commandsBlacklist` for backward compatibility.
+
+#### commandsBlacklist
+To prevent logging certain commands, add command names to `commandsBlacklist`.
 Example - to maintain privacy of players' conversations, you can avoid logging commands `tell` and `t`.
 ```
-"blacklist": ["tell", "t"]
+"commandsBlacklist": ["tell", "t"]
+```
+
+#### playersBlacklist
+Player usernames in `playersBlacklist` are excluded from logging. Blacklist wins over whitelist.
+```
+"playersBlacklist": ["spammer", "griefer"]
+```
+
+#### playersWhitelist
+If non-empty, player-sourced commands are logged **only** for usernames in `playersWhitelist` (unless also in `playersBlacklist`).
+```
+"playersWhitelist": ["Ultra_MC", "Admin2"]
 ```
 
 #### log arguments
