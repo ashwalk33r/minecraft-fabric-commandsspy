@@ -15,6 +15,7 @@ public class CommandsSpyConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public List<String> blacklist = new ArrayList<>();
+    public List<String> whitelist = new ArrayList<>();
     public boolean logArguments = false;
 
     public static CommandsSpyConfig load() {
