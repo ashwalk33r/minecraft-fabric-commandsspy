@@ -14,5 +14,4 @@ Find official mod releases at [modrinth](https://modrinth.com/mod/commandsspy/ve
 See client facing [documentation](./MOD.md) page.
 
 ## Compatibility
-Supported Minecraft versions: 26, 26.1, 26.2
-Breaking change: this release line drops declared compatibility with 1.21.x.
+Supported Minecraft versions: 1.21.x, 26, 26.1, 26.2
