@@ -4,3 +4,5 @@
 /run
 .worktrees/
 build/smoke-logs/
+docs/superpowers/
+.superpowers/
