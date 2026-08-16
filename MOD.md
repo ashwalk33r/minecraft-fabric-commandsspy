@@ -54,3 +54,6 @@ Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a`
 
 To log arguments of all commands, use `"logArguments": true`.
 Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a b c`
+
+## Compatibility
+Supported Minecraft versions: 1.21.x, 26, 26.1, 26.2
