@@ -7,20 +7,20 @@ public class CommandsSpyPlayerFilter {
     private CommandsSpyPlayerFilter() {
     }
 
-    public static boolean shouldLogPlayer(String playerName, List<String> blacklist, List<String> whitelist) {
+    public static boolean shouldLogPlayer(String playerName, List<String> playersBlacklist, List<String> playersWhitelist) {
         String normalizedPlayerName = playerName.toLowerCase(Locale.ROOT);
 
-        if (blacklist.stream()
+        if (playersBlacklist.stream()
                 .map(name -> name.toLowerCase(Locale.ROOT))
                 .anyMatch(normalizedPlayerName::equals)) {
             return false;
         }
 
-        if (whitelist.isEmpty()) {
+        if (playersWhitelist.isEmpty()) {
             return true;
         }
 
-        return whitelist.stream()
+        return playersWhitelist.stream()
                 .map(name -> name.toLowerCase(Locale.ROOT))
                 .anyMatch(normalizedPlayerName::equals);
     }

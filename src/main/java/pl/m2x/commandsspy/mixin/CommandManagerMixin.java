@@ -30,7 +30,7 @@ public class CommandManagerMixin {
 
         if (entity instanceof ServerPlayerEntity player) {
             String playerName = player.getName().getString();
-            if (!CommandsSpyPlayerFilter.shouldLogPlayer(playerName, CommandsSpy.CONFIG.blacklist, CommandsSpy.CONFIG.whitelist)) {
+            if (!CommandsSpyPlayerFilter.shouldLogPlayer(playerName, CommandsSpy.CONFIG.playersBlacklist, CommandsSpy.CONFIG.playersWhitelist)) {
                 return;
             }
             CommandsSpy.logCommand(commandToLog, "Player: " + playerName);

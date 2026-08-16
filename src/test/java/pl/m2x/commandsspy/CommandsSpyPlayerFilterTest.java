@@ -19,7 +19,7 @@ class CommandsSpyPlayerFilterTest {
     @Test
     void deniesPlayerWhenBlacklistedEvenIfWhitelisted() {
         assertFalse(CommandsSpyPlayerFilter.shouldLogPlayer(PLAYER, List.of("ultra_mc"), List.of(PLAYER)),
-                "Blacklist must override whitelist");
+                "Player blacklist must override whitelist");
     }
 
     @Test
