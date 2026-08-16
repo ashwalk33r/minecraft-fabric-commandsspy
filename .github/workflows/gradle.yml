@@ -5,7 +5,7 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -37,6 +37,7 @@ jobs:
         with:
           name: commandsspy-artifacts-${{ github.sha }}
           path: build/libs/*.jar
+          retention-days: 30
 
       # scan
       #- name: "Scan: dependencies"
