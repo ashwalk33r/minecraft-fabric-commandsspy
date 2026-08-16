@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import pl.m2x.commandsspy.CommandsSpy;
 import pl.m2x.commandsspy.CommandsSpyCommand;
+import pl.m2x.commandsspy.CommandsSpyPlayerFilter;
 
 @Mixin(CommandManager.class)
 public class CommandManagerMixin {
@@ -29,6 +30,9 @@ public class CommandManagerMixin {
 
         if (entity instanceof ServerPlayerEntity player) {
             String playerName = player.getName().getString();
+            if (!CommandsSpyPlayerFilter.shouldLogPlayer(playerName, CommandsSpy.CONFIG.blacklist, CommandsSpy.CONFIG.whitelist)) {
+                return;
+            }
             CommandsSpy.logCommand(commandToLog, "Player: " + playerName);
         } else {
             // Other sources (e.g., functions, data packs, signs, fullCommand blocks)
