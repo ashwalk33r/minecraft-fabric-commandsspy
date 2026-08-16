@@ -42,8 +42,7 @@ mkdir -p mods
 # Map Minecraft versions to known compatible Fabric API versions on Maven
 case "$MC_VERSION" in
   1.21)    FAB_VERSION="0.102.0%2B1.21" ;;
-  1.21.1)  FAB_VERSION="0.116.15%2B1.21.1" ;;
-  1.21.11) FAB_VERSION="0.135.1%2B1.21.11" ;;
+  1.21.11) FAB_VERSION="0.141.6%2B1.21.11" ;;
   *)
     echo "[smoke] ⚠ Unknown Minecraft version $MC_VERSION, skipping Fabric API"
     FAB_VERSION=""
