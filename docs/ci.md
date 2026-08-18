@@ -54,6 +54,46 @@ only at each band's ends), full cross-product on `workflow_dispatch`.
 Rationale: Minecraft breaks are per-patch, JVM breaks are per-JVM, so a
 band's ends cover the real variable on higher JVMs.
 
+## e2e server images
+
+`e2e-images` (called by `make e2e`/`make e2e-ci`) publishes each per-Java
+server image to
+`ghcr.io/ashwalk33r/commandsspy-e2e:java<N>-<variant>-<content-hash>`,
+same pull-or-build-push pattern as `Dockerfile.ci`/`CI_IMAGE`: `docker image
+inspect` (local) → `docker pull` (GHCR) → `docker build` + best-effort
+`docker push` in CI, falling through on any miss. The hash covers
+`Dockerfile`, `scripts/e2e-entrypoint.sh`, and every tracked file under
+`tools/` — the inputs that actually determine the image's content — so it
+invalidates correctly on a source change and never serves a stale image.
+`<variant>` (`alpine` or `jammy`, decided by the `Makefile`'s `e2e-images`
+recipe, not by the hashed files) is baked into the tag string itself rather
+than into the hash, so changing which Java floors use which base still
+busts exactly the right tags. Every job that calls `e2e-images` (`e2e-gate`
+and every `e2e-stage.yml` caller) needs `permissions: packages: write` plus
+a GHCR login step: reusable-workflow (`workflow_call`) permissions only
+ever *downgrade* from caller to callee, never elevate, so both `e2e.yml`'s
+calling jobs and `e2e-stage.yml`'s `run` job need the grant, not just one
+side.
+
+Java floors 21/25/26 build on `eclipse-temurin:<N>-jre-alpine`; floors
+8/11/17 stay on `-jre-jammy` — those three lack an arm64 alpine tag, which
+would force local arm64 dev under qemu for no matching win. `bash` is
+installed alongside `curl` on the alpine path: `scripts/e2e-entrypoint.sh`
+has a `#!/bin/bash` shebang and the alpine Temurin JRE ships no bash by
+default.
+
+Measured (cold, no cached base images or build cache — the state a fresh
+Actions runner starts from): `docker build --no-cache` averaged ~13.8s
+(java21, 3 samples) and ~14.2s (java8, 2 samples); pulling an equivalent
+already-built image averaged ~2.0s and ~3.9s respectively — roughly
+75-85% faster per job, avoiding a redundant `golang:1.24-alpine` pull,
+`apt-get update`/`apk add`, and `go build` on every one of the ~40 e2e
+matrix jobs a PR that doesn't touch the Dockerfile/`tools/` would
+otherwise pay for. The alpine swap itself measured ~10-36% faster
+`docker build` and ~23% faster `docker pull` (java17) over the equivalent
+jammy image, plus ~26-32% smaller final image size, on top of the
+pull-vs-build saving above.
+
 ## The grid generator contract
 
 `tools/gen_matrix.go` is the single source of stage definitions; every

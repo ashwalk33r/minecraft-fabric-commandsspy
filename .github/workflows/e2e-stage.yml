@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -33,6 +34,9 @@ jobs:
         mc: ${{ fromJSON(inputs.versions) }}
     steps:
       - uses: actions/checkout@v7.0.1
+
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       # Every jar is fetched regardless of the version under test: `make
       # e2e-ci` depends on all jar file targets. `merge-multiple` lands them
