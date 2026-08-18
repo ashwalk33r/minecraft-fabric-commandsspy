@@ -1,0 +1,53 @@
+# The ONE pinned environment for `make ci`. Local and CI both run the gate
+# inside this image, so tool skew (the shellcheck SC2317-vs-SC2329 incident)
+# is impossible by construction. Tag is content-hashed by the Makefile:
+# editing this file automatically rebuilds. Keep every version EXACT.
+#
+# Base: ubuntu 24.04 by digest — same distro family + glibc as the
+# ubuntu-latest runner. Not alpine: musl is a parity hazard, not a feature.
+FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+
+ARG TARGETARCH
+
+# bash 5 + GNU make 4 + git + xz (tarball unpack) + ca-certificates (go-vuln
+# DB fetch) + gcc/libc-dev (`go test -race` needs cgo, cgo needs a C
+# toolchain). Versions ride the pinned 24.04 snapshot — same as the runner.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash make git curl ca-certificates xz-utils gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Go toolchain: EXACT version. go.mod's `go 1.23` is a floor, not a pin;
+# gofmt output is only stable per toolchain release, so the release is
+# pinned here and nowhere else.
+ARG GO_VERSION=1.26.6
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
+      | tar -xz -C /usr/local \
+    && ln -s /usr/local/go/bin/go /usr/local/bin/go \
+    && ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+# shellcheck: EXACT version (the motivating incident — 0.9.x says SC2317
+# where 0.10+ says SC2329 for the same finding). Release binaries are
+# static; arch name differs from Docker's (amd64->x86_64, arm64->aarch64).
+ARG SHELLCHECK_VERSION=0.11.0
+RUN arch="$(case "${TARGETARCH}" in amd64) echo x86_64 ;; arm64) echo aarch64 ;; esac)" \
+    && curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${arch}.tar.xz" \
+      | tar -xJ -C /usr/local/bin --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" \
+    && shellcheck --version | grep -q "version: ${SHELLCHECK_VERSION}"
+
+# The gate runs as the HOST user's UID (--user at docker run) so files it
+# touches on the bind-mounted repo stay owned by the developer/runner. That
+# UID has no passwd entry here; HOME and all Go caches live under /ci-cache,
+# a bind-mounted host dir. Pre-create it world-writable as a fallback for
+# runs without the mount.
+#
+# GOTOOLCHAIN=local is load-bearing: without it, Go's automatic toolchain
+# switching could download a *different* toolchain than the baked one and
+# silently reintroduce drift.
+ENV GOMODCACHE=/ci-cache/go-mod \
+    GOCACHE=/ci-cache/go-build \
+    GOPATH=/ci-cache/gopath \
+    HOME=/ci-cache/home \
+    GOTOOLCHAIN=local
+RUN mkdir -p /ci-cache && chmod 777 /ci-cache
+
+WORKDIR /work

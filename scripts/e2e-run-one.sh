@@ -146,7 +146,7 @@ if docker run --rm \
     -e PLAYER_PHASE="$PLAYER_PHASE" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
     "$@" \
-    "$IMAGE" > "$LOG_FILE" 2>&1; then
+    "$IMAGE" 2>&1 | tee "$LOG_FILE" | sed -u "s/^/[$KEY] /"; then
   STATUS=0
 else
   STATUS=1

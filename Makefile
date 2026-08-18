@@ -6,6 +6,14 @@ SHELL := /bin/bash
 
 include .env.version
 
+# Bare `make` prints this catalog instead of silently running a full e2e
+# fan-out — the previous default (first target) was a footgun.
+.DEFAULT_GOAL := help
+.PHONY: help
+help: ## list every documented target with its description
+	@grep -hE '^[a-zA-Z0-9_-]+:.*##' $(MAKEFILE_LIST) | sed -E 's/^([a-zA-Z0-9_-]+):[^#]*##[[:space:]]?/\1\t/' | sort | awk -F'\t' '{printf "  \033[1m%-20s\033[0m %s\n", $$1, $$2}'
+
+
 .PHONY: e2e e2e-ci
 # Full supported matrix: the mc1.21.x jar's 1.20.3-1.20.6 floor releases (the
 # T0 band — 1.20.3 flipped CommandManager.execute to void, this jar's hook
@@ -91,11 +99,11 @@ E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(VERSIONS)),$(VERSIONS))
 # the default VERSIONS list is part of the routing surface — a version dropped
 # or added here silently changes what `make e2e` exercises.
 .PHONY: print-e2e-versions
-print-e2e-versions:
+print-e2e-versions: ## print the default e2e version matrix (routing-test probe)
 	@echo $(VERSIONS)
 
 .PHONY: e2e-images
-e2e-images:
+e2e-images: ## pre-build the per-Java server Docker images serially
 	@mkdir -p $(E2E_LOG_DIR)
 	@if [ -n "$(JAVA)" ] && ! echo "$(JAVA_VERSIONS_SUPPORTED)" | tr ' ' '\n' | grep -qx "$(JAVA)"; then \
 	  echo "[e2e] Unsupported JAVA=$(JAVA). Supported: $(JAVA_VERSIONS_SUPPORTED)"; \
@@ -114,7 +122,7 @@ e2e-images:
 	  echo "[e2e] Building image commandsspy-e2e:java$$jv..."; \
 	  docker build --build-arg JAVA_VERSION=$$jv \
 	    -t commandsspy-e2e:java$$jv . \
-	    > $(E2E_LOG_DIR)/docker-build-java$$jv.log 2>&1 || { \
+	    2>&1 | tee $(E2E_LOG_DIR)/docker-build-java$$jv.log | sed -u "s/^/[java$$jv] /" || { \
 	    echo "[e2e] ✗ Docker build failed for java $$jv (see $(E2E_LOG_DIR)/docker-build-java$$jv.log)"; \
 	    exit 1; \
 	  }; \
@@ -123,7 +131,7 @@ e2e-images:
 # `e2e` = local-dev command: fan out EVERY version's container at once (no
 # bounded queue) for the fastest possible feedback. Default concurrency is the
 # full version count; an explicit PARALLEL=/J= still wins.
-e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images
+e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),$(words $(VERSIONS)))
 
@@ -131,7 +139,7 @@ e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-i
 # flow and machinery to `e2e`, but concurrency defaults to 4 instead of the
 # full fan-out. CI matrix jobs call this as `make e2e-ci VERSIONS="<v>"`.
 # gating (this default-4 cap) is deliberately NOT the local-dev behaviour.
-e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images
+e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),4)
 
@@ -181,7 +189,7 @@ _e2e-fanout:
 	echo "[e2e] Logs saved to $(E2E_LOG_DIR)/"
 
 .PHONY: clean-e2e
-clean-e2e:
+clean-e2e: ## remove e2e logs/results and reap containers/images
 	@rm -rf $(E2E_LOG_DIR) $(E2E_RESULT_DIR)
 	@docker ps -aq --filter "label=commandsspy-e2e=1" 2>/dev/null | xargs -r docker rm -f > /dev/null 2>&1 || true
 	@docker ps -aq --filter "name=commandsspy-e2e-" 2>/dev/null | xargs -r docker rm -f > /dev/null 2>&1 || true
@@ -192,24 +200,30 @@ clean-e2e:
 # Make's own recipes costs nothing and makes `make -j` safe.
 .NOTPARALLEL:
 
-$(MOD_JAR_121):
+# A jar is stale whenever any tracked source or build input is newer than it;
+# gradle is the incremental builder, make just decides whether to invoke it.
+# Without these prerequisites `make build` saw existing jars and did nothing
+# even after source edits.
+MOD_SOURCES := $(shell git ls-files src '*.gradle' gradle.properties .env.version)
+
+$(MOD_JAR_121): $(MOD_SOURCES)
 	@echo "[build] Building 1.21.x jar..."
 	@./gradlew build --no-daemon --quiet
 
-$(MOD_JAR_1192):
+$(MOD_JAR_1192): $(MOD_SOURCES)
 	@echo "[build] Building 1.19-1.20.2 jar..."
 	@./gradlew build -PmcTarget=1192 --no-daemon --quiet
 
-$(MOD_JAR_114):
+$(MOD_JAR_114): $(MOD_SOURCES)
 	@echo "[build] Building 1.14.x jar (Minecraft 1.14-1.18)..."
 	@./gradlew build -PmcTarget=114 --no-daemon --quiet
 
-$(MOD_JAR_26):
+$(MOD_JAR_26): $(MOD_SOURCES)
 	@echo "[build] Building 26.x jar..."
 	@./gradlew build -PmcTarget=26 --no-daemon --quiet
 
 .PHONY: build
-build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26)
+build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) ## build all four era jars
 
 # Unit tests for the shared, mapping-agnostic command handler. ALL targets are run
 # because each resolves its own fabric-loader / fabric-loader-junit line (0.16.5 vs
@@ -219,7 +233,7 @@ build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26)
 # Unlike the jar rules this is .PHONY: there is no output file to compare timestamps
 # against, and re-running the tests is the point.
 .PHONY: test
-test:
+test: ## offline suite: routing contract + 41 unit tests on all four targets
 	@echo "[test] Offline version->jar routing contract..."
 	@scripts/test-jar-routing.sh
 	@echo "[test] Unit tests (1.21.x target)..."
@@ -248,37 +262,82 @@ GOVULNCHECK_VERSION := 1.7.0
 SH_SOURCES := $(shell git ls-files '*.sh')
 
 .PHONY: lint-sh
-lint-sh: ## bash -n + shellcheck over every tracked *.sh
+# Runs on the container's pinned shellcheck (see Dockerfile.ci). `ci-host`
+# uses whatever `shellcheck` is on PATH — best-effort; the container run is
+# the authoritative result.
+lint-sh: ## bash -n + pinned shellcheck over every tracked *.sh
 	@for f in $(SH_SOURCES); do echo "bash -n $$f"; bash -n "$$f" || exit 1; done
 	@test -z "$(SH_SOURCES)" && exit 0; \
-	 command -v shellcheck >/dev/null || { echo "shellcheck missing (apt/brew install shellcheck)"; exit 1; }; \
 	 shellcheck -S style $(SH_SOURCES)
 
 .PHONY: go-fmt go-fmt-check go-vet go-lint go-vuln go-build go-test
-go-fmt:
+go-fmt: ## rewrite tools/ with gofmt
 	cd tools && gofmt -w .
 
 go-fmt-check: ## report-only: CI must be able to fail (fleet rule)
 	@unformatted="$$(cd tools && gofmt -l .)"; \
 	 if [ -n "$$unformatted" ]; then echo "gofmt needed on:" >&2; echo "$$unformatted" >&2; exit 1; fi
 
-go-vet:
+go-vet: ## go vet over tools/
 	cd tools && go vet ./...
 
-go-lint:
+go-lint: ## golangci-lint (pinned) over tools/
 	cd tools && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$(GOLANGCI_LINT_VERSION) run
 
-go-vuln:
+go-vuln: ## govulncheck (pinned) over tools/
 	cd tools && go run golang.org/x/vuln/cmd/govulncheck@v$(GOVULNCHECK_VERSION) ./...
 
 go-build: ## the static binary is the deliverable - prove it every build
 	cd tools && CGO_ENABLED=0 go build -trimpath -o /dev/null .
 
-go-test:
+go-test: ## go test -race -count=1 -cover over tools/
 	cd tools && go test -race -count=1 -cover ./...
 
+# The raw gate chain. Runs wherever it is invoked — which is normally INSIDE
+# the commandsspy-ci container (via `make ci`). Running it directly on the
+# host is the escape hatch when Docker is unavailable; the container run is
+# the authoritative result.
+.PHONY: ci-host
+ci-host: lint-sh go-fmt-check go-vet go-lint go-build go-build-cross go-test go-vuln ## the raw quality gate on host tools (escape hatch; version skew possible)
+
+# Both container architectures the e2e harness runs on, proven every gate
+# run (was two CI-only steps; folded here so CI has no gate logic of its own).
+.PHONY: go-build-cross
+go-build-cross: ## prove the static binary builds for linux+darwin
+	cd tools && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /dev/null .
+	cd tools && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o /dev/null .
+
+# ---------------------------------------------------------------------------
+# `make ci` = the ONE fast gate, and it runs INSIDE the pinned Dockerfile.ci
+# container so local and CI results are bit-identical by construction (the
+# shellcheck SC2317/SC2329 skew is the incident that bought this). The image
+# tag is content-addressed: editing Dockerfile.ci rebuilds automatically.
+# `make ci-host` is the raw chain for environments without Docker.
+CI_IMAGE := commandsspy-ci:$(shell git hash-object Dockerfile.ci | cut -c1-12)
+# Warm Go module/build caches across runs (E2E_JAR_CACHE precedent:
+# disposable, rm -rf safe, `make ci CI_CACHE_DIR=` gets you a cold run).
+CI_CACHE_DIR ?= $(HOME)/.cache/commandsspy-ci-go
+
 .PHONY: ci
-ci: lint-sh go-fmt-check go-vet go-lint go-build go-test go-vuln ## the one fast gate; hook and CI both run this
+ci: ## THE quality gate, inside the pinned Dockerfile.ci container (hook + CI run this)
+	@docker info > /dev/null 2>&1 || { \
+	  echo "[ci] Docker is not running. This machine's Docker Desktop stalls"; \
+	  echo "[ci] after sleep: open -a Docker (or restart it from the menu bar)"; \
+	  echo "[ci] and wait for the whale, then re-run. Dockerless fallback:"; \
+	  echo "[ci]   make ci-host   (raw gate; container result is authoritative)"; \
+	  exit 1; \
+	}
+	@docker image inspect $(CI_IMAGE) > /dev/null 2>&1 || { \
+	  echo "[ci] Building gate image $(CI_IMAGE)..."; \
+	  docker build -f Dockerfile.ci -t $(CI_IMAGE) . ; \
+	}
+	@mkdir -p $(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache)
+	@docker run --rm \
+	  --user "$$(id -u):$$(id -g)" \
+	  -v "$(PWD):/work" \
+	  -v "$(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache):/ci-cache" \
+	  -e GOPROXY \
+	  $(CI_IMAGE) make -s ci-host
 
 .PHONY: hooks
 hooks: ## arm the tracked pre-commit hook
@@ -288,7 +347,7 @@ hooks: ## arm the tracked pre-commit hook
 # `Done (12.345s)!` is emitted by the Minecraft server itself, so this measures
 # server boot, not download or container overhead.
 .PHONY: e2e-times
-e2e-times:
+e2e-times: ## report each version's server-reported boot time from the last e2e logs
 	@for log in $(E2E_LOG_DIR)/*.log; do \
 	  case "$$log" in *docker-build-*) continue ;; esac; \
 	  version=$$(basename "$$log" .log); \
