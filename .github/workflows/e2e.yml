@@ -67,6 +67,13 @@ jobs:
         with:
           path: ~/.cache/commandsspy-ci-gradle
           key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
+      # Same cache the go-tools job (gradle.yml) keeps warm: ci-tools-test/
+      # ci-gen-matrix compile tools/ from scratch without it (measured: ~51s
+      # cold vs ~4.6s warm combined for these two steps).
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-go
+          key: ci-go-${{ hashFiles('Dockerfile.ci', 'tools/go.mod') }}
       # Machine-asserts the per-stage and total job counts offline, before anything is built.
       - name: "Assert the e2e grid contract"
         run: make ci-tools-test
@@ -120,6 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
     timeout-minutes: 30
     strategy:
       # fail-fast off: both canaries must report.
@@ -130,6 +138,8 @@ jobs:
           - { mc: "26.2", java: "25" }
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: "Download prebuilt jars (all Minecraft targets)"
         uses: actions/download-artifact@v8.0.1
         with:
@@ -173,6 +183,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc121_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc121_java21 }}
@@ -186,6 +199,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc121_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc121_java25 }}
@@ -199,6 +215,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc121_java26 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc121_java26 }}
@@ -212,6 +231,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc26_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc26_java25 }}
@@ -225,6 +247,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc26_java26 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc26_java26 }}
@@ -241,6 +266,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.t0_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.t0_java21 }}
@@ -256,6 +284,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.t0_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.t0_java25 }}
@@ -271,6 +302,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.t0_java26 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.t0_java26 }}
@@ -288,6 +322,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc1192_java17 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc1192_java17 }}
@@ -304,6 +341,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc1192_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc1192_java21 }}
@@ -322,6 +362,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc114_java8 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc114_java8 }}
@@ -339,6 +382,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc114_java17 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc114_java17 }}
@@ -356,6 +402,9 @@ jobs:
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
           && needs.build-jars.outputs.mc114_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.build-jars.outputs.mc114_java21 }}

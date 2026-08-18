@@ -61,8 +61,27 @@ E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(VERSIONS)),$(VERSIONS))
 print-e2e-versions: ## print the default e2e version matrix (routing-test probe)
 	@echo $(VERSIONS)
 
+# Tag is content-addressed over everything the image depends on: the
+# Dockerfile itself, the entrypoint script it COPYs, and every tracked file
+# under tools/ (what the build stage compiles). Published to GHCR alongside
+# CI_IMAGE (repo is public: free, unlimited storage/bandwidth) so e2e-images
+# below can `docker pull` instead of a full `docker build` on a fresh CI
+# runner -- measured ~85%/~73% faster for java21/java8 respectively (cold
+# `docker build` vs. cold pull of an equivalent pre-built image; see
+# docs/ci.md). Not a byte-identical guarantee -- apt-get installs whatever
+# curl point release is current, unpinned -- but that's the same tradeoff
+# CI_IMAGE already accepts for its own apt layer.
+#
+# The alpine-vs-jammy variant choice below is NOT itself part of this hash
+# (it lives in this Makefile, not in the hashed files) -- it's baked into
+# the tag string instead ("java$$jv-$$variant-$(E2E_IMAGE_HASH)"), so
+# changing which floors get alpine still busts the right tags instead of
+# silently serving a stale wrong-variant image under an unchanged hash.
+E2E_IMAGE_BASE := ghcr.io/ashwalk33r/commandsspy-e2e
+E2E_IMAGE_HASH := $(shell git ls-files Dockerfile scripts/e2e-entrypoint.sh tools/ | sort | xargs cat | git hash-object --stdin | cut -c1-12)
+
 .PHONY: e2e-images
-e2e-images: ## pre-build the per-Java server Docker images serially
+e2e-images: ## pull-or-build the per-Java server Docker images serially, tag locally
 	@mkdir -p $(E2E_LOG_DIR)
 	@if [ -n "$(JAVA)" ] && ! echo "$(JAVA_VERSIONS_SUPPORTED)" | tr ' ' '\n' | grep -qx "$(JAVA)"; then \
 	  echo "[e2e] Unsupported JAVA=$(JAVA). Supported: $(JAVA_VERSIONS_SUPPORTED)"; \
@@ -78,13 +97,30 @@ e2e-images: ## pre-build the per-Java server Docker images serially
 	  done; \
 	fi; \
 	for jv in $$javas; do \
-	  echo "[e2e] Building image commandsspy-e2e:java$$jv..."; \
-	  docker build --build-arg JAVA_VERSION=$$jv \
-	    -t commandsspy-e2e:java$$jv . \
-	    2>&1 | tee $(E2E_LOG_DIR)/docker-build-java$$jv.log | sed -u "s/^/[java$$jv] /" || { \
-	    echo "[e2e] ✗ Docker build failed for java $$jv (see $(E2E_LOG_DIR)/docker-build-java$$jv.log)"; \
-	    exit 1; \
-	  }; \
+	  case "$$jv" in \
+	    21|25|26) variant=alpine ;; \
+	    *)        variant=jammy ;; \
+	  esac; \
+	  local_tag="commandsspy-e2e:java$$jv"; \
+	  ghcr_tag="$(E2E_IMAGE_BASE):java$$jv-$$variant-$(E2E_IMAGE_HASH)"; \
+	  if docker image inspect "$$ghcr_tag" > /dev/null 2>&1; then \
+	    echo "[e2e] $$ghcr_tag already present locally."; \
+	  elif docker pull "$$ghcr_tag" > /dev/null 2>&1; then \
+	    echo "[e2e] Pulled $$ghcr_tag from GHCR."; \
+	  else \
+	    echo "[e2e] $$ghcr_tag not found locally or on GHCR; building $$local_tag (base: $$variant)..."; \
+	    docker build --build-arg JAVA_VERSION=$$jv --build-arg BASE_VARIANT=$$variant \
+	      -t "$$ghcr_tag" . \
+	      2>&1 | tee $(E2E_LOG_DIR)/docker-build-java$$jv.log | sed -u "s/^/[java$$jv] /" || { \
+	      echo "[e2e] ✗ Docker build failed for java $$jv (see $(E2E_LOG_DIR)/docker-build-java$$jv.log)"; \
+	      exit 1; \
+	    }; \
+	    if [ -n "$${CI:-}" ]; then \
+	      echo "[e2e] Publishing $$ghcr_tag to GHCR..."; \
+	      docker push "$$ghcr_tag" || echo "[e2e] Push failed (non-fatal, this job still has the image locally)"; \
+	    fi; \
+	  fi; \
+	  docker tag "$$ghcr_tag" "$$local_tag"; \
 	done
 
 # Local dev: unbounded fan-out.
