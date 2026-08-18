@@ -1,11 +1,6 @@
-# One reusable e2e submatrix. Every stage in e2e.yml calls this instead of
-# repeating forty lines of download-jars / make e2e-ci / upload-logs, so a new
-# version band costs one `uses:` block, not a copy-paste.
-#
-# The caller supplies the version list as a JSON array string; this workflow
-# expands it into the matrix. The caller is responsible for NOT calling this
-# with an empty list (GitHub errors on a `[]` matrix rather than skipping it) —
-# that is what the `!= '[]'` guard in e2e.yml is for.
+# One reusable e2e submatrix, called by every stage in e2e.yml.
+# The caller supplies the version list as a JSON array string.
+# The caller must not pass an empty list: GitHub errors on a [] matrix.
 name: E2E stage
 
 on:
@@ -49,9 +44,8 @@ jobs:
           merge-multiple: true
           path: build/libs
 
-      # The Makefile's jar targets are real file rules, so present files mean
-      # Gradle is never invoked here. This job needs no Java and no Gradle
-      # cache: the JVM under test lives in the Docker image, not on the runner.
+      # Present jar files mean Gradle is never invoked here. The JVM under test
+      # lives in the Docker image, not on the runner.
       - name: "Verify prebuilt jars are in place"
         run: |
           ls -l build/libs
@@ -60,7 +54,16 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
 
-      # ubuntu-latest ships Docker; no setup action is required.
+      # Keyed by MC version only (not Java): scripts/e2e-run-one.sh's cache
+      # key is version+loader+installer, and the loader/installer choice
+      # never depends on which JVM the server runs on, so a java21 run and a
+      # java25 run of the same MC version share one cache entry.
+      - name: "Restore the Fabric server launcher jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-e2e-jars
+          key: e2e-jar-${{ matrix.mc }}
+
       - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ inputs.java }}"
         run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ inputs.java }}" PARALLEL=1
 
