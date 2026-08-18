@@ -23,15 +23,8 @@
 		"commandsspy.mixins.json"
 	],
 	"depends": {
-		"fabricloader": ">=0.16.5",
-		"minecraft": [
-			">=1.21 <1.22",
-			">=26 <26.3"
-		],
-		"java": ">=21",
-		"fabric-api": "*"
-	},
-	"suggests": {
-		"another-mod": "*"
+		"fabricloader": "${loader_range}",
+		"minecraft": "${minecraft_range}",
+		"java": "${java_range}"
 	}
 }

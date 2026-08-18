@@ -3,3 +3,15 @@
 /build
 /run
 .worktrees/
+build/e2e-logs/
+docs/superpowers/
+.superpowers/
+
+# Written by the unit-test JVM: fabric-loader-junit resolves FabricLoader's config dir to
+# <repo>/config, so CommandsSpyConfig.load() creates a default commands-spy.json there, and
+# log4j-core writes logs/latest.log. Neither is build output, so /build does not cover them.
+/config/commands-spy.json
+/logs/
+
+# fabric-loader 0.19.3 writes its own log during fabric-loader-junit runs
+fabricloader.log
