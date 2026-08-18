@@ -34,7 +34,7 @@ pmd {
 def configDir = "${project.rootDir}/config"
 checkstyle {
 	toolVersion = "13.10.0"
-	configFile file("$configDir/checkstyle/checkstyle.xml")
+	configFile = file("$configDir/checkstyle/checkstyle.xml")
 }
 
 checkstyleMain {
@@ -161,18 +161,19 @@ test {
 }
 
 processResources {
+	def modVersion = project.version
 	def minecraftRange = project.getProperty("minecraft_range_${propSuffix}")
 	def loaderRange = project.getProperty("loader_range_${propSuffix}")
 	def javaRange = project.getProperty("java_range_${propSuffix}")
 	def mixinCompat = project.getProperty("mixin_compat_${propSuffix}")
-	inputs.property "version", project.version
+	inputs.property "version", modVersion
 	inputs.property "minecraft_range", minecraftRange
 	inputs.property "loader_range", loaderRange
 	inputs.property "java_range", javaRange
 	inputs.property "mixin_compat", mixinCompat
 
 	filesMatching("fabric.mod.json") {
-		expand "version": project.version, "minecraft_range": minecraftRange,
+		expand "version": modVersion, "minecraft_range": minecraftRange,
 				"loader_range": loaderRange, "java_range": javaRange
 	}
 
@@ -186,6 +187,11 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = javaRelease
+	// javac warns that release 8 itself is "obsolete" on modern JDKs; the warning is
+	// about the release version, not about anything in this codebase, so silence it here.
+	if (is114) {
+		it.options.compilerArgs += ['-Xlint:-options']
+	}
 }
 
 java {
@@ -203,8 +209,9 @@ java {
 }
 
 jar {
+	def archivesName = project.base.archivesName.get()
 	from("LICENSE") {
-		rename { "${it}_${project.base.archivesName.get()}"}
+		rename { "${it}_${archivesName}"}
 	}
 }
 
