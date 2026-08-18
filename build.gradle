@@ -1,11 +1,28 @@
 plugins {
-	id 'fabric-loom' version '1.7-SNAPSHOT'
+	// Loom 1.17.19 ships two mutually exclusive plugin IDs from the same artifact:
+	// 'fabric-loom' (legacy, remapping) for obfuscated Minecraft (<=1.21.11), and
+	// 'net.fabricmc.fabric-loom' (non-remapping) for unobfuscated Minecraft (26.1+, no Mojang
+	// mappings are published for these versions since the game ships unobfuscated already).
+	// Both are declared with apply false; the correct one is applied below based on -PmcTarget.
+	id 'fabric-loom' version '1.17.19' apply false
+	id 'net.fabricmc.fabric-loom' version '1.17.19' apply false
 	id 'maven-publish'
 	id 'pmd'
 	id 'checkstyle'
 //	id 'jacoco'
 //	id("org.owasp.dependencycheck") version "10.0.4"
 }
+
+def envVersionFile = file("${rootDir}/.env.version")
+def envVersionProps = new Properties()
+envVersionFile.withInputStream { envVersionProps.load(it) }
+ext.mod_version = envVersionProps.getProperty('MOD_VERSION')
+if (ext.mod_version == null || ext.mod_version.isBlank()) {
+	throw new GradleException("MOD_VERSION not found or empty in ${envVersionFile}")
+}
+
+def mcTargetForPlugins = (findProperty('mcTarget') ?: '1.21') as String
+apply plugin: (mcTargetForPlugins == '26' ? 'net.fabricmc.fabric-loom' : 'fabric-loom')
 
 pmd {
 	consoleOutput = true
@@ -21,11 +38,20 @@ checkstyle {
 }
 
 checkstyleMain {
-	source ='src/main/java'
+	source = fileTree('src/main/java') + fileTree('src/mc121/java') + fileTree('src/mc1192/java') + fileTree('src/mc114/java') + fileTree('src/mc26/java')
 }
 
 checkstyleTest {
 	source ='src/test/java'
+}
+
+pmdTest {
+	// The `pmd` block above applies errorprone + bestpractices to every source set at
+	// rulesMinimumPriority 5. That pulls in PMD's unit-test style rules, which fail any
+	// suite with more than one assertion in a test. Main sources keep the full ruleset;
+	// test sources get the same categories with exactly those two rules excluded.
+	ruleSets = []
+	ruleSetFiles = files("$configDir/pmd/test-ruleset.xml")
 }
 
 //jacoco {
@@ -49,8 +75,32 @@ checkstyleTest {
 //	scanProjects = ["$projectDir/src"]
 //}
 
-version = project.mod_version
+def mcTarget = mcTargetForPlugins
+if (!(mcTarget in ['1.21', '1192', '114', '26'])) {
+	throw new GradleException("Unknown -PmcTarget=${mcTarget}. Supported values: 1.21 (default), 1192, 114, 26")
+}
+def is26 = mcTarget == '26'
+def is1192 = mcTarget == '1192'
+def is114 = mcTarget == '114'
+
+// One row per target, derived once. Everything below reads these instead of
+// re-deciding, so adding a target is a change here, not a scavenger hunt.
+def jarClassifier = is26 ? '26.x' : (is1192 ? '1.19-1.20.2' : (is114 ? '1.14.x' : '1.21.x'))
+def propSuffix = is26 ? '26' : (is1192 ? '1192' : (is114 ? '114' : '121'))
+def srcSetDir = is26 ? 'src/mc26/java' : (is1192 ? 'src/mc1192/java' : (is114 ? 'src/mc114/java' : 'src/mc121/java'))
+// Era-correct bytecode (2026-08-17 addendum): the 1.19-1.20.2 jar ships Java 17
+// bytecode so frozen-JVM operators on Minecraft's own Java 17 floor are
+// first-class users; 1.20.1's own dependency classfiles are version 61, so
+// --release 17 both works and is required (a >=21 guard would exclude them).
+// The 1.14.x jar goes further: 1.16.5's dependency classfiles are version 52,
+// so it ships Java 8 bytecode (--release 8) and its hook must use classic
+// instanceof + cast — pattern matching is Java 16+ syntax.
+def javaRelease = is1192 ? 17 : (is114 ? 8 : 21)
+
+version = "${project.mod_version}+mc${jarClassifier}"
 group = project.maven_group
+
+sourceSets.main.java.srcDir(srcSetDir)
 
 base {
 	archivesName = project.archives_base_name
@@ -64,30 +114,78 @@ repositories {
 	// for more information about repositories.
 }
 
-fabricApi {
-	configureDataGeneration()
-}
-
 dependencies {
 	// To change the versions see the gradle.properties file
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	if (is26) {
+		minecraft "com.mojang:minecraft:${project.minecraft_version_26}"
+		// No mappings dependency: Minecraft 26.x ships unobfuscated (real names baked in), so
+		// there is nothing for Mojang to publish as mappings, and the non-remapping
+		// 'net.fabricmc.fabric-loom' plugin applied above does not use a mappings dependency.
+		implementation "net.fabricmc:fabric-loader:${project.loader_version_26}"
+	} else {
+		// All obfuscated targets (1.21.x, 1.19-1.20.2 and 1.14.x) take the same
+		// yarn/intermediary path through the legacy remapping 'fabric-loom'
+		// plugin; only the property suffix differs.
+		minecraft "com.mojang:minecraft:${project.getProperty("minecraft_version_${propSuffix}")}"
+		mappings "net.fabricmc:yarn:${project.getProperty("yarn_mappings_${propSuffix}")}:v2"
+		modImplementation "net.fabricmc:fabric-loader:${project.getProperty("loader_version_${propSuffix}")}"
+	}
 
-	// Fabric API. This is technically optional, but you probably want it anyway.
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+	// Unit-test wiring. fabric-loader-junit boots a real FabricLoader for the test JVM
+	// (via a JUnit Platform launcher-session-listener) so CommandsSpy's class initializer -
+	// CommandsSpyConfig.load() -> FabricLoader.getInstance().getConfigDir() - runs untouched
+	// and no injectability seam is needed in the mod itself. The version must track the
+	// target's own loader version, not a hardcoded one.
+	def loaderJunitVersion = project.getProperty("loader_version_${propSuffix}")
+	testImplementation "net.fabricmc:fabric-loader-junit:${loaderJunitVersion}"
+
+	// mc114 TEST RUNTIME only: 1.16.5's own log4j-core (2.8.1) predates the ServiceLoader
+	// provider file (META-INF/services/org.apache.logging.log4j.spi.Provider) that
+	// fabric-loader-junit's classifier uses to keep logging libraries on the platform
+	// classloader. Without it the knot classloader loads a SECOND log4j-core, LogManager
+	// binds to the platform copy, and CommandsSpy's core.Logger cast dies with a
+	// same-name-different-classloader ClassCastException. A modern core on the test
+	// runtime restores the single-classloader setup every other target already gets from
+	// its era's log4j. Tests only — the jar shipped to servers is untouched, and the e2e
+	// suite proves the mod against the real 2.8.1 inside real 1.14-1.18 servers.
+	if (is114) {
+		testRuntimeOnly "org.apache.logging.log4j:log4j-core:2.19.0"
+	}
+	testImplementation "org.junit.jupiter:junit-jupiter-api:5.9.3"
+	testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.9.3"
+}
+
+test {
+	// fabric-loader-junit's FabricLoader bootstrap only engages on the JUnit Platform.
+	useJUnitPlatform()
 }
 
 processResources {
+	def minecraftRange = project.getProperty("minecraft_range_${propSuffix}")
+	def loaderRange = project.getProperty("loader_range_${propSuffix}")
+	def javaRange = project.getProperty("java_range_${propSuffix}")
+	def mixinCompat = project.getProperty("mixin_compat_${propSuffix}")
 	inputs.property "version", project.version
+	inputs.property "minecraft_range", minecraftRange
+	inputs.property "loader_range", loaderRange
+	inputs.property "java_range", javaRange
+	inputs.property "mixin_compat", mixinCompat
 
 	filesMatching("fabric.mod.json") {
-		expand "version": project.version
+		expand "version": project.version, "minecraft_range": minecraftRange,
+				"loader_range": loaderRange, "java_range": javaRange
+	}
+
+	// The mixin compatibilityLevel must not exceed the era's runtime JRE
+	// (JAVA_21 on a Java 17 JVM fails mixin bootstrap), so it is per-target
+	// data exactly like the depends ranges above.
+	filesMatching("commandsspy.mixins.json") {
+		expand "mixin_compat": mixinCompat
 	}
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 21
+	it.options.release = javaRelease
 }
 
 java {
@@ -96,8 +194,12 @@ java {
 	// If you remove this line, sources will not be generated.
 	withSourcesJar()
 
-	sourceCompatibility = JavaVersion.VERSION_21
-	targetCompatibility = JavaVersion.VERSION_21
+	sourceCompatibility = JavaVersion.toVersion(javaRelease)
+	targetCompatibility = JavaVersion.toVersion(javaRelease)
+
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(is26 ? 25 : 21)
+	}
 }
 
 jar {
