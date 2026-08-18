@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<ruleset name="CommandsSpy test sources"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        Same categories as the main sources (errorprone + bestpractices), minus the two
+        PMD unit-test style rules that no real suite can satisfy: UnitTestContainsTooManyAsserts
+        caps a test at ONE assertion, and UnitTestAssertionsShouldIncludeMessage demands a
+        message on every assertion. Everything else - including UselessPureMethodCall,
+        AvoidDuplicateLiterals and the real correctness rules - still applies to test code.
+    </description>
+
+    <rule ref="category/java/errorprone.xml"/>
+    <rule ref="category/java/bestpractices.xml">
+        <exclude name="UnitTestContainsTooManyAsserts"/>
+        <exclude name="UnitTestAssertionsShouldIncludeMessage"/>
+    </rule>
+</ruleset>
