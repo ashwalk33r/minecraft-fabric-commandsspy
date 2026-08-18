@@ -1,13 +1,10 @@
-# Recipe strict mode (fleet convention, Minecraft/custom-mods lineage): a
-# failing or misspelled intermediate command aborts the recipe instead of
-# being silently ignored.
+# Strict recipes: a failing intermediate command aborts.
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 include .env.version
 
-# Bare `make` prints this catalog instead of silently running a full e2e
-# fan-out — the previous default (first target) was a footgun.
+# Bare `make` prints the target catalog, never runs e2e.
 .DEFAULT_GOAL := help
 .PHONY: help
 help: ## list every documented target with its description
@@ -15,50 +12,25 @@ help: ## list every documented target with its description
 
 
 .PHONY: e2e e2e-ci
-# Full supported matrix: the mc1.21.x jar's 1.20.3-1.20.6 floor releases (the
-# T0 band — 1.20.3 flipped CommandManager.execute to void, this jar's hook
-# shape, and the band IS its boundaries), every 1.21.x release, both 26.x
-# minors, and the four sampled versions of the mc1.19-1.20.2 line.
-# 26.1.1/26.1.2 are deliberately excluded from the default: the mc26.x jar
-# covers >=26.1 <26.3 as one range, mapping breaks land on minor boundaries
-# (both of which are covered), and each extra version costs a full server
-# download. Run them explicitly when a 26.x patch is suspect:
+# Default matrix: sampled per band — rationale in docs/version-matrix.md.
+# Suspect versions can be run explicitly, e.g.:
 #   make e2e VERSIONS="26.1 26.1.1 26.1.2 26.2"
-# The 1.19.1-1.20.2 line (mc1192 jar, java floor 17) is sampled, not
-# exhaustive, for the same reason: one jar covers >=1.19.1 <1.20.3 (1.19.0 is
-# unsupported: its execute() lacks the ParseResults overload the jar hooks),
-# and these four pin what matters - both ends of the 1.19 line, 1.20.1 (by far
-# the most-run legacy version) and 1.20.2 (the boundary against 1.20.3, where
-# execute() became void). Run the rest explicitly if suspect:
-#   make e2e VERSIONS="1.19.1 1.19.3 1.20"
-# The 1.14-1.18 line (mc114 jar, java floors 8/17) is sampled the same way:
-# 1.16.5 and 1.18.2 are the two shipped niches, 1.17.1 the interior sample.
-# 1.14.4 and 1.15.2 ride the identical jar and mixin; their one distinguishing
-# property is the older `Recon` RCON source-name spelling, which the harness
-# selects (and asserts exactly) from the version alone. Run them explicitly
-# when the bottom of the range or the Recon path is suspect:
-#   make e2e VERSIONS="1.14.4 1.15.2"
+#   make e2e VERSIONS="1.19.1 1.19.3 1.20 1.14.4 1.15.2"
 VERSIONS ?= 1.20.3 1.20.4 1.20.5 1.20.6 \
             1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5 1.21.6 1.21.7 1.21.8 \
             1.21.9 1.21.10 1.21.11 26.1 26.2 \
             1.19.2 1.19.4 1.20.1 1.20.2 \
             1.16.5 1.17.1 1.18.2
 
-# `J` is accepted as a shorthand alias for `PARALLEL`. Neither has a Makefile
-# default here on purpose: `e2e` and `e2e-ci` each supply their own default
-# concurrency below, and an explicit `PARALLEL=`/`J=` on the command line must
-# win over both. `origin` is how a Makefile tells "user passed this on the
-# command line" apart from "nothing was set".
+# J = alias for PARALLEL. No default here so a command-line value wins over
+# each target's own default (origin tells them apart).
 J ?=
 _explicit_parallel := $(if $(filter command line,$(origin PARALLEL)),$(PARALLEL),$(if $(filter command line,$(origin J)),$(J),))
 
 E2E_LOG_DIR := build/e2e-logs
 E2E_RESULT_DIR := build/e2e-results
-# Host-side cache of the per-version download artifacts (Fabric launcher +
-# vanilla server jar), bind-mounted into every server container. Kills the
-# 1.35GB the full matrix would otherwise re-download on every run (measured;
-# see docs/superpowers/plans/2026-08-18-jar-download-cache.md). Disposable:
-# `rm -rf` it any time. `make e2e E2E_JAR_CACHE=` disables it.
+# Host-side cache of per-version download artifacts; disposable.
+# E2E_JAR_CACHE= disables it. See docs/e2e-harness.md.
 E2E_JAR_CACHE ?= $(HOME)/.cache/commandsspy-e2e-jars
 E2E_RUN_ID := $(shell date +%Y%m%d-%H%M%S)-$$$$
 BOOT_TIMEOUT ?= 180
@@ -69,35 +41,22 @@ MOD_JAR_26 := build/libs/commandsspy-$(MOD_VERSION)+mc26.x.jar
 
 # Optional Java override applied to EVERY version in this run:
 #   make e2e VERSIONS="1.21.11" JAVA=25
-# Empty means "use each line's floor Java" (1.21.x -> 21, 26.x -> 25). The
-# override exists because a Minecraft version has a Java FLOOR, not a Java pin:
-# compatibility with newer JVMs has to be asserted, not assumed.
+# Empty = each version's floor. A version has a Java floor, not a pin.
 JAVA ?=
 
-# Pinned Java runtimes, each verified to exist as eclipse-temurin:<n>-jre-jammy
-# (all six tags checked 2026-08-17). Never add a number here without checking
-# the tag resolves first. 11 is for MANUAL override runs only (frozen-Paper-era
-# operators); it never appears in a default CI matrix.
+# Each must exist as eclipse-temurin:<n>-jre-jammy; check the tag before
+# adding. 11 is manual-override only.
 JAVA_VERSIONS_SUPPORTED := 8 11 17 21 25 26
 
-# Result/log keys. Without an override the key is the bare version, so existing
-# filenames and CI artifacts are unchanged; with an override the Java version is
-# part of the key so a grid run never overwrites another pair's log.
+# Key = version, +java<N> only on override, so grid runs never collide.
 E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(VERSIONS)),$(VERSIONS))
 
-# Pre-build the needed images SERIALLY. Two concurrent `docker build` calls
-# writing the same tag race; doing it up front means the parallel phase only
-# ever runs containers.
-#
-# Era-correct per-version Java floors (1.14-1.16.x -> 8, 1.17-1.20.2 -> 17,
-# 1.20.3-1.21.x -> 21, 26.x -> 25) come from `scripts/e2e-run-one.sh
-# --print-java <version>` — that script's case statement is the floor table's
-# single home. 1.17.x's historical floor is Java 16, but no Temurin 16 jre
-# image exists (only the EOL 16-jdk-focal), so it is CI-booted on 17; the
-# jar's own `java >=8` guard still admits Java 16 operators.
-# Offline probe of the default matrix, invoked by scripts/test-jar-routing.sh:
-# the default VERSIONS list is part of the routing surface — a version dropped
-# or added here silently changes what `make e2e` exercises.
+# Pre-build the needed images SERIALLY: two concurrent `docker build` calls
+# writing the same tag race, so the parallel phase only ever runs containers.
+# Floors come from `scripts/e2e-run-one.sh --print-java` — the table's single
+# home. See docs/version-matrix.md.
+# Offline probe used by scripts/test-jar-routing.sh: the default list is part
+# of the routing surface.
 .PHONY: print-e2e-versions
 print-e2e-versions: ## print the default e2e version matrix (routing-test probe)
 	@echo $(VERSIONS)
@@ -128,24 +87,17 @@ e2e-images: ## pre-build the per-Java server Docker images serially
 	  }; \
 	done
 
-# `e2e` = local-dev command: fan out EVERY version's container at once (no
-# bounded queue) for the fastest possible feedback. Default concurrency is the
-# full version count; an explicit PARALLEL=/J= still wins.
+# Local dev: unbounded fan-out.
 e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),$(words $(VERSIONS)))
 
-# `e2e-ci` = bounded variant for CI / resource-constrained runs: identical
-# flow and machinery to `e2e`, but concurrency defaults to 4 instead of the
-# full fan-out. CI matrix jobs call this as `make e2e-ci VERSIONS="<v>"`.
-# gating (this default-4 cap) is deliberately NOT the local-dev behaviour.
+# CI variant: same flow, PARALLEL=4 default.
 e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),4)
 
-# Shared core: fan out, reap result files, print the summary. Both `e2e` and
-# `e2e-ci` invoke this via a sub-make with PARALLEL already resolved, so this
-# target is not meant to be called directly.
+# Internal: callers resolve PARALLEL first.
 .PHONY: _e2e-fanout
 _e2e-fanout:
 	@echo "[e2e] Testing Minecraft versions: $(VERSIONS)"
@@ -195,76 +147,85 @@ clean-e2e: ## remove e2e logs/results and reap containers/images
 	@docker ps -aq --filter "name=commandsspy-e2e-" 2>/dev/null | xargs -r docker rm -f > /dev/null 2>&1 || true
 	@docker images -q "commandsspy-e2e:*" 2>/dev/null | xargs -r docker rmi -f > /dev/null 2>&1 || true
 
-# Gradle cannot run two builds concurrently in one project directory, and all
-# real e2e parallelism happens inside the e2e recipe (xargs -P), so serializing
-# Make's own recipes costs nothing and makes `make -j` safe.
+# Gradle cannot run two builds concurrently in one project directory; e2e
+# parallelism lives inside the recipe (xargs -P), so `make -j` is safely serialized.
 .NOTPARALLEL:
 
-# A jar is stale whenever any tracked source or build input is newer than it;
-# gradle is the incremental builder, make just decides whether to invoke it.
-# Without these prerequisites `make build` saw existing jars and did nothing
-# even after source edits.
+# A jar is stale whenever any tracked source is newer.
 MOD_SOURCES := $(shell git ls-files src '*.gradle' gradle.properties .env.version)
 
-$(MOD_JAR_121): $(MOD_SOURCES)
+$(MOD_JAR_121): $(MOD_SOURCES) | ci-image
 	@echo "[build] Building 1.21.x jar..."
-	@./gradlew build --no-daemon --quiet
+	@$(call in_ci_image_gradle,gradle build --no-daemon --quiet)
 
-$(MOD_JAR_1192): $(MOD_SOURCES)
+$(MOD_JAR_1192): $(MOD_SOURCES) | ci-image
 	@echo "[build] Building 1.19-1.20.2 jar..."
-	@./gradlew build -PmcTarget=1192 --no-daemon --quiet
+	@$(call in_ci_image_gradle,gradle build -PmcTarget=1192 --no-daemon --quiet)
 
-$(MOD_JAR_114): $(MOD_SOURCES)
+$(MOD_JAR_114): $(MOD_SOURCES) | ci-image
 	@echo "[build] Building 1.14.x jar (Minecraft 1.14-1.18)..."
-	@./gradlew build -PmcTarget=114 --no-daemon --quiet
+	@$(call in_ci_image_gradle,gradle build -PmcTarget=114 --no-daemon --quiet)
 
-$(MOD_JAR_26): $(MOD_SOURCES)
+$(MOD_JAR_26): $(MOD_SOURCES) | ci-image
 	@echo "[build] Building 26.x jar..."
-	@./gradlew build -PmcTarget=26 --no-daemon --quiet
+	@$(call in_ci_image_gradle,gradle build -PmcTarget=26 --no-daemon --quiet)
 
 .PHONY: build
-build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) ## build all four era jars
+build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) ## build all four era jars (dockerized; needs only make + docker)
 
-# Unit tests for the shared, mapping-agnostic command handler. ALL targets are run
-# because each resolves its own fabric-loader / fabric-loader-junit line (0.16.5 vs
-# 0.19.3) and its own compile level (release 17 vs 21, toolchain 21 vs 25) - a suite
-# that is green on one can still fail on another, which is precisely the class of
-# breakage this repo cares about.
-# Unlike the jar rules this is .PHONY: there is no output file to compare timestamps
-# against, and re-running the tests is the point.
+# All four targets: each resolves its own loader and compile level.
 .PHONY: test
-test: ## offline suite: routing contract + 41 unit tests on all four targets
+test: ci-image ## offline suite: routing contract + 41 unit tests on all four targets (dockerized)
 	@echo "[test] Offline version->jar routing contract..."
 	@scripts/test-jar-routing.sh
 	@echo "[test] Unit tests (1.21.x target)..."
-	@./gradlew test --no-daemon
+	@$(call in_ci_image_gradle,gradle test --no-daemon --quiet)
 	@echo "[test] Unit tests (1.19-1.20.2 target)..."
-	@./gradlew test -PmcTarget=1192 --no-daemon
+	@$(call in_ci_image_gradle,gradle test -PmcTarget=1192 --no-daemon --quiet)
 	@echo "[test] Unit tests (1.14-1.18 target)..."
-	@./gradlew test -PmcTarget=114 --no-daemon
+	@$(call in_ci_image_gradle,gradle test -PmcTarget=114 --no-daemon --quiet)
 	@echo "[test] Unit tests (26.x target)..."
-	@./gradlew test -PmcTarget=26 --no-daemon
+	@$(call in_ci_image_gradle,gradle test -PmcTarget=26 --no-daemon --quiet)
 	@echo "[test] All targets passed."
 
+.PHONY: lint-java
+lint-java: ci-image ## checkstyle + PMD over Java sources (dockerized)
+	@echo "[lint-java] checkstyle..."
+	@$(call in_ci_image_gradle,gradle checkstyleMain --no-daemon --quiet)
+	@echo "[lint-java] PMD..."
+	@$(call in_ci_image_gradle,gradle pmdMain --no-daemon --quiet)
+
+.PHONY: ci-tools-test
+ci-tools-test: ci-image ## go test -race for tools/ (dockerized; the e2e-grid contract check used by e2e.yml)
+	@docker run --rm \
+	  --user "$$(id -u):$$(id -g)" \
+	  -v "$(PWD):/work" -w /work/tools \
+	  -v "$(GIT_COMMON_DIR):$(GIT_COMMON_DIR):ro" \
+	  -v "$(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache):/ci-cache" \
+	  -e GOPROXY \
+	  $(CI_IMAGE) go test -race -count=1 -cover ./...
+
+.PHONY: ci-gen-matrix
+ci-gen-matrix: ci-image ## compute the e2e version-matrix GitHub Actions outputs (dockerized; e2e.yml only)
+	@docker run --rm \
+	  --user "$$(id -u):$$(id -g)" \
+	  -v "$(PWD):/work" -w /work/tools \
+	  -v "$(GIT_COMMON_DIR):$(GIT_COMMON_DIR):ro" \
+	  -v "$(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache):/ci-cache" \
+	  -e GOPROXY -e REPO_ROOT=/work -e EVENT_NAME -e FORCE_BANDS \
+	  $(if $(GITHUB_OUTPUT),-e GITHUB_OUTPUT -v "$(GITHUB_OUTPUT):$(GITHUB_OUTPUT)",) \
+	  $(CI_IMAGE) go run . gen-matrix
+
 # ---------------------------------------------------------------------------
-# Fast quality gate. `make ci` is the ONE gate: the pre-commit hook and the CI
-# go-tools job both run exactly this target (fleet convention, AM5/cpu-ram-test
-# lineage). Cheap checks first: shell syntax fails in milliseconds, not after
-# a lint/build/test ladder. Deliberately excludes e2e (docker) and the Gradle
-# build/test - those are the slow, separate gates.
-#
-# Lint tools are pinned by version and run via `go run tool@version`: the pin
-# lives in one variable, with zero install or version-drift machinery.
+# make ci = the one fast gate (excludes e2e and the Gradle build). See docs/ci.md.
+# Lint tools are pinned and run via `go run tool@version`.
 GOLANGCI_LINT_VERSION := 2.12.2
 GOVULNCHECK_VERSION := 1.7.0
 
-# Self-adjusts as scripts appear/disappear; enumerates nothing by name.
 SH_SOURCES := $(shell git ls-files '*.sh')
 
 .PHONY: lint-sh
-# Runs on the container's pinned shellcheck (see Dockerfile.ci). `ci-host`
-# uses whatever `shellcheck` is on PATH — best-effort; the container run is
-# the authoritative result.
+# Pinned shellcheck in-container; ci-host is best-effort.
 lint-sh: ## bash -n + pinned shellcheck over every tracked *.sh
 	@for f in $(SH_SOURCES); do echo "bash -n $$f"; bash -n "$$f" || exit 1; done
 	@test -z "$(SH_SOURCES)" && exit 0; \
@@ -281,11 +242,26 @@ go-fmt-check: ## report-only: CI must be able to fail (fleet rule)
 go-vet: ## go vet over tools/
 	cd tools && go vet ./...
 
+# Dockerfile.ci bakes golangci-lint/govulncheck binaries at these exact
+# versions (GOBIN=/usr/local/bin, never network-fetched at run time); ci-host
+# also runs bare on a host with no baked binary, so both targets check the
+# installed binary's version actually matches before trusting it, and fall
+# back to the always-correct `go run pkg@version` otherwise. A version bump
+# here without touching Dockerfile.ci's matching ARG degrades to the slow
+# path instead of silently running the wrong version.
 go-lint: ## golangci-lint (pinned) over tools/
-	cd tools && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$(GOLANGCI_LINT_VERSION) run
+	@if command -v golangci-lint > /dev/null 2>&1 && golangci-lint version 2>/dev/null | grep -q "$(GOLANGCI_LINT_VERSION)"; then \
+	  cd tools && golangci-lint run; \
+	else \
+	  cd tools && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$(GOLANGCI_LINT_VERSION) run; \
+	fi
 
 go-vuln: ## govulncheck (pinned) over tools/
-	cd tools && go run golang.org/x/vuln/cmd/govulncheck@v$(GOVULNCHECK_VERSION) ./...
+	@if command -v govulncheck > /dev/null 2>&1 && govulncheck -version 2>/dev/null | grep -q "$(GOVULNCHECK_VERSION)"; then \
+	  cd tools && govulncheck ./...; \
+	else \
+	  cd tools && go run golang.org/x/vuln/cmd/govulncheck@v$(GOVULNCHECK_VERSION) ./...; \
+	fi
 
 go-build: ## the static binary is the deliverable - prove it every build
 	cd tools && CGO_ENABLED=0 go build -trimpath -o /dev/null .
@@ -293,59 +269,90 @@ go-build: ## the static binary is the deliverable - prove it every build
 go-test: ## go test -race -count=1 -cover over tools/
 	cd tools && go test -race -count=1 -cover ./...
 
-# The raw gate chain. Runs wherever it is invoked — which is normally INSIDE
-# the commandsspy-ci container (via `make ci`). Running it directly on the
-# host is the escape hatch when Docker is unavailable; the container run is
-# the authoritative result.
+# Escape hatch when Docker is unavailable; the container run is authoritative.
 .PHONY: ci-host
 ci-host: lint-sh go-fmt-check go-vet go-lint go-build go-build-cross go-test go-vuln ## the raw quality gate on host tools (escape hatch; version skew possible)
 
-# Both container architectures the e2e harness runs on, proven every gate
-# run (was two CI-only steps; folded here so CI has no gate logic of its own).
+# Both container architectures the e2e harness runs on, proven every gate run.
 .PHONY: go-build-cross
 go-build-cross: ## prove the static binary builds for linux+darwin
 	cd tools && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /dev/null .
 	cd tools && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o /dev/null .
 
 # ---------------------------------------------------------------------------
-# `make ci` = the ONE fast gate, and it runs INSIDE the pinned Dockerfile.ci
-# container so local and CI results are bit-identical by construction (the
-# shellcheck SC2317/SC2329 skew is the incident that bought this). The image
-# tag is content-addressed: editing Dockerfile.ci rebuilds automatically.
-# `make ci-host` is the raw chain for environments without Docker.
-CI_IMAGE := commandsspy-ci:$(shell git hash-object Dockerfile.ci | cut -c1-12)
-# Warm Go module/build caches across runs (E2E_JAR_CACHE precedent:
-# disposable, rm -rf safe, `make ci CI_CACHE_DIR=` gets you a cold run).
+# Tag is content-addressed: editing Dockerfile.ci changes the tag. Published
+# to GHCR (repo is public: free, unlimited storage/bandwidth) so `ci-image`
+# below can `docker pull` a real registry image instead of building locally
+# on every fresh clone/CI job — a plain docker pull dedups layers properly,
+# unlike a gzipped image tarball round-tripped through an Actions cache.
+CI_IMAGE := ghcr.io/ashwalk33r/commandsspy-ci:$(shell git hash-object Dockerfile.ci | cut -c1-12)
+# Disposable; CI_CACHE_DIR= for a cold run.
 CI_CACHE_DIR ?= $(HOME)/.cache/commandsspy-ci-go
+# Disposable Gradle dependency/toolchain cache; GRADLE_CACHE_DIR= for a cold run.
+GRADLE_CACHE_DIR ?= $(HOME)/.cache/commandsspy-ci-gradle
+# A linked worktree's .git is a pointer file to an absolute path under the
+# main checkout's .git/worktrees/; `make -s ci-host`'s SH_SOURCES (git
+# ls-files) is evaluated by the nested `make` that `ci` runs INSIDE the
+# container, so it needs that path mounted too, or it fails silently under
+# $(shell ...) and lint-sh silently checks zero files. Harmless to carry
+# into the other container-run macros too — for a plain (non-worktree)
+# checkout this just resolves to the repo's own already-mounted .git.
+GIT_COMMON_DIR := $(shell cd "$$(git rev-parse --git-common-dir)" && pwd)
 
-.PHONY: ci
-ci: ## THE quality gate, inside the pinned Dockerfile.ci container (hook + CI run this)
+.PHONY: ci-image
+ci-image: ## pull the pinned image from GHCR, or build (+push from CI) if not published yet
 	@docker info > /dev/null 2>&1 || { \
-	  echo "[ci] Docker is not running. This machine's Docker Desktop stalls"; \
-	  echo "[ci] after sleep: open -a Docker (or restart it from the menu bar)"; \
-	  echo "[ci] and wait for the whale, then re-run. Dockerless fallback:"; \
-	  echo "[ci]   make ci-host   (raw gate; container result is authoritative)"; \
+	  echo "[ci] Docker not running or not reachable; fallback: make ci-host"; \
 	  exit 1; \
 	}
-	@docker image inspect $(CI_IMAGE) > /dev/null 2>&1 || { \
-	  echo "[ci] Building gate image $(CI_IMAGE)..."; \
+	@docker image inspect $(CI_IMAGE) > /dev/null 2>&1 || docker pull $(CI_IMAGE) > /dev/null 2>&1 || { \
+	  echo "[ci] $(CI_IMAGE) not found locally or on GHCR; building..."; \
 	  docker build -f Dockerfile.ci -t $(CI_IMAGE) . ; \
+	  if [ -n "$${CI:-}" ]; then \
+	    echo "[ci] Publishing $(CI_IMAGE) to GHCR..."; \
+	    docker push $(CI_IMAGE) || echo "[ci] Push failed (non-fatal, this job still has the image locally)"; \
+	  fi ; \
 	}
-	@mkdir -p $(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache)
-	@docker run --rm \
-	  --user "$$(id -u):$$(id -g)" \
-	  -v "$(PWD):/work" \
-	  -v "$(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache):/ci-cache" \
-	  -e GOPROXY \
-	  $(CI_IMAGE) make -s ci-host
+	@mkdir -p $(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache) $(if $(GRADLE_CACHE_DIR),$(GRADLE_CACHE_DIR),/tmp/commandsspy-ci-gradle)
+
+# $(call in_ci_image,<command>) — run <command> inside the pinned CI_IMAGE
+# with the repo mounted at /work (the image's WORKDIR) as the host UID.
+define in_ci_image
+docker run --rm \
+  --user "$$(id -u):$$(id -g)" \
+  -v "$(PWD):/work" \
+  -v "$(GIT_COMMON_DIR):$(GIT_COMMON_DIR):ro" \
+  -v "$(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache):/ci-cache" \
+  -e GOPROXY \
+  $(CI_IMAGE) $(1)
+endef
+
+# Same as in_ci_image, plus a persistent Gradle cache — the `gradle` binary
+# itself is baked into CI_IMAGE (see Dockerfile.ci), but without this mount
+# every containerized run would still re-fetch every Fabric/Mojang/mappings
+# jar for the project's own dependencies.
+define in_ci_image_gradle
+docker run --rm \
+  --user "$$(id -u):$$(id -g)" \
+  -v "$(PWD):/work" \
+  -v "$(GIT_COMMON_DIR):$(GIT_COMMON_DIR):ro" \
+  -v "$(if $(GRADLE_CACHE_DIR),$(GRADLE_CACHE_DIR),/tmp/commandsspy-ci-gradle):/gradle-cache" \
+  -e GRADLE_USER_HOME=/gradle-cache \
+  $(CI_IMAGE) $(1)
+endef
+
+.PHONY: ci
+ci: ci-image ## THE quality gate: go/shell lint+vet+build+test, inside the pinned image (hook + CI run this)
+	@$(call in_ci_image,make -s ci-host)
+
+.PHONY: all
+all: build test lint-java ci e2e-ci ## one-stop local gate: jars, unit tests, Java lint, ci (lint/vet/go-test), e2e-ci matrix
 
 .PHONY: hooks
 hooks: ## arm the tracked pre-commit hook
 	git config core.hooksPath .githooks
 
-# Report the server-reported boot time for each version from its e2e log.
-# `Done (12.345s)!` is emitted by the Minecraft server itself, so this measures
-# server boot, not download or container overhead.
+# `Done (12.345s)!` is emitted by the server itself.
 .PHONY: e2e-times
 e2e-times: ## report each version's server-reported boot time from the last e2e logs
 	@for log in $(E2E_LOG_DIR)/*.log; do \

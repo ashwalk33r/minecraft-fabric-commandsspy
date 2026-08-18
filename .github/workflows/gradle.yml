@@ -7,8 +7,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A superseded push cancels the previous run of the same ref (fleet
-# convention; free runner minutes back).
+# A new push cancels the previous run of the same ref.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -23,29 +22,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v7.0.1
       - name: "Verify action pins"
         run: scripts/verify-action-pins.sh
-      - uses: ./.github/actions/gradle
+      - uses: gradle/actions/wrapper-validation@v6.3.0
+      # Public repo -> free/unlimited GHCR; only needed to publish on a
+      # Dockerfile.ci change (pulls of the public package need no auth).
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
 
       # test
-      # These come BEFORE static analysis on purpose. `check` already depends on `test`,
-      # so `build` further down would run the suite anyway - but only after checkstyle and
-      # PMD have had their say, and buried inside a step named "Build". Hoisting them here
-      # makes a behavioural regression fail the run in the first ~1 minute, under a check
-      # name that says what broke, instead of surfacing as a lint-then-build cascade.
-      # All targets run because each resolves its own fabric-loader-junit line, compile
-      # level and Java toolchain.
-      - name: "Test: unit tests (Minecraft 1.21.x target)"
-        run: ./gradlew test --no-daemon
-      - name: "Test: unit tests (Minecraft 1.19-1.20.2 target)"
-        run: ./gradlew test -PmcTarget=1192 --no-daemon
-      - name: "Test: unit tests (Minecraft 1.14-1.18 target)"
-        run: ./gradlew test -PmcTarget=114 --no-daemon
-      - name: "Test: unit tests (Minecraft 26.x target)"
-        run: ./gradlew test -PmcTarget=26 --no-daemon
+      # Before lint on purpose: a behavioural regression fails in the first minute under a named check.
+      - name: "Test: unit tests (all four Minecraft targets)"
+        run: make test
       - name: "Test: upload the test reports"
         if: ${{ always() }}
         uses: actions/upload-artifact@v7.0.1
@@ -56,28 +52,14 @@ jobs:
             build/test-results/test
           if-no-files-found: warn
           retention-days: 7
-      #- name: "Test: code coverage"
-      #  run: ./gradlew jacocoTestReport
 
       # static code analysis
-      - name: "Static code analysis: code style"
-        run: ./gradlew checkstyleMain
-      - name: "Static code analysis: Programming Mistake Detector"
-        run: ./gradlew pmdMain
+      - name: "Static code analysis: checkstyle + PMD"
+        run: make lint-java
 
       # build
-      - name: "Build: mod compilation (Minecraft 1.21.x target)"
-        run: |
-          ./gradlew build
-      - name: "Build: mod compilation (Minecraft 1.19-1.20.2 target)"
-        run: |
-          ./gradlew build -PmcTarget=1192
-      - name: "Build: mod compilation (Minecraft 1.14-1.18 target)"
-        run: |
-          ./gradlew build -PmcTarget=114
-      - name: "Build: mod compilation (Minecraft 26.x target)"
-        run: |
-          ./gradlew build -PmcTarget=26
+      - name: "Build: mod compilation (all four Minecraft targets)"
+        run: make build
       - name: "Build: upload the mod artifact (Minecraft 1.21.x target)"
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -107,12 +89,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # scan
-      #- name: "Scan: dependencies"
-      #  run: ./gradlew dependencyCheckAnalyze
-      #  env:
-      #    NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-
   # Fast quality gate: exactly `make ci`, which runs the gate INSIDE the
   # pinned Dockerfile.ci container — the same image, tag, and entry path as
   # the tracked pre-commit hook. Green locally IS green here, by
@@ -123,9 +99,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-go

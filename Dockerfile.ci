@@ -1,17 +1,31 @@
-# The ONE pinned environment for `make ci`. Local and CI both run the gate
-# inside this image, so tool skew (the shellcheck SC2317-vs-SC2329 incident)
-# is impossible by construction. Tag is content-hashed by the Makefile:
-# editing this file automatically rebuilds. Keep every version EXACT.
+# The ONE pinned environment for `make ci`, `make build`, `make test`, and
+# `make lint-java` — every build/test/lint tool the repo needs, so the only
+# host dependencies are `make` and `docker`. Keep every version EXACT.
+# See docs/ci.md.
 #
 # Base: ubuntu 24.04 by digest — same distro family + glibc as the
 # ubuntu-latest runner. Not alpine: musl is a parity hazard, not a feature.
+#
+# Every tool binary below is baked into the image at build time — Gradle,
+# golangci-lint, and govulncheck included, not just Go/shellcheck — so no
+# container run ever needs network access for the *tool itself*. Only
+# project-level dependency resolution (Fabric/Mojang/mappings jars for the
+# mod, this module's own go.mod deps) still varies run to run and stays on
+# the mounted cache dirs; baking those into the image would require the
+# image tag to track build.gradle/gradle.properties/tools/go.mod too, not
+# just Dockerfile.ci, so that's deliberately out of scope here.
+
+# JDK stages: never used as the final base, so their apt/package layers
+# don't bloat the gate image — only /opt/java/openjdk is copied out below.
+FROM eclipse-temurin:21-jdk-jammy@sha256:dbfd085220ae632a0830166e443747d1ee89e9038d92e3b48c3e5e9d8292b9a7 AS jdk21
+FROM eclipse-temurin:25-jdk-jammy@sha256:c0e0be82836e51fc78c06db5ab2b4d440f1ce1672f4c4589c9c9ec2f3f432477 AS jdk25
+
 FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
 
 ARG TARGETARCH
 
-# bash 5 + GNU make 4 + git + xz (tarball unpack) + ca-certificates (go-vuln
-# DB fetch) + gcc/libc-dev (`go test -race` needs cgo, cgo needs a C
-# toolchain). Versions ride the pinned 24.04 snapshot — same as the runner.
+# xz (tarball unpack), ca-certificates (go-vuln DB fetch + Gradle/Maven TLS),
+# gcc/libc-dev (`go test -race` needs cgo, cgo needs a C toolchain).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash make git curl ca-certificates xz-utils gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -25,29 +39,71 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
     && ln -s /usr/local/go/bin/go /usr/local/bin/go \
     && ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 
-# shellcheck: EXACT version (the motivating incident — 0.9.x says SC2317
-# where 0.10+ says SC2329 for the same finding). Release binaries are
-# static; arch name differs from Docker's (amd64->x86_64, arm64->aarch64).
+# GOTOOLCHAIN=local from here on, including for the `go install` steps below:
+# without it, Go's automatic toolchain switching could fetch a *different*
+# toolchain than the one just pinned above and silently reintroduce drift.
+ENV GOTOOLCHAIN=local
+
+# golangci-lint + govulncheck: EXACT versions (kept identical to
+# GOLANGCI_LINT_VERSION/GOVULNCHECK_VERSION in the Makefile — bump both
+# together). Installed as real binaries via `go install` with GOBIN forced
+# to /usr/local/bin so `go-lint`/`go-vuln` never run `go run pkg@version`
+# against the network, and so the binary survives the /ci-cache bind mount
+# added further down (a host mount over a path hides whatever the image
+# baked there, so this must land outside /ci-cache).
+ARG GOLANGCI_LINT_VERSION=2.12.2
+ARG GOVULNCHECK_VERSION=1.7.0
+RUN GOBIN=/usr/local/bin go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}" \
+    && GOBIN=/usr/local/bin go install "golang.org/x/vuln/cmd/govulncheck@v${GOVULNCHECK_VERSION}"
+
+# shellcheck: EXACT version. Release binaries are static; arch name differs
+# from Docker's (amd64->x86_64, arm64->aarch64).
 ARG SHELLCHECK_VERSION=0.11.0
 RUN arch="$(case "${TARGETARCH}" in amd64) echo x86_64 ;; arm64) echo aarch64 ;; esac)" \
     && curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${arch}.tar.xz" \
       | tar -xJ -C /usr/local/bin --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" \
     && shellcheck --version | grep -q "version: ${SHELLCHECK_VERSION}"
 
-# The gate runs as the HOST user's UID (--user at docker run) so files it
-# touches on the bind-mounted repo stay owned by the developer/runner. That
-# UID has no passwd entry here; HOME and all Go caches live under /ci-cache,
-# a bind-mounted host dir. Pre-create it world-writable as a fallback for
-# runs without the mount.
-#
-# GOTOOLCHAIN=local is load-bearing: without it, Go's automatic toolchain
-# switching could download a *different* toolchain than the baked one and
-# silently reintroduce drift.
+# JDK 21 runs Gradle itself and compiles the mc121/mc1192/mc114 targets; JDK
+# 25 is a Gradle toolchain, needed only for the mc26 target's
+# `languageVersion = 25` (see build.gradle). Both come from the pinned
+# eclipse-temurin stages above; copying the install dir is cheaper and just
+# as pinned as re-downloading + verifying a tarball by hand, and mirrors how
+# the root Dockerfile already sources its runtime JRE from eclipse-temurin.
+COPY --from=jdk21 /opt/java/openjdk /opt/jdk21
+COPY --from=jdk25 /opt/java/openjdk /opt/jdk25
+
+# Gradle distribution: EXACT version, kept identical to the `distributionUrl`
+# in gradle/wrapper/gradle-wrapper.properties (bump both together — a
+# mismatch here breaks the "container == wrapper" parity this file exists
+# for). Baked in as the real `gradle` binary rather than the self-installing
+# `./gradlew` wrapper script, so no container run ever downloads the
+# distribution zip — `jar xf` (JDK 21, already unpacked above) avoids adding
+# an `unzip` package just for this. GRADLE_USER_HOME still gets bind-mounted
+# further down the Makefile call chain for the project's own dependency
+# cache; that part legitimately varies and stays off this pinned image.
+ARG GRADLE_VERSION=9.7.0
+RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
+    && mkdir -p /opt && cd /opt && /opt/jdk21/bin/jar xf /tmp/gradle.zip \
+    && rm /tmp/gradle.zip \
+    && chmod +x "/opt/gradle-${GRADLE_VERSION}/bin/gradle" \
+    && ln -s "/opt/gradle-${GRADLE_VERSION}/bin/gradle" /usr/local/bin/gradle
+
+# auto-detect=false + auto-download=false + an explicit paths list: Gradle
+# must find both JDKs at these exact baked-in paths and never reach out to
+# foojay for a toolchain — a network toolchain fetch would silently
+# reintroduce the version drift this whole file exists to prevent.
+ENV JAVA_HOME=/opt/jdk21 \
+    PATH="/opt/jdk21/bin:${PATH}" \
+    GRADLE_OPTS="-Dorg.gradle.java.installations.auto-detect=false -Dorg.gradle.java.installations.auto-download=false -Dorg.gradle.java.installations.paths=/opt/jdk21,/opt/jdk25"
+
+# The gate runs as the HOST user's UID; that UID has no passwd entry here, so
+# HOME and all Go caches live under /ci-cache, a bind-mounted host dir.
+# Pre-created world-writable as a fallback for runs without the mount.
 ENV GOMODCACHE=/ci-cache/go-mod \
     GOCACHE=/ci-cache/go-build \
     GOPATH=/ci-cache/gopath \
-    HOME=/ci-cache/home \
-    GOTOOLCHAIN=local
+    HOME=/ci-cache/home
 RUN mkdir -p /ci-cache && chmod 777 /ci-cache
 
 WORKDIR /work
