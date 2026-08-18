@@ -7,6 +7,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A superseded push cancels the previous run of the same ref (fleet
+# convention; free runner minutes back).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # '|' falls back to direct on network errors too; ',' only on 404.
+  GOPROXY: 'https://proxy.golang.org|direct'
+
 jobs:
   build:
     name: "Build"
@@ -20,25 +30,81 @@ jobs:
         run: scripts/verify-action-pins.sh
       - uses: ./.github/actions/gradle
 
+      # test
+      # These come BEFORE static analysis on purpose. `check` already depends on `test`,
+      # so `build` further down would run the suite anyway - but only after checkstyle and
+      # PMD have had their say, and buried inside a step named "Build". Hoisting them here
+      # makes a behavioural regression fail the run in the first ~1 minute, under a check
+      # name that says what broke, instead of surfacing as a lint-then-build cascade.
+      # All targets run because each resolves its own fabric-loader-junit line, compile
+      # level and Java toolchain.
+      - name: "Test: unit tests (Minecraft 1.21.x target)"
+        run: ./gradlew test --no-daemon
+      - name: "Test: unit tests (Minecraft 1.19-1.20.2 target)"
+        run: ./gradlew test -PmcTarget=1192 --no-daemon
+      - name: "Test: unit tests (Minecraft 1.14-1.18 target)"
+        run: ./gradlew test -PmcTarget=114 --no-daemon
+      - name: "Test: unit tests (Minecraft 26.x target)"
+        run: ./gradlew test -PmcTarget=26 --no-daemon
+      - name: "Test: upload the test reports"
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-test-reports-${{ github.sha }}
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+          if-no-files-found: warn
+          retention-days: 7
+      #- name: "Test: code coverage"
+      #  run: ./gradlew jacocoTestReport
+
       # static code analysis
       - name: "Static code analysis: code style"
         run: ./gradlew checkstyleMain
       - name: "Static code analysis: Programming Mistake Detector"
         run: ./gradlew pmdMain
 
-      # test
-      #- name: "Test: code coverage"
-      #  run: ./gradlew jacocoTestReport
-
       # build
-      - name: "Build: mod compilation"
+      - name: "Build: mod compilation (Minecraft 1.21.x target)"
         run: |
           ./gradlew build
-      - name: "Build: upload the mod artifact"
+      - name: "Build: mod compilation (Minecraft 1.19-1.20.2 target)"
+        run: |
+          ./gradlew build -PmcTarget=1192
+      - name: "Build: mod compilation (Minecraft 1.14-1.18 target)"
+        run: |
+          ./gradlew build -PmcTarget=114
+      - name: "Build: mod compilation (Minecraft 26.x target)"
+        run: |
+          ./gradlew build -PmcTarget=26
+      - name: "Build: upload the mod artifact (Minecraft 1.21.x target)"
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: commandsspy-artifacts-${{ github.sha }}
-          path: build/libs/*.jar
+          name: commandsspy-jar-mc1.21.x-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc1.21.x.jar
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Build: upload the mod artifact (Minecraft 1.19-1.20.2 target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-mc1.19-1.20.2-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc1.19-1.20.2.jar
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Build: upload the mod artifact (Minecraft 1.14-1.18 target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-mc1.14.x-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc1.14.x.jar
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Build: upload the mod artifact (Minecraft 26.x target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-mc26.x-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc26.x.jar
+          if-no-files-found: error
           retention-days: 30
 
       # scan
@@ -46,3 +112,23 @@ jobs:
       #  run: ./gradlew dependencyCheckAnalyze
       #  env:
       #    NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+  # Fast quality gate: exactly `make ci`, which runs the gate INSIDE the
+  # pinned Dockerfile.ci container — the same image, tag, and entry path as
+  # the tracked pre-commit hook. Green locally IS green here, by
+  # construction (tool versions live in Dockerfile.ci, not on this runner).
+  # The cache keeps `go run golangci-lint@version` warm across runs.
+  go-tools:
+    name: "Go tools"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-go
+          key: ci-go-${{ hashFiles('Dockerfile.ci', 'tools/go.mod') }}
+      - name: "Quality gate: make ci"
+        run: make ci

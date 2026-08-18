@@ -1,0 +1,432 @@
+# End-to-end Docker tests: boot a real Fabric server per supported
+# {Minecraft version, Java runtime} pair and assert console + RCON command
+# logging. Java is asserted, not assumed: each version runs on its era-correct
+# floor JVM and on the newer coverage JVMs. Kept out of gradle.yml so the fast
+# build/lint gate stays fast.
+#
+# STAGE ORDER IS POPULARITY ORDER. Each stage `needs:` the ones before it, so
+# the cheapest, most-used surface reports first and a break in the mainstream
+# never burns runner minutes on the long tail:
+#
+#   0. unit-tests                fastest signal, no needs, gates the gate
+#   1. e2e-gate                  two canaries: 1.21.11/java21, 26.2/java25
+#   2. 1.21.x + 26.x             current mainstream (floors 21 / 25)
+#   3. 1.20.3-1.20.6             T0 band, floor 21     (only if Option A ships)
+#   4. 1.19-1.20.2               mc1192 band, floor 17 (only if Option B ships)
+#   5. 1.14-1.18                 mc114 band, floors 8/17 (only if Option C ships)
+#
+# A band that has not shipped emits `[]` from `tools gen-matrix`, and its stage
+# jobs skip at zero job cost. See the `if:` comment on the first stage job for
+# exactly why the expression is shaped the way it is.
+#
+# Version lists, Java floors and job-count derivations live in
+# tools/gen_matrix.go (asserted offline by tools/gen_matrix_test.go), not here.
+# Adding a band is a data change there plus one `uses:` block here — never a
+# rewrite of a job body, which lives once in .github/workflows/e2e-stage.yml.
+name: E2E
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same PR supersedes the in-flight sweep. This is the single
+# largest cost saving available and it costs nothing: only the newest commit's
+# result is ever interesting.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The fastest signal in the repo: seconds, no Docker, no artifacts. It has NO
+  # `needs:` so it starts at t+0 alongside the jar build, and `e2e-gate` waits
+  # on it, so a unit-test failure kills the entire job fan-out before a single
+  # container is pulled. It is a NAMED job rather than a step inside build-jars
+  # so "unit tests failed" is legible at a glance in the checks list. The extra
+  # pinned setup-java provides the JDK 25 toolchain the 26.x target needs, so
+  # toolchain resolution never depends on an auto-download; the composite action
+  # afterwards installs JDK 21 last, which keeps Gradle itself on 21.
+  unit-tests:
+    name: "Unit tests"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v5.7.0
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+      - uses: ./.github/actions/gradle
+      - name: "Test: unit tests (Minecraft 1.21.x target)"
+        run: ./gradlew test --no-daemon
+      - name: "Test: unit tests (Minecraft 1.19-1.20.2 target)"
+        run: ./gradlew test -PmcTarget=1192 --no-daemon
+      - name: "Test: unit tests (Minecraft 1.14-1.18 target)"
+        run: ./gradlew test -PmcTarget=114 --no-daemon
+      - name: "Test: unit tests (Minecraft 26.x target)"
+        run: ./gradlew test -PmcTarget=26 --no-daemon
+
+  build-jars:
+    name: "Build jars for e2e"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      mc121_java21: ${{ steps.grid.outputs.mc121_java21 }}
+      mc121_java25: ${{ steps.grid.outputs.mc121_java25 }}
+      mc121_java26: ${{ steps.grid.outputs.mc121_java26 }}
+      mc26_java25: ${{ steps.grid.outputs.mc26_java25 }}
+      mc26_java26: ${{ steps.grid.outputs.mc26_java26 }}
+      t0_java21: ${{ steps.grid.outputs.t0_java21 }}
+      t0_java25: ${{ steps.grid.outputs.t0_java25 }}
+      t0_java26: ${{ steps.grid.outputs.t0_java26 }}
+      mc1192_java17: ${{ steps.grid.outputs.mc1192_java17 }}
+      mc1192_java21: ${{ steps.grid.outputs.mc1192_java21 }}
+      mc114_java8: ${{ steps.grid.outputs.mc114_java8 }}
+      mc114_java17: ${{ steps.grid.outputs.mc114_java17 }}
+      mc114_java21: ${{ steps.grid.outputs.mc114_java21 }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Verify action pins"
+        run: scripts/verify-action-pins.sh
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: false
+      # Machine-asserts the per-stage and total job counts for every option
+      # combination and both triggers, offline, before anything is built.
+      - name: "Assert the e2e grid contract"
+        working-directory: tools
+        run: go test ./...
+      # The sibling offline gate: one expected version->jar/Java table probing
+      # the REAL routing code paths (run-one, gen-matrix, entrypoint literals,
+      # the gate rows below) so cross-file drift fails here, not in a boot.
+      - name: "Assert the version->jar routing contract"
+        run: scripts/test-jar-routing.sh
+      - uses: ./.github/actions/gradle
+      - name: "Build: mod compilation (Minecraft 1.21.x target)"
+        run: ./gradlew build
+      - name: "Build: mod compilation (Minecraft 1.19-1.20.2 target)"
+        run: ./gradlew build -PmcTarget=1192
+      - name: "Build: mod compilation (Minecraft 1.14-1.18 target)"
+        run: ./gradlew build -PmcTarget=114
+      - name: "Build: mod compilation (Minecraft 26.x target)"
+        run: ./gradlew build -PmcTarget=26
+      - name: "Build: upload the mod artifact (Minecraft 1.21.x target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-mc1.21.x-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc1.21.x.jar
+          if-no-files-found: error
+          retention-days: 1
+      - name: "Build: upload the mod artifact (Minecraft 1.19-1.20.2 target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-mc1.19-1.20.2-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc1.19-1.20.2.jar
+          if-no-files-found: error
+          retention-days: 1
+      - name: "Build: upload the mod artifact (Minecraft 1.14-1.18 target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-mc1.14.x-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc1.14.x.jar
+          if-no-files-found: error
+          retention-days: 1
+      - name: "Build: upload the mod artifact (Minecraft 26.x target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-mc26.x-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc26.x.jar
+          if-no-files-found: error
+          retention-days: 1
+
+      # THE single source of stage definitions. Lean grid on pull_request,
+      # full cross-product on workflow_dispatch; absent bands emit [].
+      - name: "Compute the gated version lists for this trigger"
+        id: grid
+        working-directory: tools
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REPO_ROOT: ${{ github.workspace }}
+        run: go run . gen-matrix
+
+  # Stage 1. Two canary pairs — the newest version of each Minecraft line on
+  # its floor JVM — run before the wide fan-out. Almost every way this repo
+  # breaks the suite (bad jar, broken Dockerfile, mixin no longer applying,
+  # busted entrypoint) breaks both of these immediately, so a broken build
+  # costs 2 e2e jobs instead of the whole fan-out. These two pairs are NOT
+  # repeated in any gated submatrix.
+  e2e-gate:
+    name: "e2e-gate (${{ matrix.mc }}, java ${{ matrix.java }})"
+    needs: [build-jars, unit-tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    strategy:
+      # Both canaries always report: "26.2 broke, 1.21.11 is fine" is the first
+      # thing worth knowing, and fail-fast would hide half of it.
+      fail-fast: false
+      matrix:
+        include:
+          - { mc: "1.21.11", java: "21" }
+          - { mc: "26.2", java: "25" }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Download prebuilt jars (all Minecraft targets)"
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: commandsspy-jar-*-${{ github.sha }}
+          merge-multiple: true
+          path: build/libs
+      - name: "Verify prebuilt jars are in place"
+        run: |
+          ls -l build/libs
+          test -f build/libs/commandsspy-*+mc1.21.x.jar
+          test -f build/libs/commandsspy-*+mc1.19-1.20.2.jar
+          test -f build/libs/commandsspy-*+mc1.14.x.jar
+          test -f build/libs/commandsspy-*+mc26.x.jar
+      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ matrix.java }}"
+        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ matrix.java }}" PARALLEL=1
+      - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ matrix.java }})"
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: e2e-logs-mc${{ matrix.mc }}-java${{ matrix.java }}-${{ github.sha }}
+          path: |
+            build/e2e-logs/
+            build/e2e-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  # =========================================================================
+  # Stage 2 — CURRENT MAINSTREAM (1.21.x, 26.x). Five {line, Java} submatrices.
+  #
+  # Read the `if:` carefully; it is load-bearing and the three terms are not
+  # interchangeable:
+  #   !cancelled()                          — an `if:` containing a status
+  #       function suppresses the implicit success() requirement, so an
+  #       upstream job that SKIPPED (an unshipped band) does not cascade its
+  #       skip down the chain. It still honours run cancellation, which a bare
+  #       always() would not.
+  #   !contains(needs.*.result, 'failure')  — a real upstream failure still
+  #       stops everything downstream. 'skipped' is tolerated; 'failure' is not.
+  #   ... != '[]'                           — an empty list for this trigger
+  #       (or an unshipped band) skips the job. GitHub ERRORS a matrix given
+  #       [], it does not skip it, which is why gen-matrix always emits the key
+  #       with a literal [] rather than omitting it: a missing output would
+  #       evaluate to '' and slip past this guard.
+  # =========================================================================
+  e2e-mc121-java21:
+    name: "e2e 1.21.x java 21"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc121_java21 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc121_java21 }}
+      java: "21"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc121-java25:
+    name: "e2e 1.21.x java 25"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc121_java25 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc121_java25 }}
+      java: "25"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc121-java26:
+    name: "e2e 1.21.x java 26"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc121_java26 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc121_java26 }}
+      java: "26"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc26-java25:
+    name: "e2e 26.x java 25"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc26_java25 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc26_java25 }}
+      java: "25"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc26-java26:
+    name: "e2e 26.x java 26"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc26_java26 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc26_java26 }}
+      java: "26"
+      jar-sha: ${{ github.sha }}
+
+  # =========================================================================
+  # Stage 3 — T0 BAND (1.20.3-1.20.6, floor java 21). Exists only if Option A
+  # ships: until gradle.properties widens minecraft_range_121 to >=1.20.3,
+  # gen-matrix emits [] here and all three jobs skip without touching anything
+  # downstream.
+  # =========================================================================
+  e2e-t0-java21:
+    name: "e2e 1.20.3-1.20.6 java 21"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.t0_java21 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.t0_java21 }}
+      java: "21"
+      jar-sha: ${{ github.sha }}
+
+  e2e-t0-java25:
+    name: "e2e 1.20.3-1.20.6 java 25"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.t0_java25 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.t0_java25 }}
+      java: "25"
+      jar-sha: ${{ github.sha }}
+
+  e2e-t0-java26:
+    name: "e2e 1.20.3-1.20.6 java 26"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.t0_java26 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.t0_java26 }}
+      java: "26"
+      jar-sha: ${{ github.sha }}
+
+  # =========================================================================
+  # Stage 4 — mc1192 BAND (1.19-1.20.2, era floor java 17, coverage java 21).
+  # Exists only if Option B ships src/mc1192/java. 1.20.1 is the "modpack era"
+  # anchor and the single most valuable legacy target; it rides behind the
+  # mainstream because it is still a niche relative to 1.21.x. No 25/26 rows:
+  # pre-1.20.3 bands keep 21 as their newest coverage JVM.
+  # =========================================================================
+  e2e-mc1192-java17:
+    name: "e2e 1.19-1.20.2 java 17"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26,
+            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc1192_java17 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc1192_java17 }}
+      java: "17"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc1192-java21:
+    name: "e2e 1.19-1.20.2 java 21"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26,
+            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc1192_java21 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc1192_java21 }}
+      java: "21"
+      jar-sha: ${{ github.sha }}
+
+  # =========================================================================
+  # Stage 5 — mc114 BAND (1.14-1.18, SPLIT era floors: 1.14-1.16.x boot on
+  # java 8, 1.17.x/1.18.x on java 17 — 1.17's historical floor 16 has no
+  # Temurin jre image — plus java 21 coverage across the band). Exists only if
+  # Option C ships src/mc114/java. Last because it is the least-used surface.
+  # =========================================================================
+  e2e-mc114-java8:
+    name: "e2e 1.14-1.16 java 8"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26,
+            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26,
+            e2e-mc1192-java17, e2e-mc1192-java21]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc114_java8 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc114_java8 }}
+      java: "8"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc114-java17:
+    name: "e2e 1.17-1.18 java 17"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26,
+            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26,
+            e2e-mc1192-java17, e2e-mc1192-java21]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc114_java17 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc114_java17 }}
+      java: "17"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc114-java21:
+    name: "e2e 1.14-1.18 java 21"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
+            e2e-mc26-java25, e2e-mc26-java26,
+            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26,
+            e2e-mc1192-java17, e2e-mc1192-java21]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc114_java21 != '[]' }}
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc114_java21 }}
+      java: "21"
+      jar-sha: ${{ github.sha }}

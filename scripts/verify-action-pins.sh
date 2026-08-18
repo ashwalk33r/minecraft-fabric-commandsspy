@@ -5,20 +5,28 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
 files=(
   "$root/.github/workflows/gradle.yml"
+  "$root/.github/workflows/e2e.yml"
+  "$root/.github/workflows/e2e-stage.yml"
   "$root/.github/actions/gradle/action.yml"
 )
 actions=(
+  "actions/cache"
   "actions/checkout"
   "actions/setup-java"
+  "actions/setup-go"
   "actions/upload-artifact"
+  "actions/download-artifact"
   "gradle/actions/wrapper-validation"
   "gradle/actions/setup-gradle"
 )
 
 declare -A expected
+expected["actions/cache"]="6.1.0"
 expected["actions/checkout"]="7.0.1"
 expected["actions/setup-java"]="5.7.0"
+expected["actions/setup-go"]="7.0.0"
 expected["actions/upload-artifact"]="7.0.1"
+expected["actions/download-artifact"]="8.0.1"
 expected["gradle/actions/wrapper-validation"]="6.3.0"
 expected["gradle/actions/setup-gradle"]="6.3.0"
 
