@@ -118,7 +118,7 @@ jobs:
   # Stage 1. Two canary pairs — the newest version of each Minecraft line on its
   # floor JVM — run before the wide fan-out, so a broken build costs 2 jobs.
   e2e-gate:
-    name: "e2e-gate (${{ matrix.mc }}, java ${{ matrix.java }})"
+    name: "e2e-gate (${{ matrix.mc }}, java ${{ matrix.java }}, ${{ matrix.loader }})"
     needs: [build-jars, unit-tests]
     runs-on: ubuntu-latest
     permissions:
@@ -126,12 +126,14 @@ jobs:
       packages: write
     timeout-minutes: 30
     strategy:
-      # fail-fast off: both canaries must report.
+      # fail-fast off: all four canaries must report.
       fail-fast: false
       matrix:
         include:
-          - { mc: "1.21.11", java: "21" }
-          - { mc: "26.2", java: "25" }
+          - { mc: "1.21.11", java: "21", loader: "fabric" }
+          - { mc: "1.21.11", java: "21", loader: "quilt" }
+          - { mc: "26.2", java: "25", loader: "fabric" }
+          - { mc: "26.2", java: "25", loader: "quilt" }
     steps:
       - uses: actions/checkout@v7.0.1
       - name: "Log in to GHCR"
@@ -149,19 +151,19 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.19-1.20.2.jar
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
-      # Keyed by MC version only: see the matching step in e2e-stage.yml.
-      - name: "Restore the Fabric server launcher jar cache"
+      # Keyed by MC version + loader: see the matching step in e2e-stage.yml.
+      - name: "Restore the server launcher jar cache"
         uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-e2e-jars
-          key: e2e-jar-${{ matrix.mc }}
-      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ matrix.java }}"
-        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ matrix.java }}" PARALLEL=1
-      - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ matrix.java }})"
+          key: e2e-jar-${{ matrix.mc }}-${{ matrix.loader }}
+      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ matrix.java }} (${{ matrix.loader }})"
+        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ matrix.java }}" LOADER="${{ matrix.loader }}" PARALLEL=1
+      - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ matrix.java }}, ${{ matrix.loader }})"
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: e2e-logs-mc${{ matrix.mc }}-java${{ matrix.java }}-${{ github.sha }}
+          name: e2e-logs-mc${{ matrix.mc }}-java${{ matrix.java }}-${{ matrix.loader }}-${{ github.sha }}
           path: |
             build/e2e-logs/
             build/e2e-results/
