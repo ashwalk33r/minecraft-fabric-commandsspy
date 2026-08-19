@@ -26,11 +26,15 @@ here.
 - `runGenMatrix(args)` — entry point, wired to the `gen-matrix` subcommand in
   `main.go`. Reads env vars, opens `$GITHUB_OUTPUT`, calls `genMatrix`.
 - `genMatrix(repoRoot, eventName, forceBands, stdout, ghOut)` — the real work.
-  Defines the stages (mc121, mc26, t0, mc1192, mc114) and emits every row.
-  Testable: writers are injected.
+  Defines the stages (mc121, mc26, t0, mc1192, mc114, forge, forge_legacy,
+  forge_eventbus7) and emits every row. Forge rows are floor-only: no
+  coverage rows, no lean/full split (the Forge jars' own bytecode floors
+  govern, not the Fabric era table). Testable: writers are injected.
 - `bandPresent(repoRoot, name, forced)` — is a band buildable in this tree?
   `t0` checks a range line in `gradle.properties`; `mc1192`/`mc114` check that
-  `src/<band>/java` exists. `FORCE_BANDS` overrides for offline tests.
+  `src/<band>/java` exists; `forge`/`forge_legacy`/`forge_eventbus7` check the
+  `minecraft_range_modern`/`_legacy`/`_eventbus7` lines in
+  `forge/gradle.properties`. `FORCE_BANDS` overrides for offline tests.
 - `ends(list)` — first and last element; the "lean" shrink.
 
 ## Inputs (env vars)
@@ -47,8 +51,10 @@ here.
 - To `$GITHUB_OUTPUT`: one `name=json` line per {band, Java} pair,
   e.g. `mc121_java21=["1.21","1.21.1",...]`.
 - To stdout: aligned summary of each row, then `EVENT_NAME`, `GATED_PAIRS`
-  (sum of all list lengths), and `TOTAL_JOBS` (that plus 4 fixed jobs: build,
-  unit tests, two canaries).
+  (sum of all list lengths), and `TOTAL_JOBS` (what the workflow spawns:
+  2 caller jobs per fabric pair — `-fabric` and `-quilt` — 1 per
+  single-loader Forge pair, plus 8 fixed jobs: build-jars, unit tests,
+  4 gate canaries, 2 literal NeoForge jobs).
 
 ## Place in the tools/ package
 

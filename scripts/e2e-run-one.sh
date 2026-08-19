@@ -38,25 +38,30 @@ case "$VERSION" in
 esac
 
 # Forge routing — version-only, this case statement is the single home for
-# which of the two Forge jars (legacy/modern) a version maps to, computed
-# unconditionally (cheap, LOADER-independent) so both the probe below and the
-# LOADER=forge runtime path further down read the same values. Ranges mirror
-# forge/gradle.properties' minecraft_range_legacy/minecraft_range_modern;
-# keep the two in step. FORGE_KNOWN_GOOD_LEGACY/MODERN are overridable for ad
+# which of the three Forge jars (legacy/modern/eventbus7) a version maps to,
+# computed unconditionally (cheap, LOADER-independent) so both the probe below
+# and the LOADER=forge runtime path further down read the same values. Ranges
+# mirror forge/gradle.properties' minecraft_range_legacy/_modern/_eventbus7;
+# keep them in step. FORGE_KNOWN_GOOD_LEGACY/MODERN/EB7 are overridable for ad
 # hoc probing (e.g. widening one jar's declared range to measure how far the
 # underlying code actually stretches, independent of the mods.toml metadata
-# gate a real Forge run enforces separately).
+# gate a real Forge run enforces separately). Sub-1.17 versions deliberately
+# fall through to modern: they are out of every jar's range (always refused),
+# and the 1.16.5 java-8 guard leg's refusal probe stays on the jar it has
+# always used.
 case "$VERSION" in
-  1.17*|1.18*|1.19*|1.20|1.20.1|1.20.2|1.20.3|1.20.4) FORGE_JAR_BAND=legacy ;;
-  *)                                                  FORGE_JAR_BAND=modern ;;
+  1.17*|1.18*|1.19*|1.20|1.20.1|1.20.2|1.20.3|1.20.4)  FORGE_JAR_BAND=legacy ;;
+  1.21.6|1.21.7|1.21.8|1.21.9|1.21.10|1.21.11|26*)     FORGE_JAR_BAND=eventbus7 ;;
+  *)                                                   FORGE_JAR_BAND=modern ;;
 esac
 FORGE_KNOWN_GOOD_LEGACY="${FORGE_KNOWN_GOOD_LEGACY:-1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4}"
 FORGE_KNOWN_GOOD_MODERN="${FORGE_KNOWN_GOOD_MODERN:-1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5}"
-if [ "$FORGE_JAR_BAND" = "legacy" ]; then
-  FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_LEGACY"
-else
-  FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_MODERN"
-fi
+FORGE_KNOWN_GOOD_EB7="${FORGE_KNOWN_GOOD_EB7:-1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2}"
+case "$FORGE_JAR_BAND" in
+  legacy)    FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_LEGACY" ;;
+  eventbus7) FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_EB7" ;;
+  *)         FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_MODERN" ;;
+esac
 FORGE_EXPECT_REFUSED=0
 case " $FORGE_KNOWN_GOOD " in
   *" $VERSION "*) ;;
@@ -86,14 +91,16 @@ fi
 # the generic per-MC-version table above (that table reflects the FABRIC
 # jar's bytecode requirement at 1.20.3+, e.g. 21 -- irrelevant to the Forge
 # legacy jar, which is Java-17 bytecode uniformly across 1.17.1-1.20.4).
-# Guard-leg (out-of-range) probes are deliberately left alone here -- they
-# get their own override further down, once JAVA_VERSION is resolved.
+# eventbus7 keeps the generic per-version floor: 21 for 1.21.x and 25 for
+# 26.x are both >= the jar's java-21 bytecode, and 26.x servers themselves
+# require 25. Guard-leg (out-of-range) probes are deliberately left alone
+# here -- they get their own override further down, once JAVA_VERSION is
+# resolved.
 if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
-  if [ "$FORGE_JAR_BAND" = "legacy" ]; then
-    FLOOR_JAVA=17
-  else
-    FLOOR_JAVA=21
-  fi
+  case "$FORGE_JAR_BAND" in
+    legacy) FLOOR_JAVA=17 ;;
+    modern) FLOOR_JAVA=21 ;;
+  esac
 fi
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
@@ -119,11 +126,12 @@ if [ "$LOADER" = "forge" ]; then
   # FORGE_JAR_BAND was computed above, in the single-home routing table.
   : "${MOD_JAR_FORGE:?MOD_JAR_FORGE must be set when LOADER=forge}"
   : "${MOD_JAR_FORGE_LEGACY:?MOD_JAR_FORGE_LEGACY must be set when LOADER=forge}"
-  if [ "$FORGE_JAR_BAND" = "legacy" ]; then
-    MOD_JAR="$MOD_JAR_FORGE_LEGACY"
-  else
-    MOD_JAR="$MOD_JAR_FORGE"
-  fi
+  : "${MOD_JAR_FORGE_EB7:?MOD_JAR_FORGE_EB7 must be set when LOADER=forge}"
+  case "$FORGE_JAR_BAND" in
+    legacy)    MOD_JAR="$MOD_JAR_FORGE_LEGACY" ;;
+    eventbus7) MOD_JAR="$MOD_JAR_FORGE_EB7" ;;
+    *)         MOD_JAR="$MOD_JAR_FORGE" ;;
+  esac
 else
   _mod_jar_var="MOD_JAR_${JAR_FAMILY}"
   MOD_JAR="${!_mod_jar_var}"
@@ -297,7 +305,8 @@ if [ "$LOADER" = "forge" ]; then
   echo "[e2e] Forge build for Minecraft $VERSION: $FORGE_BUILD"
 
   # Each jar's mods.toml declares its own minecraft range -- modern
-  # [1.20.6,1.21.6), legacy [1.17.1,1.20.5). Outside its own jar's range
+  # [1.20.6,1.21.6), legacy [1.17.1,1.20.5), eventbus7 [1.21.6,26.3).
+  # Outside its own jar's range
   # Forge MUST refuse to load the mod: the selected jar's official-name
   # (modern) or SRG-name (legacy) calls would resolve to nothing on a
   # runtime whose mapping shape does not match, and the server would die on

@@ -84,3 +84,74 @@ func TestGenMatrixFloorRowsAgreeWithPrintJava(t *testing.T) {
 		t.Errorf("saw %d floor rows in gen-matrix output, want %d", seen, len(floorRows))
 	}
 }
+
+// Forge rows are deliberately NOT in floorRows: --print-java is the FABRIC
+// floor table (1.20.3/1.20.4 report 21 there, while the Forge legacy jar runs
+// them on 17 — e2e-run-one.sh overrides FLOOR_JAVA for LOADER=forge). The
+// Forge drift check is against --print-forge-routing instead: every version
+// the generator emits must route to the jar band its row boots.
+func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
+	script := filepath.Join("..", "scripts", "e2e-run-one.sh")
+	printForgeRouting := func(version string) string {
+		out, err := exec.Command("bash", script, "--print-forge-routing", version).Output()
+		if err != nil {
+			t.Fatalf("--print-forge-routing %s: %v", version, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	var gh bytes.Buffer
+	if err := genMatrix("..", "workflow_dispatch", "", io.Discard, &gh); err != nil {
+		t.Fatal(err)
+	}
+	rows := map[string][]string{}
+	for _, line := range strings.Split(gh.String(), "\n") {
+		name, j, ok := strings.Cut(line, "=")
+		if !ok || !strings.HasPrefix(name, "forge") {
+			continue
+		}
+		var versions []string
+		if err := json.Unmarshal([]byte(j), &versions); err != nil {
+			t.Fatalf("%s: bad JSON %q: %v", name, j, err)
+		}
+		rows[name] = versions
+	}
+
+	for _, v := range rows["forge_legacy_java17"] {
+		if got := printForgeRouting(v); got != "legacy 0" {
+			t.Errorf("forge_legacy_java17 contains %s, routing = %q, want \"legacy 0\"", v, got)
+		}
+	}
+	for _, v := range rows["forge_java21"] {
+		// 1.20.4 rides in the modern job but boots the legacy jar in-range
+		// (the legacy ceiling on a modern JVM) — see gen_matrix.go.
+		want := "modern 0"
+		if v == "1.20.4" {
+			want = "legacy 0"
+		}
+		if got := printForgeRouting(v); got != want {
+			t.Errorf("forge_java21 contains %s, routing = %q, want %q", v, got, want)
+		}
+	}
+	// 1.16.5 falls outside every jar's range (the case statement maps only
+	// 1.17*-1.20.4 to legacy, so 1.16* falls through to modern) and must come
+	// back expect-refused.
+	for _, v := range rows["forge_legacy_guard_java8"] {
+		if got := printForgeRouting(v); got != "modern 1" {
+			t.Errorf("forge_legacy_guard_java8 contains %s, routing = %q, want \"modern 1\"", v, got)
+		}
+	}
+	for _, key := range []string{"forge_eventbus7_java21", "forge_eventbus7_java25"} {
+		for _, v := range rows[key] {
+			if got := printForgeRouting(v); got != "eventbus7 0" {
+				t.Errorf("%s contains %s, routing = %q, want \"eventbus7 0\"", key, v, got)
+			}
+		}
+	}
+	for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_legacy_guard_java8",
+		"forge_eventbus7_java21", "forge_eventbus7_java25"} {
+		if len(rows[name]) == 0 {
+			t.Errorf("%s: no versions emitted (band missing from the real tree?)", name)
+		}
+	}
+}

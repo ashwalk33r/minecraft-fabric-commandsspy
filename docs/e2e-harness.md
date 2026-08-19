@@ -139,10 +139,10 @@ launch argument list, not just a jar name.
 Forge legs run with `-Xms1G -Xmx1G` instead of the 512M tuned for
 vanilla+Fabric — Forge's ModLauncher/transformer stack does not fit in
 512M. The `mixin-not-applied` assertion is skipped for Forge: there is no
-Mixin on the Forge side (a `CommandEvent` listener on
-`MinecraftForge.EVENT_BUS`, not a Mixin injection), so the command-logged
-assertions are what prove the hook is live. Every other assertion carries
-over unchanged.
+Mixin on the Forge side (a `CommandEvent` listener — on
+`MinecraftForge.EVENT_BUS`, or `CommandEvent.BUS` in the EventBus-7 band —
+not a Mixin injection), so the command-logged assertions are what prove the
+hook is live. Every other assertion carries over unchanged.
 
 An out-of-range GUARD leg exercises the boundary directly:
 `scripts/e2e-run-one.sh` sets `FORGE_EXPECT_REFUSED=1` for any Minecraft

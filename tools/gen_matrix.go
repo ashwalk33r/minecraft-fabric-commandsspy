@@ -11,6 +11,9 @@ package main
 //     fromJSON('') hard-errors a matrix.
 //   - The two gate canaries (1.21.11/java21, 26.2/java25) are moved to the
 //     gate, never duplicated here.
+//   - Forge bands emit floor rows only (see the Forge stage below). A new
+//     Forge band is one range-key case in bandPresent, one emit here, and one
+//     uses: block in e2e.yml.
 //
 import (
 	"encoding/json"
@@ -23,6 +26,14 @@ import (
 )
 
 var t0RangeRe = regexp.MustCompile(`(?m)^minecraft_range_121=>=1\.20\.3`)
+
+// Forge bands are keyed off their declared range lines in
+// forge/gradle.properties, same idiom as t0 above.
+var forgeRangeRe = map[string]*regexp.Regexp{
+	"forge":           regexp.MustCompile(`(?m)^minecraft_range_modern=`),
+	"forge_legacy":    regexp.MustCompile(`(?m)^minecraft_range_legacy=`),
+	"forge_eventbus7": regexp.MustCompile(`(?m)^minecraft_range_eventbus7=`),
+}
 
 // bandPresent reports whether a band's build target exists in the tree.
 // forced (FORCE_BANDS) overrides detection for offline testing.
@@ -45,6 +56,9 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 	case "mc114":
 		st, err := os.Stat(filepath.Join(repoRoot, "src", "mc114", "java"))
 		return err == nil && st.IsDir()
+	case "forge", "forge_legacy", "forge_eventbus7":
+		data, err := os.ReadFile(filepath.Join(repoRoot, "forge", "gradle.properties"))
+		return err == nil && forgeRangeRe[name].Match(data)
 	}
 	return false
 }
@@ -172,18 +186,81 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	emit("mc114_java17", mc114j17)
 	emitCoverage("mc114_java21", mc114)
 
+	// FORGE — floor rows ONLY, no coverage rows, no lean/full split. The Forge
+	// jars' own bytecode floors are what matter (legacy = java-17 uniform
+	// across 1.17.1-1.20.4, modern = 21), NOT the per-MC-version fabric era
+	// table above; forward-JVM coverage rows (the mc114_java17/mc114_java21
+	// pattern) are a Fabric-jar concept and must not be reused with
+	// LOADER=forge (scripts/e2e-run-one.sh overrides FLOOR_JAVA for
+	// LOADER=forge for exactly this reason). This section is the single home
+	// of the Forge leg rationale (e2e.yml's jobs just point here):
+	//
+	// Modern band: edges only — 1.20.6 and 1.21.5 are the measured floor and
+	// ceiling, and the mapping regime and EventBus generation are uniform
+	// across the range, so nothing can fail in the middle while both edges
+	// pass. 1.20.4 rides in this java-21 job but routes to the LEGACY jar
+	// in-range (--print-forge-routing 1.20.4 = "legacy 0"): it boots the
+	// legacy jar's ceiling on a modern JVM — so it is keyed on the LEGACY
+	// band's presence, not the modern one's; a modern-only tree has no
+	// legacy jar for it to boot. (An older comment called it a refusal
+	// GUARD leg; that was stale.)
+	//
+	// Legacy band: EVERY measured version, not just the edges — the R1
+	// measurement's whole point was SRG member-id stability ACROSS Forge
+	// major branches 37-49 (seven of them), so a floor+ceiling pair would
+	// not exercise the thing being proven.
+	//
+	// Guard: 1.16.5 sits just below the legacy floor (a Mojang class rename,
+	// see docs/version-matrix.md) and runs on java 8 because that is its
+	// era's real deployment JVM — an old Forge build's refusal/crash
+	// behavior differs (misleadingly, for the guard's string-matching) on a
+	// newer JVM. --print-forge-routing 1.16.5 = "modern 1" (out of every
+	// jar's range, expect refused).
+	//
+	// EventBus-7 band (1.21.6-26.2, Forge 56-65): EVERY measured version,
+	// same reasoning as legacy — the measurement's point was that one
+	// official-name java-21 jar registers and fires across ten consecutive
+	// EventBus-7 Forge major branches (56-65), so a floor+ceiling pair would
+	// not exercise the thing being proven. Split by the era Java floor the
+	// generic table already assigns: 1.21.x on 21, 26.x (including the
+	// 26.1.1/26.1.2 patch releases — each its own Forge major, 63/64) on 25.
+	forgeModern := band("forge", "1.20.6", "1.21.5")
+	if len(forgeModern) > 0 {
+		forgeModern = append(band("forge_legacy", "1.20.4"), forgeModern...)
+	}
+	emit("forge_java21", forgeModern)
+	emit("forge_legacy_java17", band("forge_legacy",
+		"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
+		"1.20.1", "1.20.2", "1.20.3", "1.20.4"))
+	emit("forge_legacy_guard_java8", band("forge_legacy", "1.16.5"))
+	emit("forge_eventbus7_java21", band("forge_eventbus7",
+		"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"))
+	emit("forge_eventbus7_java25", band("forge_eventbus7",
+		"26.1", "26.1.1", "26.1.2", "26.2"))
+
 	if emitErr != nil {
 		return emitErr
 	}
 
-	// GATED_PAIRS counts submatrix legs only (+4 for build, unit tests, two canaries).
-	total := 0
+	// GATED_PAIRS counts submatrix legs (versions x rows) once each.
+	// TOTAL_JOBS counts what the workflow actually spawns: every fabric band
+	// key feeds TWO caller jobs in e2e.yml (-fabric and -quilt), Forge keys
+	// feed ONE (LOADER=forge has no quilt twin), plus the 8 fixed jobs:
+	// build-jars, unit-tests, 4 e2e-gate canaries (2 versions x
+	// fabric/quilt), and 2 literal NeoForge jobs (deliberately not generated
+	// — see docs/ci.md "The NeoForge stages").
+	total, jobs := 0, 0
 	for _, r := range rows {
 		total += r.n
+		if strings.HasPrefix(r.name, "forge") {
+			jobs += r.n
+		} else {
+			jobs += 2 * r.n
+		}
 		_, _ = fmt.Fprintf(stdout, "%-16s %3d  %s\n", r.name+":", r.n, r.json)
 	}
 	_, _ = fmt.Fprintf(stdout, "EVENT_NAME=%s\n", eventName)
 	_, _ = fmt.Fprintf(stdout, "GATED_PAIRS=%d\n", total)
-	_, _ = fmt.Fprintf(stdout, "TOTAL_JOBS=%d\n", total+4)
+	_, _ = fmt.Fprintf(stdout, "TOTAL_JOBS=%d\n", jobs+8)
 	return nil
 }
