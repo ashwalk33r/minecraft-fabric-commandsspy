@@ -119,9 +119,17 @@ boots on both. Why the boundaries sit where they do:
 
 ### Forge
 
-A fifth, separately-built jar covers Forge, narrowly: Minecraft 1.20.6-1.21.5
-only (`make build-forge`, on demand). Details and why the range stops there:
-[docs/version-matrix.md](docs/version-matrix.md) -> "Forge: a fifth jar".
+Four separately-built jars cover Forge from Minecraft 1.14.4 through 26.2,
+one per mapping/EventBus era: `mc116` (1.14-1.16.5, SRG incl. classes,
+Java 8), `legacy` (1.17.1-1.20.4, SRG members, Java 17), `modern`
+(1.20.6-1.21.5, official names, Java 21) and `eventbus7` (1.21.6-26.2,
+EventBus 7). Built on demand: `make build-forge`,
+`build-forge-legacy`, `build-forge-mc116`, `build-forge-eventbus7`. Details,
+measured boot tables, and why each boundary sits where it does:
+[docs/version-matrix.md](docs/version-matrix.md) -> the Forge sections.
+Known hole: Minecraft 1.16.4 is in the mc116 jar's range but its Forge 35.x
+line cannot boot any current JDK 8 (upstream ModLauncher/JDK issue — the mod
+passed there on a pre-8u321 JDK).
 
 ### NeoForge
 

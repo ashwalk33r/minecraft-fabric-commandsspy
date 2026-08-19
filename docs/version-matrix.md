@@ -371,8 +371,8 @@ measurement so mods.toml metadata was never the limiting factor:
 
 | Minecraft | Forge build | Result |
 |---|---|---|
-| 1.16.4 | 35.1.4 | FAIL — `NoSuchMethodError` inside Forge's own `cpw.mods.modlauncher.SecureJarHandler`, before any mod code runs. An ancient ModLauncher/JDK incompatibility, not a signal about this mod or SRG stability. |
-| 1.16.5 | 36.2.34 | FAIL — `NoClassDefFoundError: net/minecraft/commands/CommandSourceStack`. Decisive: see below. |
+| 1.16.4 | 35.1.4 | FAIL — `NoSuchMethodError` inside Forge's own `cpw.mods.modlauncher.SecureJarHandler`, before any mod code runs. Root-caused under issue #30: the JDK 8u321+ `ManifestEntryVerifier` change vs 2020-era ModLauncher, see the mc116 section below. |
+| 1.16.5 | 36.2.34 | FAIL — `NoClassDefFoundError: net/minecraft/commands/CommandSourceStack`. Decisive for THIS jar: see below. The era is now covered by the mc116 jar. |
 | 1.17.1 | 37.1.1 | PASS |
 | 1.18 | 38.0.14 | PASS |
 | 1.18.1 | 39.1.0 | PASS — all three e2e legs (console, RCON, player). Confirming this leg required fixing a harness gap first: the e2e bot's protocol table (`tools/table.go`) was missing protocol 757 (1.18/1.18.1), so this version's player-phase leg used to fail with an unrelated "unsupported protocol" error, never reaching a real assertion. Fixed alongside this jar (see docs/protocol-table.md); confirmed live with keep_alive `0x21`/`0x0F` and chat `0x03`, identical to 756 and 758. |
@@ -411,38 +411,23 @@ under that name when the jar was compiled. No amount of "point
 compiled-once jar — the compiled bytecode already says
 `net/minecraft/commands/CommandSourceStack`, a class absent from 1.16.5
 entirely, so class loading fails before any renaming question is reached.
-A 1.16.x-and-below jar would need its own compile pass against
+A 1.16.x-and-below jar needs its own compile pass against
 1.16.5-shaped official mappings (a genuinely separate source variant, the
 same shape the Fabric mc114/mc1192/mc121 source-set split already uses for
 exactly this reason), not just a different renamer mapping file on the
-existing compiled output. This is also why 1.16.x is excluded from the
-shipped range rather than folded in: the fix is a third compile target, not
-a wider range on this one, and nothing in the measured 1.17.1-1.20.4 span
-needs it.
-
-1.16.4's failure is a second, independent finding: even setting the
-class-identity question aside, Forge 35.1.4's own `ModLauncher`
-(2020-era `cpw.mods.modlauncher`) throws `NoSuchMethodError` inside its own
-jar-signature verification on the JDK the 1.16.x e2e floor (Java 8) ships,
-before FML ever inspects the mod jar. Old Forge branches carry their own
-JDK-patch-level fragility independent of anything under this project's
-control. Probing 1.16.x during measurement needed a temporary Java 8
-compile pass (`--release 8`, plus a matching classic-cast rewrite of
-`CommandsSpyForge.java`'s one pattern-matching `instanceof`, a Java 16+
-feature); neither is part of the shipped `legacy` target, which compiles
-straight to Java 17 like every other 1.17.1+ target in this project, since
-1.16.x never entered the shipped range.
+existing compiled output. Issue #30 built exactly that — the `mc116` target,
+see its own section below — which is why 1.16.x stays out of THIS jar's
+range: the fix is a fourth compile target, not a wider range on this one.
 
 ### Gate coverage
 
 `.github/workflows/e2e.yml`'s `e2e-forge-legacy-java17` job reads every
 measured PASS version above from `tools/gen_matrix.go`'s
-`forge_legacy_java17` output (the 1.16.5 guard leg from
-`forge_legacy_guard_java8`) — unlike the modern
+`forge_legacy_java17` output — unlike the modern
 jar's edges-only job, the whole point of this range was
 proving SRG member-id stability *across* seven Forge major branches, so a
 floor+ceiling-only gate would not exercise the thing being measured.
-`scripts/e2e-run-one.sh` routes each Minecraft version to the legacy,
+`scripts/e2e-run-one.sh` routes each Minecraft version to the mc116, legacy,
 modern or eventbus7 jar by a single case statement (`FORGE_JAR_BAND`, probed
 via `--print-forge-routing`); `scripts/test-jar-routing.sh` asserts that
 routing offline, including that versions outside every range come back
@@ -516,3 +501,101 @@ two generated jobs by era Java floor — `e2e-forge-eventbus7-java21`
 require Java 25) — reading `tools/gen_matrix.go`'s `forge_eventbus7_java21`
 /`forge_eventbus7_java25` outputs, keyed on the `minecraft_range_eventbus7`
 line in `forge/gradle.properties`.
+
+## Forge mc116 jar: one jar from 1.14.4 through 1.16.5, and the 1.16.4 JDK wall
+
+Issue #30. Two gated measurements: root-cause the 1.16.4 pre-mod-code
+crash, and answer whether pre-1.17 SRG member ids are stable enough for one
+compiled-once jar to span the 1.14–1.16 era. Both answered; the jar
+shipped.
+
+The target: `-PforgeTarget=mc116`, compile anchor Minecraft 1.16.5 / Forge
+36.2.42, `--release 8` bytecode (1.16-era servers run Java 8). It needs BOTH
+things the other Forge targets need only one of: its own entrypoint source
+(`forge/src/mc116/java`) like eventbus7, **and** the SRG renamer like
+legacy. The source variant exists because pre-1.17 dev-time class names are
+the MCP ones — ForgeGradle 7's `official` channel for 1.16.5 materializes
+`net.minecraft.command.CommandSource` and
+`net.minecraft.entity.player.ServerPlayerEntity` (Mojang *member* names on
+MCP *class* names), and Forge 36's own `CommandEvent.getParseResults()`
+signature references them, so the 1.17-era entrypoint cannot compile there
+(measured: `package net.minecraft.commands does not exist`). The renamer
+then maps the members down to the runtime SRG shape — the class names
+already match the runtime, so members are the only thing left — `javap` on
+the shipped jar shows `net/minecraft/command/CommandSource.func_197022_f`
+(`getEntity`), `ServerPlayerEntity.func_200200_C_` (`getName`),
+`CommandSource.func_197037_c` (`getTextName`), the pre-1.17 `func_xxxxx_`
+vocabulary. The jar also ships a `pack.mcmeta` (`forge/src/mc116/resources`):
+Forge 32.x (1.16.1) throws an NPE in its own `ResourcePackLoader` on any mod
+jar without one, measured live; later Forges only warn. `make
+build-forge-mc116` builds it; `MOD_JAR_FORGE_MC116` in the Makefile names it
+(`commandsspy-<ver>+mc1.16.x-forge.jar`).
+
+### Gate 1: the 1.16.4 crash is the JDK's `ManifestEntryVerifier` change
+
+Reproduced, root-caused, and bounded — it is not fixable from this repo:
+
+| Forge build | JDK | Result |
+|---|---|---|
+| 35.1.4 (1.16.4 recommended) | Temurin 8 current (8u492) | crash: `java.lang.NoSuchMethodError: sun.security.util.ManifestEntryVerifier.<init>(Ljava/util/jar/Manifest;)V` at `cpw.mods.modlauncher.SecureJarHandler.createCodeSource(SecureJarHandler.java:66)`, before any mod is scanned |
+| 35.1.37 (1.16.4 latest — newest build that will ever exist) | Temurin 8 current | same crash, byte-identical signature |
+| 35.1.4 | Temurin **8u312** (pre-change) | **full e2e PASS** — mod loaded, console + RCON + player asserts all green |
+
+JDK 8u321+ added a `Manifest` parameter to the internal
+`sun.security.util.ManifestEntryVerifier` constructor; 2020-era ModLauncher
+calls the old one reflectively-not-at-all — it just links against it
+(upstream: McModLauncher/modlauncher#91). Forge shipped the fixed
+ModLauncher only on the 1.16.5 branch (36.2.26+); every 1.16.1–1.16.4
+branch is frozen before the fix, so **1.16.4 cannot boot any current JDK 8
+regardless of mods**. Empirically the older branches (32/33/34, 1.16.1–
+1.16.3) do not link the affected path and boot fine on current JDK 8 — only
+35.x dies. Verdict: 1.16.4 stays inside the jar's declared range (a 1.16.4
+server admin is already running a pre-8u321 JDK, or no Forge at all, and
+the mod passed the full assertion set there on 8u312), but it is excluded
+from CI (`FORGE_KNOWN_GOOD_MC116` and the generated leg) because CI runs a
+current JDK on principle — no permanently pinned old-JDK image.
+
+### Gate 2 / measured range
+
+One SRG-renamed jar, booted as a real Forge dedicated server with the full
+e2e assertion set, `minecraft_range` `[1.14,1.17)` (the shipped range — wide
+enough during measurement that mods.toml metadata was never the limiting
+factor, and every measurement inside it passed, so it never needed
+tightening):
+
+| Minecraft | Forge build | Java | Result |
+|---|---|---|---|
+| 1.14.4 | 28.2.26 | 8 (current) | PASS |
+| 1.15.2 | 31.2.57 | 8 (current) | PASS |
+| 1.16.1 | 32.0.108 | 8 (current) | PASS — needed two era fixes, neither SRG-related: the jar's `pack.mcmeta` (Forge 32.x NPE, above) and the harness's flat-world `generator-settings` gaining the `structures` key its 1.16/1.16.1 codec requires (optional from 1.16.2, ignored-unknown from 1.19) |
+| 1.16.2 | 33.0.61 | 8 (current) | PASS |
+| 1.16.3 | 34.1.0 | 8 (current) | PASS |
+| 1.16.4 | 35.1.4 / 35.1.37 | 8 current / **8u312** | crash before mod code / **PASS** — gate 1 above; in range, out of CI |
+| 1.16.5 | 36.2.34 | 8 (current) | PASS (36.2.26+ carries the ModLauncher fix) |
+
+Answer to the gate-2 question: **pre-1.17 SRG member ids are frozen across
+the whole band** — `func_197022_f`/`func_200200_C_`/`func_197037_c` resolve
+and the `CommandEvent` hook fires identically across five consecutive Forge
+major branches (28, 31, 32/33/34, 36) and three Minecraft minors, so one
+jar covers 1.14.4–1.16.5 and the "one jar per version" fallback was never
+needed. Confirming the 1.16.1–1.16.3 player-phase legs required a harness
+fix first, same precedent as protocol 757 in the legacy band: the e2e bot's
+protocol table was missing rows 736 (1.16/1.16.1), 751 (1.16.2) and 753
+(1.16.3) — added to `tools/table.go` from minecraft-data dumps and confirmed
+live (`keep_alive` `0x20/0x10` at 736, `0x1F/0x10` at 751/753, `chat`
+`0x03` everywhere; see docs/protocol-table.md).
+
+### Gate coverage
+
+`.github/workflows/e2e.yml`'s `e2e-forge-mc116-java8` job boots every
+measured-PASS version (1.14.4, 1.15.2, 1.16.1, 1.16.2, 1.16.3, 1.16.5) on
+java 8 — the era's real deployment JVM and the jar's own bytecode floor —
+reading `tools/gen_matrix.go`'s `forge_mc116_java8` output, keyed on the
+`minecraft_range_mc116` line in `forge/gradle.properties`. This replaces
+the old `e2e-forge-legacy-guard-java8` leg: its 1.16.5 expected-REFUSED
+probe flipped to an in-range PASS the moment a jar covered 1.16.5, and no
+refusal guard below the new floor is possible — Forge's next line down
+(1.13.2) is below the e2e harness's own 1.14 floor. The below-floor
+metadata gate is still asserted offline: `scripts/test-jar-routing.sh`
+checks the refusal flag for out-of-range versions and pins 1.16.4's
+in-range-but-not-known-good routing (`mc116 1`).

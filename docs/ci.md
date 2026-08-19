@@ -75,19 +75,19 @@ before runner minutes are spent on the long tail.
    crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
    four canary jobs run. `fail-fast` is off so all four always report.
 3. **Forge stages** — five caller jobs (`e2e-forge-java21`,
-   `e2e-forge-legacy-java17`, `e2e-forge-legacy-guard-java8`,
+   `e2e-forge-legacy-java17`, `e2e-forge-mc116-java8`,
    `e2e-forge-eventbus7-java21`, `e2e-forge-eventbus7-java25`), each a normal
    `e2e-stage.yml` call with `loader: forge` reading its version list from a
    `tools/gen_matrix.go` output of the same name, like the Fabric/Quilt
    bands. Forge's loader-awareness in the generator is floor rows only — no
    newest-Java coverage rows, no lean/full split: the Forge jars' own
-   bytecode floors (legacy = 17 uniform, modern/eventbus7 = 21, with
-   eventbus7's 26.x half running 25 because those servers require it) are
-   what matter, and the forward-JVM coverage-row pattern is a Fabric-jar
+   bytecode floors (mc116 = 8, legacy = 17 uniform, modern/eventbus7 = 21,
+   with eventbus7's 26.x half running 25 because those servers require it)
+   are what matter, and the forward-JVM coverage-row pattern is a Fabric-jar
    concept that must not be reused with `loader: forge`. Per-leg rationale
-   (why the modern band is edges-only, why the legacy and eventbus7 bands
-   list every measured version, why the 1.16.5 guard runs on java 8) lives
-   in the generator's Forge stage comment.
+   (why the modern band is edges-only, why the legacy/mc116/eventbus7 bands
+   list every measured version, why 1.16.4 is absent from the mc116 leg)
+   lives in the generator's Forge stage comment.
 4. **NeoForge stages** — two jobs, one per shipped NeoForge line
    (1.21.1/java21 and 26.2/java25), each a normal `e2e-stage.yml` call with a
    **literal** one-element version list. See "The NeoForge stages" below.
@@ -200,13 +200,13 @@ Two non-obvious rules it must keep:
 - **The gate canaries are moved to the gate, never duplicated** in the band
   lists.
 - **Forge bands emit floor rows only** (`forge_java21`, `forge_legacy_java17`,
-  `forge_legacy_guard_java8`, `forge_eventbus7_java21`,
+  `forge_mc116_java8`, `forge_eventbus7_java21`,
   `forge_eventbus7_java25`) — no coverage rows, no lean/full split. Presence
-  is keyed off the `minecraft_range_modern`/`_legacy`/`_eventbus7` lines in
-  `forge/gradle.properties`; another Forge band is one more range-key case,
-  one emit, and one `uses:` block. Within `forge_java21`, 1.20.4 is keyed on
-  the *legacy* band — it boots the legacy jar (see the rationale comment in
-  `tools/gen_matrix.go`).
+  is keyed off the `minecraft_range_modern`/`_legacy`/`_mc116`/`_eventbus7`
+  lines in `forge/gradle.properties`; another Forge band is one more
+  range-key case, one emit, and one `uses:` block. Within `forge_java21`,
+  1.20.4 is keyed on the *legacy* band — it boots the legacy jar (see the
+  rationale comment in `tools/gen_matrix.go`).
 
 Each band job's `if:` guard is `!cancelled() && no needed job failed &&
 list != '[]'` — plain `success()` would skip the band when an unrelated
