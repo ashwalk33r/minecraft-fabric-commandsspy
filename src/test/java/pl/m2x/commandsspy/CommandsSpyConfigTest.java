@@ -1,7 +1,6 @@
 package pl.m2x.commandsspy;
 
 import com.google.gson.JsonSyntaxException;
-import net.fabricmc.loader.api.FabricLoader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -28,8 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class CommandsSpyConfigTest {
 
-    private static final Path CONFIG_PATH =
-            FabricLoader.getInstance().getConfigDir().resolve("commands-spy.json");
+    // Spelled out, not derived from the production constant: a test that reads the
+    // value it is checking proves nothing. Byte-identical to what
+    // FabricLoader.getConfigDir() resolved to under fabric-loader-junit — see .gitignore.
+    private static final Path CONFIG_PATH = Paths.get("config", "commands-spy.json");
     private static final String TELL = "tell";
 
     @BeforeEach

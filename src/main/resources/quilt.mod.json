@@ -7,7 +7,7 @@
 		"intermediate_mappings": "net.fabricmc:intermediary",
 		"entrypoints": {
 			"main": [
-				"pl.m2x.commandsspy.CommandsSpy"
+				"pl.m2x.commandsspy.CommandsSpyFabric"
 			]
 		},
 		"depends": [
