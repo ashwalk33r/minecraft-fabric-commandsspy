@@ -1,5 +1,4 @@
 # One reusable e2e submatrix, called by every stage in e2e.yml.
-# The caller supplies the version list as a JSON array string.
 # The caller must not pass an empty list: GitHub errors on a [] matrix.
 name: E2E stage
 

@@ -1,9 +1,7 @@
 package main
 
-// Drift assertions for the era Java-floor table, whose single home is the
-// case statement in scripts/e2e-run-one.sh (queried via --print-java).
-// The expected floors are HARDCODED here on purpose: this file is the
-// independent second copy that turns silent drift into a test failure.
+// The era Java-floor table's single home is scripts/e2e-run-one.sh; the
+// floors are HARDCODED here on purpose to turn silent drift into a failure.
 
 import (
 	"bytes"
@@ -26,8 +24,6 @@ var defaultVersionFloors = map[string]string{
 	"1.16.5": "8", "1.17.1": "17", "1.18.2": "17",
 }
 
-// printJava runs `scripts/e2e-run-one.sh --print-java <version>` from the
-// repo root (one level above this package's directory).
 func printJava(t *testing.T, version string) string {
 	t.Helper()
 	script := filepath.Join("..", "scripts", "e2e-run-one.sh")

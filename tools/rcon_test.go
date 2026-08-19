@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// fakeRCON serves one connection with handler and returns its address.
 func fakeRCON(t *testing.T, handler func(c net.Conn)) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -41,12 +40,12 @@ func TestRconFragmentedResponse(t *testing.T) {
 	addr := fakeRCON(t, func(c net.Conn) {
 		id, _, _, _ := readPacket(c) // auth
 		writePacket(c, id, 2, "")
-		cid, _, cmd, _ := readPacket(c) // command
+		cid, _, cmd, _ := readPacket(c)
 		if cmd != "help" {
 			return
 		}
 		writePacket(c, cid, 0, big[:4096]) // client reads this before sending sentinel
-		sid, _, _, _ := readPacket(c)      // sentinel
+		sid, _, _, _ := readPacket(c)
 		writePacket(c, cid, 0, big[4096:])
 		writePacket(c, sid, 0, "Unknown request") // vanilla-style echo for the sentinel
 	})

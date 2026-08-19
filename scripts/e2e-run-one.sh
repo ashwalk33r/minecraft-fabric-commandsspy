@@ -8,9 +8,7 @@ set -euo pipefail
 
 VERSION="${1:?usage: e2e-run-one.sh <minecraft-version> | --print-java|--print-routing <minecraft-version>}"
 
-# Probe modes: query the routing table for a version and exit, before any env
-# validation, so the Makefile's e2e-images target, tools/floors_test.go and
-# scripts/test-jar-routing.sh can read it without a full run setup.
+# Probe modes: query the routing table and exit, before any env validation.
 #   --print-java     -> the era-correct Java floor        ("17")
 #   --print-routing  -> jar family and Java floor         ("1192 17")
 PROBE=""
@@ -21,21 +19,9 @@ case "$VERSION" in
     ;;
 esac
 
-# Era-correct routing — this case statement is the table's single home; every
-# other consumer queries it via the probe flags above. Floors:
-#   1.14-1.16.x -> 8, 1.17.x -> 17 (historical floor 16 has no Temurin jre
-#   image, so 1.17.x is CI-booted on 17), 1.18-1.20.2 -> 17,
-#   1.20.3-1.21.x -> 21, 26.x -> 25.
-# 1.19.1-1.20.2 map to the mc1192 jar (>=1.19.1 <1.20.3, java >=17). 1.19.0
-# itself is UNSUPPORTED: its execute() lacks the ParseResults overload the
-# mc1192 jar hooks (e2e-disproven: InvalidInjectionException), so it is
-# rejected here rather than left to fail as a confusing boot error.
-# 1.20.3/1.20.4 map to the mc121 jar: 1.20.3 flipped execute() to void, that
-# jar's hook shape — and although their vanilla floor is Java 17, the mc121
-# jar targets release 21, so their supported floor here is 21. 1.14-1.18 map
-# to the mc114 jar (>=1.14 <1.19, java >=8, Java 8 bytecode): 1.19.1 is where
-# execute() gained its ParseResults parameter, so the boundary is exact —
-# 1.18.x is the last version of the direct-source descriptor.
+# Era-correct routing — this case statement is the floor/jar table's SINGLE
+# HOME; consumers use the probe flags. 1.19.0 is unsupported (no ParseResults
+# overload). Rationale: docs/version-matrix.md.
 case "$VERSION" in
   26*)                 FLOOR_JAVA=25; JAR_FAMILY=26 ;;
   1.20.3|1.20.4|1.20.5|1.20.6|1.21*) FLOOR_JAVA=21; JAR_FAMILY=121 ;;
@@ -61,7 +47,6 @@ esac
 : "${MOD_JAR_114:?MOD_JAR_114 must be set}"
 : "${MOD_JAR_26:?MOD_JAR_26 must be set}"
 
-# Resolve the routed family to its jar path (env validated just above).
 _mod_jar_var="MOD_JAR_${JAR_FAMILY}"
 MOD_JAR="${!_mod_jar_var}"
 : "${E2E_LOG_DIR:=build/e2e-logs}"
@@ -69,22 +54,12 @@ MOD_JAR="${!_mod_jar_var}"
 : "${E2E_RUN_ID:=manual}"
 : "${BOOT_TIMEOUT:=180}"
 
-# A Minecraft line has a Java FLOOR, not a Java pin. JAVA_OVERRIDE (set by
-# `make e2e ... JAVA=<n>`) runs the same version on a newer JVM so that
-# compatibility with 25/26 is asserted by a real boot instead of assumed.
 : "${JAVA_OVERRIDE:=}"
 
-# Host dir cached across runs (launcher + vanilla server jars, keyed per
-# version by the entrypoint). Empty disables the mount and restores the
-# download-every-time behaviour. Set by the Makefile; see the jar-cache
-# section of scripts/e2e-entrypoint.sh for what lives inside.
 : "${E2E_JAR_CACHE:=}"
 
 if [ -n "$JAVA_OVERRIDE" ]; then
   JAVA_VERSION="$JAVA_OVERRIDE"
-  # Only override runs get a suffixed key, so default runs keep their existing
-  # filenames while grid runs of the same version on different JVMs never
-  # overwrite each other's log or result.
   KEY="${VERSION}-java${JAVA_VERSION}"
 else
   JAVA_VERSION="$FLOOR_JAVA"
@@ -93,8 +68,7 @@ fi
 
 IMAGE="commandsspy-e2e:java${JAVA_VERSION}"
 
-# Player phase: two fake players join and one sends /list. The Go client
-# speaks every supported version including 26.2, so every version runs it.
+# Player phase: two fake players join and one sends /list.
 PLAYER_PHASE=1
 
 LOG_FILE="${REPO_ROOT}/${E2E_LOG_DIR}/${KEY}.log"
@@ -153,7 +127,7 @@ else
 fi
 
 # The entrypoint's final line is the authoritative verdict; it knows nothing
-# about Java, so splice the JVM in here. The entrypoint is NOT modified.
+# about Java, so splice the JVM in here.
 RAW_VERDICT="$(grep -E '^E2E ' "$LOG_FILE" | tail -1 || true)"
 if [ -z "$RAW_VERDICT" ]; then
   VERDICT="E2E ${VERSION} java${JAVA_VERSION} FAIL no-result"

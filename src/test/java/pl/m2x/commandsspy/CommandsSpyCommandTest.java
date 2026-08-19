@@ -5,14 +5,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Characterization tests for CommandsSpyCommand.getCommand.
- *
- * <p>getCommand is the single splitter that decides what the blacklist is matched
- * against and what gets logged when logArguments is false. Its whole implementation is
- * {@code int i = fullCommand.indexOf(' '); return i > 0 ? fullCommand.substring(0, i) : fullCommand;}
- * - which has three behaviours that are surprising enough to be pinned down explicitly
- * (leading space, tab separator, all-blank input). These tests assert WHAT THE CODE DOES
- * today, not what it arguably should do; see the plan's Findings section.
+ * Characterization tests for CommandsSpyCommand.getCommand: they assert what the
+ * code does today, not what it should do. See docs/testing.md for the known quirks.
  */
 class CommandsSpyCommandTest {
 
@@ -45,15 +39,13 @@ class CommandsSpyCommandTest {
 
     @Test
     void returnsWholeInputUnchangedWhenItStartsWithASpace() {
-        // FINDING: indexOf(' ') == 0 is not > 0, so nothing is split off and the entire
-        // string - arguments included - becomes the "command name". A leading space
-        // therefore bypasses blacklist matching entirely.
+        // FINDING: indexOf(' ') == 0 is not > 0, so nothing is split off and a
+        // leading space bypasses blacklist matching entirely.
         assertEquals(" say hello world", CommandsSpyCommand.getCommand(" say hello world"));
     }
 
     @Test
     void returnsWholeInputUnchangedWhenItIsOnlySpaces() {
-        // FINDING: same root cause as the leading-space case.
         assertEquals("  ", CommandsSpyCommand.getCommand("  "));
     }
 

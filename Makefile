@@ -123,12 +123,10 @@ e2e-images: ## pull-or-build the per-Java server Docker images serially, tag loc
 	  docker tag "$$ghcr_tag" "$$local_tag"; \
 	done
 
-# Local dev: unbounded fan-out.
 e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),$(words $(VERSIONS)))
 
-# CI variant: same flow, PARALLEL=4 default.
 e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),4)
@@ -187,7 +185,6 @@ clean-e2e: ## remove e2e logs/results and reap containers/images
 # parallelism lives inside the recipe (xargs -P), so `make -j` is safely serialized.
 .NOTPARALLEL:
 
-# A jar is stale whenever any tracked source is newer.
 MOD_SOURCES := $(shell git ls-files src '*.gradle' gradle.properties .env.version)
 
 $(MOD_JAR_121): $(MOD_SOURCES) | ci-image
@@ -209,7 +206,6 @@ $(MOD_JAR_26): $(MOD_SOURCES) | ci-image
 .PHONY: build
 build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) ## build all four era jars (dockerized; needs only make + docker)
 
-# All four targets: each resolves its own loader and compile level.
 .PHONY: test
 test: ci-image ## offline suite: routing contract + 41 unit tests on all four targets (dockerized)
 	@echo "[test] Offline version->jar routing contract..."
@@ -252,9 +248,7 @@ ci-gen-matrix: ci-image ## compute the e2e version-matrix GitHub Actions outputs
 	  $(if $(GITHUB_OUTPUT),-e GITHUB_OUTPUT -v "$(GITHUB_OUTPUT):$(GITHUB_OUTPUT)",) \
 	  $(CI_IMAGE) go run . gen-matrix
 
-# ---------------------------------------------------------------------------
 # make ci = the one fast gate (excludes e2e and the Gradle build). See docs/ci.md.
-# Lint tools are pinned and run via `go run tool@version`.
 GOLANGCI_LINT_VERSION := 2.12.2
 GOVULNCHECK_VERSION := 1.7.0
 
@@ -305,7 +299,6 @@ go-build: ## the static binary is the deliverable - prove it every build
 go-test: ## go test -race -count=1 -cover over tools/
 	cd tools && go test -race -count=1 -cover ./...
 
-# Escape hatch when Docker is unavailable; the container run is authoritative.
 .PHONY: ci-host
 ci-host: lint-sh go-fmt-check go-vet go-lint go-build go-build-cross go-test go-vuln ## the raw quality gate on host tools (escape hatch; version skew possible)
 
@@ -315,12 +308,7 @@ go-build-cross: ## prove the static binary builds for linux+darwin
 	cd tools && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /dev/null .
 	cd tools && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o /dev/null .
 
-# ---------------------------------------------------------------------------
-# Tag is content-addressed: editing Dockerfile.ci changes the tag. Published
-# to GHCR (repo is public: free, unlimited storage/bandwidth) so `ci-image`
-# below can `docker pull` a real registry image instead of building locally
-# on every fresh clone/CI job — a plain docker pull dedups layers properly,
-# unlike a gzipped image tarball round-tripped through an Actions cache.
+# Tag is content-addressed: editing Dockerfile.ci changes the tag.
 CI_IMAGE := ghcr.io/ashwalk33r/commandsspy-ci:$(shell git hash-object Dockerfile.ci | cut -c1-12)
 # Disposable; CI_CACHE_DIR= for a cold run.
 CI_CACHE_DIR ?= $(HOME)/.cache/commandsspy-ci-go

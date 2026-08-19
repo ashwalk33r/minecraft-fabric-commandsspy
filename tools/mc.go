@@ -1,10 +1,6 @@
 // Minimal offline-mode Minecraft Java protocol layer for the e2e bot:
 // status ping + login + (configuration) + one command + keepalives.
-// No encryption (online-mode=false is a harness invariant), no auth, no
-// chat signing. Compression is off in the harness
-// (network-compression-threshold=-1) but handled defensively anyway.
-// Adapted from the proven feasibility prototype (proto/handrolled/main.go,
-// verified live on 1.16.5/1.19.2/1.21.11/26.1/26.2).
+// No encryption, no auth, no chat signing; compression handled defensively.
 package main
 
 import (
@@ -22,8 +18,6 @@ import (
 	"strings"
 	"time"
 )
-
-// ---------- wire primitives ----------
 
 type buf struct{ bytes.Buffer }
 
@@ -99,8 +93,7 @@ type conn struct {
 	threshold int
 }
 
-// dial connects and sets an absolute deadline on the socket, so every
-// read/write in the whole run is bounded by the global timeout.
+// dial sets an absolute deadline, bounding every later read/write.
 func dial(addr string, deadline time.Time) (*conn, error) {
 	nc, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
@@ -193,8 +186,6 @@ func (c *conn) handshake(proto int, host string, port, next int) error {
 	return c.send(0x00, b.Bytes())
 }
 
-// ---------- status ping ----------
-
 // ping negotiates the version: it asks the server for its status and returns
 // the advertised version name and protocol number.
 func ping(host string, port int, deadline time.Time) (string, int, error) {
@@ -234,15 +225,12 @@ func ping(host string, port int, deadline time.Time) (string, int, error) {
 	return st.Version.Name, st.Version.Protocol, nil
 }
 
-// ---------- login + play ----------
-
 type client struct {
 	*conn
 	row  row
 	name string
 }
 
-// join dials, handshakes and drives login -> (configuration) -> play.
 func join(r row, host string, port int, name string, deadline time.Time) (*client, error) {
 	cn, err := dial(fmt.Sprintf("%s:%d", host, port), deadline)
 	if err != nil {
@@ -355,9 +343,8 @@ func commandPacket(r row, cmd string, ts int64) []byte {
 	b.varint(r.cmdID)
 	switch r.era {
 	case eraChat:
-		// pre-1.19: plain chat packet, slash INCLUDED. The harness's log
-		// oracle asserts the exact era literal ("/list" vs "list") and
-		// deliberately never matches both — preserve the split.
+		// pre-1.19: plain chat, slash INCLUDED (the log oracle keys on the
+		// exact literal).
 		b.str("/" + cmd)
 	case era759, era760, era761:
 		b.str(cmd) // no slash: chat_command carries the bare command
@@ -385,9 +372,6 @@ func (c *client) sendCommand(cmd string) error {
 	return c.sendPacket(commandPacket(c.row, cmd, time.Now().UnixMilli()))
 }
 
-// pump answers play-state keepalives until stop is closed, reporting any
-// connection error. It also logs the server's /list reply as proof the
-// command executed.
 func (c *client) pump(stop <-chan struct{}, errc chan<- error) {
 	for {
 		select {

@@ -12,20 +12,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import pl.m2x.commandsspy.CommandsSpy;
 
 /**
- * Command-logging hook for Minecraft 1.19 - 1.20.2.
- *
- * <p>Identical to the 1.21.x hook except for the callback type. In this era
- * {@code CommandManager.execute} (intermediary {@code class_2170.method_9249})
- * is declared {@code (Lcom/mojang/brigadier/ParseResults;Ljava/lang/String;)I}
- * - verified against the mapped 1.20.1 artifact - it returns the number of
- * successful executions. Minecraft 1.20.3 flipped the return type to
- * {@code void} (e2e-proven: this jar boot-fails on 1.20.3/1.20.4), which is
- * why the range stops mid-minor at 1.20.2 and 1.20.3+ use the 1.21.x jar. Mixin
- * matches the injection target by name and then validates the descriptor, so a
- * {@code CallbackInfo} parameter here would fail at load time with
- * "CallbackInfoReturnable is required!", and the 1.21.x jar fails symmetrically
- * on these versions. That one parameter is the entire difference between the
- * jars.
+ * Hook for MC 1.19 - 1.20.2: {@code execute} takes {@code ParseResults} and
+ * returns {@code int}, so the callback is {@code CallbackInfoReturnable<Integer>}.
+ * 1.20.3+ returns {@code void} - see src/mc121 and docs/version-matrix.md.
  */
 @Mixin(CommandManager.class)
 public class CommandManagerMixin {
@@ -38,7 +27,6 @@ public class CommandManagerMixin {
         if (entity instanceof ServerPlayerEntity player) {
             CommandsSpy.handleCommand(fullCommand, true, player.getName().getString());
         } else {
-            // Other sources (e.g., functions, data packs, signs, fullCommand blocks)
             CommandsSpy.handleCommand(fullCommand, false, source.getName());
         }
     }

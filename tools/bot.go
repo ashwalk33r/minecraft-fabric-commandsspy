@@ -7,10 +7,8 @@ import (
 	"time"
 )
 
-// runBot is the e2e player phase (Issues C/E): two protocol-level players
-// join the offline-mode server under test. e2e_player1 sends the one command;
-// e2e_player2 sends NOTHING except keepalive answers and exists only as the
-// attribution cross-check. Exit 0 only on full success.
+// runBot is the e2e player phase: player1 sends /list, player2 joins and
+// sends nothing — the attribution cross-check. Exit 0 only on full success.
 func runBot(args []string) error {
 	fs := flag.NewFlagSet("bot", flag.ContinueOnError)
 	host := fs.String("host", "127.0.0.1", "server host")

@@ -5,11 +5,7 @@
          xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
 
     <description>
-        Same categories as the main sources (errorprone + bestpractices), minus the two
-        PMD unit-test style rules that no real suite can satisfy: UnitTestContainsTooManyAsserts
-        caps a test at ONE assertion, and UnitTestAssertionsShouldIncludeMessage demands a
-        message on every assertion. Everything else - including UselessPureMethodCall,
-        AvoidDuplicateLiterals and the real correctness rules - still applies to test code.
+        Same categories as the main sources, minus the two unit-test style rules no real suite can satisfy.
     </description>
 
     <rule ref="category/java/errorprone.xml"/>

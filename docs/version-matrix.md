@@ -1,0 +1,92 @@
+# Version matrix
+
+One shared implementation (`src/main`), four era-correct jars. Each jar differs
+only in its `CommandManagerMixin` source set and build settings.
+
+## The four jars
+
+| Source set | Jar covers | Mappings | Bytecode | Mixin compat | Hooked method |
+|---|---|---|---|---|---|
+| `src/mc114` | >=1.14 <1.19 | yarn/intermediary (1.16.5) | Java 8 | `JAVA_8` | `CommandManager.execute(ServerCommandSource, String)` returns `int` |
+| `src/mc1192` | >=1.19.1 <1.20.3 | yarn/intermediary (1.20.1) | Java 17 | `JAVA_17` | `CommandManager.execute(ParseResults, String)` returns `int` |
+| `src/mc121` | >=1.20.3 <1.22 | yarn/intermediary (1.21.1) | Java 21 | `JAVA_21` | `CommandManager.execute(ParseResults, String)` returns `void` |
+| `src/mc26` | >=26.1 <26.3 | official Mojang names (unobfuscated) | Java 21 | `JAVA_21` | `Commands.performCommand(ParseResults, String)` returns `void` |
+
+Each mixin unwraps the command source, decides player vs. other, and calls the
+shared `CommandsSpy.handleCommand(fullCommand, isPlayer, sourceName)`.
+
+## Why the boundaries sit where they do
+
+`CommandManager.execute` (intermediary `class_2170.method_9249`) changed shape
+twice:
+
+- **1.19.1** wrapped the `ServerCommandSource` argument in `ParseResults`
+  (still returning `int`). 1.19.0 is **unsupported**: its `execute()` still
+  takes `(ServerCommandSource, String)`, so the mc1192 jar's mixin cannot
+  apply there (e2e-proven: `InvalidInjectionException` on 1.19.0), and the
+  mc114 jar's Java 8 hook was never built for the 1.19 runtime.
+- **1.20.3** flipped the return type to `void`.
+
+Mixin matches the injection target by name and then validates the descriptor,
+so a callback of the wrong shape fails at load time ("CallbackInfoReturnable
+is required!"). A jar built for one era boot-fails on the other — that is why
+the mc1192 range stops mid-minor at 1.20.2, and why the callback type is the
+entire difference between the mc1192 and mc121 hooks.
+
+**26.x** ships unobfuscated and the Fabric runtime uses official Mojang names,
+so intermediary-compiled mixins silently never apply. The mc26 source set
+compiles directly against official names (`Commands.performCommand`); yarn
+does not exist for 26.x.
+
+Every intermediary member the mc114 hook touches is identical across
+1.14.4–1.18.2, so the compile-against version (1.16.5) does not change the
+output jar.
+
+## Java floors
+
+A Minecraft version has a Java **floor**, not a pin: compatibility with newer
+JVMs is asserted by the e2e grid, not assumed. The floor table's single
+executable home is the `case` statement in `scripts/e2e-run-one.sh` (query it
+with `--print-java <version>`); `tools/floors_test.go` pins it against drift.
+
+| MC range | e2e floor JVM | Note |
+|---|---|---|
+| 1.14–1.16.x | 8 | |
+| 1.17.x | 17 | historical floor is 16, but no Temurin 16 JRE image exists; the jar's own `java >=8` guard still admits Java 16 operators |
+| 1.18–1.20.2 | 17 | |
+| 1.20.3–1.21.x | 21 | 1.20.3/1.20.4's vanilla floor is 17, but they run the mc121 jar, which is Java 21 bytecode |
+| 26.x | 25 | |
+
+Java 11 is supported for manual override runs only
+(`make e2e VERSIONS=... JAVA=11`) and never appears in a default matrix.
+
+The `mixin_compat_*` values in `gradle.properties` are templated into
+`commandsspy.mixins.json` and must not exceed the era's runtime JRE: a
+`JAVA_21` compatibility level on a Java 17 JVM fails mixin bootstrap.
+
+Which floors get the alpine base image vs. jammy, and why:
+[ci.md](ci.md) → e2e server images.
+
+## Loader floors
+
+- mc121 / mc1192: loader >=0.16.5.
+- mc26: loader >=0.19.3, the verified line for unobfuscated 26.x.
+- mc114: deliberately a high floor (>=0.19.3), the line verified to serve
+  working server launchers all the way down to 1.14.4. Do not lower it.
+
+## Default e2e version list
+
+The default `VERSIONS` in the Makefile samples the matrix:
+
+- **T0 band** (1.20.3–1.20.6) and every 1.21.x release: exhaustive — the band
+  is its boundaries.
+- **26.x**: 26.1 and 26.2 only. 26.1.1/26.1.2 are excluded: mapping breaks
+  land on minor boundaries and each extra version costs a full server
+  download. Suspect a 26.x patch? `make e2e VERSIONS="26.1 26.1.1 26.1.2 26.2"`.
+- **mc1192 band**: 1.19.2, 1.19.4, 1.20.1, 1.20.2 — both ends of the 1.19
+  line, the most-run legacy version, and the 1.20.2/1.20.3 boundary.
+  The rest: `make e2e VERSIONS="1.19.1 1.19.3 1.20"`.
+- **mc114 band**: 1.16.5, 1.17.1, 1.18.2. 1.14.4/1.15.2 ride the identical
+  jar; their one distinguishing property is the older `Recon` RCON spelling
+  (see [e2e-harness.md](e2e-harness.md)). Suspect the bottom of the range?
+  `make e2e VERSIONS="1.14.4 1.15.2"`.

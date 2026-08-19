@@ -10,9 +10,8 @@ import java.util.Collections;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Pins down the exact wire format CommandsSpy emits: {@code [CommandsSpy] [<source>] <command>}.
- * This string is what server operators grep for and what the e2e suite matches on, so it is
- * asserted character for character rather than with contains().
+ * Pins the exact wire format {@code [CommandsSpy] [<source>] <command>} - operators
+ * grep it and the e2e suite matches on it, so it is asserted character for character.
  */
 class CommandsSpyLogCommandTest {
 

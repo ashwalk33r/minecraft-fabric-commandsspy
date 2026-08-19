@@ -54,7 +54,7 @@ func TestCommandBytesModern1192(t *testing.T) {
 // The pre-1.19 side of the boundary: a plain chat packet whose payload is
 // "/list", slash INCLUDED. Together with TestCommandBytesModern1192 this
 // pins the exact era-literal split ("/list" vs "list") that the harness's
-// log oracle asserts on — a pattern matching both would prove nothing.
+// log oracle asserts on.
 func TestCommandBytesLegacy1182(t *testing.T) {
 	got := commandPacket(rows[758], "list", 0x0123456789ABCDEF)
 	want := []byte{

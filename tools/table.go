@@ -1,10 +1,6 @@
-// Per-protocol facts for the bot, keyed by the protocol NUMBER the server
-// advertises in its status ping. Every value is cited in
-// docs/protocol-table.md; the 26.2 (776) row was established by live probing,
-// not copied from a data dump.
+// Per-protocol facts. Every value is cited in docs/protocol-table.md.
 package main
 
-// Command-packet eras — the chat/signature staircase.
 const (
 	era759   = iota + 1 // 1.19: cmd, ts, salt, sig array, signedPreview
 	era760              // 1.19.1/1.19.2: era759 + previousMessages + lastRejected
@@ -16,9 +12,9 @@ const (
 type row struct {
 	proto      int
 	name       string // human label for diagnostics
-	era        int    // command-packet era above
-	kaCB, kaSB int    // play-state keep_alive S->C / C->S
-	cmdID      int    // serverbound chat_command (chat on <=1.18.2) id
+	era        int
+	kaCB, kaSB int // play-state keep_alive S->C / C->S
+	cmdID      int // serverbound chat_command (chat on <=1.18.2) id
 }
 
 var rows = map[int]row{
