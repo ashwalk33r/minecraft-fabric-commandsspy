@@ -41,6 +41,14 @@ case "$PROBE" in
   --print-routing) echo "$JAR_FAMILY $FLOOR_JAVA"; exit 0 ;;
 esac
 
+LOADER="${LOADER:-fabric}"
+case "$LOADER" in
+  fabric|quilt) ;;
+  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt" >&2; exit 1 ;;
+esac
+QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
+QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
+
 : "${REPO_ROOT:?REPO_ROOT must be set}"
 : "${MOD_JAR_121:?MOD_JAR_121 must be set}"
 : "${MOD_JAR_1192:?MOD_JAR_1192 must be set}"
@@ -58,12 +66,16 @@ MOD_JAR="${!_mod_jar_var}"
 
 : "${E2E_JAR_CACHE:=}"
 
+BASE_KEY="$VERSION"
+if [ "$LOADER" = "quilt" ]; then
+  BASE_KEY="${BASE_KEY}-quilt"
+fi
 if [ -n "$JAVA_OVERRIDE" ]; then
   JAVA_VERSION="$JAVA_OVERRIDE"
-  KEY="${VERSION}-java${JAVA_VERSION}"
+  KEY="${BASE_KEY}-java${JAVA_VERSION}"
 else
   JAVA_VERSION="$FLOOR_JAVA"
-  KEY="$VERSION"
+  KEY="$BASE_KEY"
 fi
 
 IMAGE="commandsspy-e2e:java${JAVA_VERSION}"
@@ -93,11 +105,51 @@ fi
 # this leaves a FAIL on disk, which is exactly what we want.
 printf 'E2E %s java%s FAIL runner-died\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
 
+QUILT_TMP_DIR=""
 # shellcheck disable=SC2329 # invoked via the trap below, not directly
 cleanup() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  [ -n "$QUILT_TMP_DIR" ] && rm -rf "$QUILT_TMP_DIR"
+  return 0
 }
 trap cleanup EXIT INT TERM
+
+# Quilt path: quilt-installer needs Java 17+, but some server containers run
+# Java 8 (mc114 band) — so the install happens HERE, on the host, via a
+# one-off Java-17 container, never inside the per-Java-floor server
+# container. Populates the same host-side cache the Fabric path already
+# uses (or a per-run temp dir when caching is disabled), then bind-mounts
+# the result read-only into the server container below.
+QUILT_MOUNT_ARGS=""
+if [ "$LOADER" = "quilt" ]; then
+  QUILT_CACHE_KEY="quilt-${VERSION}-loader${QUILT_LOADER_VERSION}-installer${QUILT_INSTALLER_VERSION}"
+  if [ -n "$E2E_JAR_CACHE" ]; then
+    QUILT_INSTALL_DIR="${E2E_JAR_CACHE}/${QUILT_CACHE_KEY}"
+  else
+    QUILT_TMP_DIR="$(mktemp -d)"
+    QUILT_INSTALL_DIR="$QUILT_TMP_DIR"
+  fi
+  mkdir -p "$QUILT_INSTALL_DIR"
+  if [ -f "${QUILT_INSTALL_DIR}/quilt-server-launch.jar" ] && [ -f "${QUILT_INSTALL_DIR}/server.jar" ]; then
+    echo "[e2e] Quilt install cache HIT for Minecraft $VERSION (loader $QUILT_LOADER_VERSION, installer $QUILT_INSTALLER_VERSION)"
+  else
+    echo "[e2e] Installing Quilt server for Minecraft $VERSION (loader $QUILT_LOADER_VERSION, installer $QUILT_INSTALLER_VERSION)..."
+    QUILT_STAGE_DIR="$(mktemp -d)"
+    if docker run --rm \
+        -v "${QUILT_STAGE_DIR}:/out" \
+        eclipse-temurin:17-jre-jammy \
+        sh -c "curl -fsSL https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/${QUILT_INSTALLER_VERSION}/quilt-installer-${QUILT_INSTALLER_VERSION}.jar -o /tmp/installer.jar && java -jar /tmp/installer.jar install server ${VERSION} ${QUILT_LOADER_VERSION} --download-server --install-dir=/out"; then
+      cp "${QUILT_STAGE_DIR}/quilt-server-launch.jar" "${QUILT_STAGE_DIR}/server.jar" "$QUILT_INSTALL_DIR/"
+      rm -rf "$QUILT_STAGE_DIR"
+    else
+      rm -rf "$QUILT_STAGE_DIR"
+      printf 'E2E %s java%s FAIL quilt-install-failed\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+      echo "[e2e] <- FAIL Minecraft $VERSION: Quilt install failed"
+      exit 1
+    fi
+  fi
+  QUILT_MOUNT_ARGS="-v ${QUILT_INSTALL_DIR}:/quilt-preinstalled:ro"
+fi
 
 echo "[e2e] -> starting Minecraft $VERSION on java $JAVA_VERSION (container $CONTAINER_NAME)"
 
@@ -109,6 +161,10 @@ if [ -n "$E2E_JAR_CACHE" ]; then
   mkdir -p "$E2E_JAR_CACHE"
   set -- -v "${E2E_JAR_CACHE}:/jar-cache"
 fi
+if [ -n "$QUILT_MOUNT_ARGS" ]; then
+  # shellcheck disable=SC2086 # QUILT_MOUNT_ARGS is a "-v host:container:ro" pair; word splitting is the point
+  set -- "$@" $QUILT_MOUNT_ARGS
+fi
 
 # NOTE: no -p/--publish. RCON is reached from inside the container over
 # 127.0.0.1; publishing a host port would make parallel runs collide.
@@ -118,6 +174,7 @@ if docker run --rm \
     -e MC_VERSION="$VERSION" \
     -e BOOT_TIMEOUT="$BOOT_TIMEOUT" \
     -e PLAYER_PHASE="$PLAYER_PHASE" \
+    -e LOADER="$LOADER" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
     "$@" \
     "$IMAGE" 2>&1 | tee "$LOG_FILE" | sed -u "s/^/[$KEY] /"; then
