@@ -9,6 +9,11 @@
 //   legacy - issue #28 task 1: SRG-reobfuscated jar for the pre-1.20.5 era,
 //     Minecraft 1.17.1-1.20.4. Needs net.minecraftforge.renamer (below) since
 //     Forge does not ship Mojang official mappings on that era's runtime.
+//   eventbus7 - issue #32 task 2: EventBus-7 entrypoint for 1.21.6+, where
+//     Forge's Event -> MutableEvent break makes the modern entrypoint's
+//     MinecraftForge.EVENT_BUS registration uncompilable. Official mappings
+//     at runtime like modern; only the entrypoint source differs
+//     (src/eventbus7/java replaces src/main/java, shared core unchanged).
 plugins {
 	id 'java'
 	id 'net.minecraftforge.gradle' version '[7.0.29,8.0)'
@@ -27,10 +32,11 @@ if (modVersion == null || modVersion.isBlank()) {
 }
 
 def forgeTarget = (findProperty('forgeTarget') ?: 'modern') as String
-if (!(forgeTarget in ['modern', 'legacy'])) {
-	throw new GradleException("Unknown -PforgeTarget=${forgeTarget}. Supported values: modern (default), legacy")
+if (!(forgeTarget in ['modern', 'legacy', 'eventbus7'])) {
+	throw new GradleException("Unknown -PforgeTarget=${forgeTarget}. Supported values: modern (default), legacy, eventbus7")
 }
 def isLegacy = forgeTarget == 'legacy'
+def isEventBus7 = forgeTarget == 'eventbus7'
 if (isLegacy) {
 	apply plugin: 'net.minecraftforge.renamer'
 }
@@ -48,7 +54,9 @@ def targetLoaderRange = project.getProperty("loader_range_${forgeTarget}")
 // (baked into `version`, no classifier). legacy's plain `jar` task output is an
 // unshipped intermediate (official-mapped, not SRG) -- the renamer step below
 // produces the actual shipped legacy artifact with its own name/classifier.
-version = isLegacy ? "${modVersion}+mc1.17-1.20.4" : "${modVersion}+mc1.21.x-forge"
+version = isLegacy ? "${modVersion}+mc1.17-1.20.4"
+	: isEventBus7 ? "${modVersion}+mc1.21.6+-forge"
+	: "${modVersion}+mc1.21.x-forge"
 group = 'm2x.commandsspy'
 base.archivesName = 'commandsspy'
 
@@ -74,8 +82,15 @@ dependencies {
 }
 
 // The shared core is COMPILED FROM ONE COPY, never forked. It contains no loader
-// API references, which is what Phase 0 bought.
-sourceSets.main.java.srcDir '../src/main/java'
+// API references, which is what Phase 0 bought. eventbus7 swaps ONLY the
+// entrypoint source dir (EventBus 7 renamed the registration surface, so the
+// EventBus-6 file cannot compile against Forge 56+ and vice versa); modern
+// and legacy keep compiling the default src/main/java entrypoint.
+if (isEventBus7) {
+	sourceSets.main.java.setSrcDirs(['src/eventbus7/java', '../src/main/java'])
+} else {
+	sourceSets.main.java.srcDir '../src/main/java'
+}
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
