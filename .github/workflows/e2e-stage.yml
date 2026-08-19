@@ -18,7 +18,7 @@ on:
         required: true
         type: string
       loader:
-        description: "fabric, quilt or forge — one per call, so each loader renders as its own job group in the Actions UI"
+        description: "fabric, quilt, forge or neoforge — one per call, so each loader renders as its own job group in the Actions UI"
         required: true
         type: string
 
@@ -73,6 +73,8 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.19-1.20.2.jar
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
+          test -f build/libs/commandsspy-*+neoforge-mc1.21.1.jar
+          test -f build/libs/commandsspy-*+neoforge-mc26.2.jar
 
       # Keyed by MC version + loader (not Java): scripts/e2e-run-one.sh's
       # cache key is version+loader+installer, and the loader/installer

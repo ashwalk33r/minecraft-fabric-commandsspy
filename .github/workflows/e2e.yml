@@ -29,7 +29,7 @@ jobs:
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties') }}
+          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
       - name: "Test: unit tests (all four Minecraft targets)"
         run: make test
 
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties') }}
+          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
       # Same cache the go-tools job (gradle.yml) keeps warm: ci-tools-test/
       # ci-gen-matrix compile tools/ from scratch without it (measured: ~51s
       # cold vs ~4.6s warm combined for these two steps).
@@ -76,7 +76,7 @@ jobs:
       # Probes the real version->jar routing paths so cross-file drift fails here, not in a boot.
       - name: "Assert the version->jar routing contract"
         run: scripts/test-jar-routing.sh
-      - name: "Build: mod compilation (all four Minecraft targets)"
+      - name: "Build: mod compilation (all six jars: four Fabric/Quilt eras + two NeoForge lines)"
         run: make build
       - name: "Build: upload the mod artifact (Minecraft 1.21.x target)"
         uses: actions/upload-artifact@v7.0.1
@@ -116,6 +116,20 @@ jobs:
         with:
           name: commandsspy-jar-forge-${{ github.sha }}
           path: forge/build/libs/commandsspy-*+mc1.21.x-forge.jar
+          if-no-files-found: error
+          retention-days: 1
+      - name: "Build: upload the mod artifact (NeoForge 21.1, Minecraft 1.21.1)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-neoforge-mc1.21.1-${{ github.sha }}
+          path: build/libs/commandsspy-*+neoforge-mc1.21.1.jar
+          if-no-files-found: error
+          retention-days: 1
+      - name: "Build: upload the mod artifact (NeoForge 26.2, Minecraft 26.2)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-neoforge-mc26.2-${{ github.sha }}
+          path: build/libs/commandsspy-*+neoforge-mc26.2.jar
           if-no-files-found: error
           retention-days: 1
 
@@ -163,6 +177,8 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.19-1.20.2.jar
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
+          test -f build/libs/commandsspy-*+neoforge-mc1.21.1.jar
+          test -f build/libs/commandsspy-*+neoforge-mc26.2.jar
       # Keyed by MC version + loader: see the matching step in e2e-stage.yml.
       - name: "Restore the server launcher jar cache"
         uses: actions/cache@v6.1.0
@@ -181,6 +197,51 @@ jobs:
             build/e2e-results/
           if-no-files-found: warn
           retention-days: 7
+
+  # NeoForge — deliberately NOT part of e2e-gate. The gate exists to stop a
+  # broken build before the ~40-job Fabric/Quilt fan-out; a NeoForge break is
+  # not a reason to withhold that coverage, so NeoForge runs alongside the gate
+  # instead of in front of it. Each of the two runs is its own job group for
+  # the same Actions-UI reason the Quilt variants are (see the stage comment
+  # below): separate, independently-collapsible groups.
+  #
+  # `versions:` is a literal list, not a build-jars output: NeoForge has no
+  # Intermediary-equivalent stable mapping, so one jar covers exactly one
+  # Minecraft version and the whole loader is two versions wide. Generating
+  # a two-element list would buy nothing — tools/gen_matrix.go stays untouched.
+  # The `if:` therefore also drops the `!= '[]'` clause the generated bands
+  # need: a literal list is never empty.
+  e2e-neoforge-mc1211-java21:
+    name: "e2e 1.21.1 java 21 (neoforge)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.21.1"]'
+      java: "21"
+      loader: "neoforge"
+      jar-sha: ${{ github.sha }}
+
+  e2e-neoforge-mc262-java25:
+    name: "e2e 26.2 java 25 (neoforge)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["26.2"]'
+      java: "25"
+      loader: "neoforge"
+      jar-sha: ${{ github.sha }}
 
   # Stage 2 — current mainstream (1.21.x, 26.x). The `if:` used on every stage job:
   # !cancelled() lets an upstream SKIP pass through, !contains(...'failure') still

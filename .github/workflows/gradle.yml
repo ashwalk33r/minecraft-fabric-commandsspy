@@ -34,7 +34,7 @@ jobs:
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
+          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'neoforge/gradle.properties', 'neoforge/build.gradle') }}
 
       # Before lint on purpose: a behavioural regression fails in the first minute under a named check.
       - name: "Test: unit tests (all four Minecraft targets)"
@@ -53,7 +53,10 @@ jobs:
       - name: "Static code analysis: checkstyle + PMD"
         run: make lint-java
 
-      - name: "Build: mod compilation (all four Minecraft targets)"
+      # `gradle build` = assemble + check, so the NeoForge jars this also builds
+      # get their checkstyle/pmd pass here (neoforge/build.gradle applies both);
+      # they have no unit tests — the suite lives in the root, Fabric-bound project.
+      - name: "Build: mod compilation (all six jars: four Fabric/Quilt eras + two NeoForge lines)"
         run: make build
       - name: "Build: upload the mod artifact (Minecraft 1.21.x target)"
         uses: actions/upload-artifact@v7.0.1
@@ -81,6 +84,20 @@ jobs:
         with:
           name: commandsspy-jar-mc26.x-${{ github.sha }}
           path: build/libs/commandsspy-*+mc26.x.jar
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Build: upload the mod artifact (NeoForge 21.1.x / Minecraft 1.21.1)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-neoforge-mc1.21.1-${{ github.sha }}
+          path: build/libs/commandsspy-*+neoforge-mc1.21.1.jar
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Build: upload the mod artifact (NeoForge 26.2.x / Minecraft 26.2)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-neoforge-mc26.2-${{ github.sha }}
+          path: build/libs/commandsspy-*+neoforge-mc26.2.jar
           if-no-files-found: error
           retention-days: 30
 
