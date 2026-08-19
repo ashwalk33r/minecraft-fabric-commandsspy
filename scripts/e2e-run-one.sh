@@ -130,7 +130,11 @@ if [ "$LOADER" = "quilt" ]; then
     QUILT_INSTALL_DIR="$QUILT_TMP_DIR"
   fi
   mkdir -p "$QUILT_INSTALL_DIR"
-  if [ -f "${QUILT_INSTALL_DIR}/quilt-server-launch.jar" ] && [ -f "${QUILT_INSTALL_DIR}/server.jar" ]; then
+  # quilt-server-launch.jar is a THIN jar (Main-Class + a relative
+  # Class-Path: libraries/... manifest entry) — the whole libraries/ tree
+  # the installer downloads alongside it must travel with it, not just the
+  # two top-level jars.
+  if [ -f "${QUILT_INSTALL_DIR}/quilt-server-launch.jar" ] && [ -f "${QUILT_INSTALL_DIR}/server.jar" ] && [ -d "${QUILT_INSTALL_DIR}/libraries" ]; then
     echo "[e2e] Quilt install cache HIT for Minecraft $VERSION (loader $QUILT_LOADER_VERSION, installer $QUILT_INSTALLER_VERSION)"
   else
     echo "[e2e] Installing Quilt server for Minecraft $VERSION (loader $QUILT_LOADER_VERSION, installer $QUILT_INSTALLER_VERSION)..."
@@ -139,7 +143,7 @@ if [ "$LOADER" = "quilt" ]; then
         -v "${QUILT_STAGE_DIR}:/out" \
         eclipse-temurin:17-jre-jammy \
         sh -c "curl -fsSL https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/${QUILT_INSTALLER_VERSION}/quilt-installer-${QUILT_INSTALLER_VERSION}.jar -o /tmp/installer.jar && java -jar /tmp/installer.jar install server ${VERSION} ${QUILT_LOADER_VERSION} --download-server --install-dir=/out"; then
-      cp "${QUILT_STAGE_DIR}/quilt-server-launch.jar" "${QUILT_STAGE_DIR}/server.jar" "$QUILT_INSTALL_DIR/"
+      cp -R "${QUILT_STAGE_DIR}/." "$QUILT_INSTALL_DIR/"
       rm -rf "$QUILT_STAGE_DIR"
     else
       rm -rf "$QUILT_STAGE_DIR"

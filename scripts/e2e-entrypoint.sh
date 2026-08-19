@@ -37,10 +37,11 @@ if [ "$LOADER" = "fabric" ]; then
 else
   # Quilt: the host (scripts/e2e-run-one.sh) already ran quilt-installer
   # (it needs Java 17+, which this container may not have — mc114 runs
-  # Java 8) and bind-mounted the result read-only. Just copy it in.
+  # Java 8) and bind-mounted the result read-only. Copy the whole tree in —
+  # quilt-server-launch.jar is a thin jar whose manifest Class-Path points
+  # at a relative libraries/ dir, not a fat jar.
   echo "[e2e] Copying pre-installed Quilt server for Minecraft $MC_VERSION..."
-  cp /quilt-preinstalled/quilt-server-launch.jar quilt-server-launch.jar
-  cp /quilt-preinstalled/server.jar server.jar
+  cp -R /quilt-preinstalled/. .
   SERVER_LAUNCH_JAR="quilt-server-launch.jar"
 fi
 
@@ -148,8 +149,9 @@ kill -9 "$SERVER_PID" 2>/dev/null || true
 wait "$SERVER_PID" 2>/dev/null || true
 
 # Populated only from a booted server (a busted download must never get cached).
-# Atomic stage-dir+mv because parallel jobs race.
-if [ "$BOOTED" -eq 1 ] && [ -d /jar-cache ] && [ ! -d "$JAR_CACHE_KEY" ] \
+# Atomic stage-dir+mv because parallel jobs race. Fabric only — Quilt's
+# install is cached on the host, before this container ever started.
+if [ "$LOADER" = "fabric" ] && [ "$BOOTED" -eq 1 ] && [ -d /jar-cache ] && [ ! -d "$JAR_CACHE_KEY" ] \
    && [ -f ".fabric/server/${MC_VERSION}-server.jar" ]; then
   STAGE="${JAR_CACHE_KEY}.tmp.$$"
   mkdir -p "${STAGE}/server"
