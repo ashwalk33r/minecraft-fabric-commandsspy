@@ -43,11 +43,18 @@ esac
 
 LOADER="${LOADER:-fabric}"
 case "$LOADER" in
-  fabric|quilt) ;;
-  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt" >&2; exit 1 ;;
+  fabric|quilt|forge) ;;
+  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge" >&2; exit 1 ;;
 esac
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
+# Forge's analogue of Fabric's meta API. FORGE_BUILD pins a build explicitly;
+# empty means "ask the feed for <mc>-recommended, else <mc>-latest".
+FORGE_PROMOTIONS_URL="${FORGE_PROMOTIONS_URL:-https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json}"
+FORGE_BUILD="${FORGE_BUILD:-}"
+# The installer is a desktop-JDK tool, run on the HOST side (see below), so it
+# is independent of the server container's era Java floor.
+FORGE_INSTALL_JDK="${FORGE_INSTALL_JDK:-21}"
 
 : "${REPO_ROOT:?REPO_ROOT must be set}"
 : "${MOD_JAR_121:?MOD_JAR_121 must be set}"
@@ -55,8 +62,16 @@ QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
 : "${MOD_JAR_114:?MOD_JAR_114 must be set}"
 : "${MOD_JAR_26:?MOD_JAR_26 must be set}"
 
-_mod_jar_var="MOD_JAR_${JAR_FAMILY}"
-MOD_JAR="${!_mod_jar_var}"
+if [ "$LOADER" = "forge" ]; then
+  # Phase-1 spike: ONE Forge jar, no band routing. Measuring how far its
+  # Minecraft range stretches (risk R1) is the point, so every version in a
+  # forge run deliberately gets the same jar.
+  : "${MOD_JAR_FORGE:?MOD_JAR_FORGE must be set when LOADER=forge}"
+  MOD_JAR="$MOD_JAR_FORGE"
+else
+  _mod_jar_var="MOD_JAR_${JAR_FAMILY}"
+  MOD_JAR="${!_mod_jar_var}"
+fi
 : "${E2E_LOG_DIR:=build/e2e-logs}"
 : "${E2E_RESULT_DIR:=build/e2e-results}"
 : "${E2E_RUN_ID:=manual}"
@@ -67,8 +82,8 @@ MOD_JAR="${!_mod_jar_var}"
 : "${E2E_JAR_CACHE:=}"
 
 BASE_KEY="$VERSION"
-if [ "$LOADER" = "quilt" ]; then
-  BASE_KEY="${BASE_KEY}-quilt"
+if [ "$LOADER" != "fabric" ]; then
+  BASE_KEY="${BASE_KEY}-${LOADER}"
 fi
 if [ -n "$JAVA_OVERRIDE" ]; then
   JAVA_VERSION="$JAVA_OVERRIDE"
@@ -105,11 +120,11 @@ fi
 # this leaves a FAIL on disk, which is exactly what we want.
 printf 'E2E %s java%s FAIL runner-died\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
 
-QUILT_TMP_DIR=""
+PREINSTALL_TMP_DIR=""
 # shellcheck disable=SC2329 # invoked via the trap below, not directly
 cleanup() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  [ -n "$QUILT_TMP_DIR" ] && rm -rf "$QUILT_TMP_DIR"
+  [ -n "$PREINSTALL_TMP_DIR" ] && rm -rf "$PREINSTALL_TMP_DIR"
   return 0
 }
 trap cleanup EXIT INT TERM
@@ -120,14 +135,15 @@ trap cleanup EXIT INT TERM
 # container. Populates the same host-side cache the Fabric path already
 # uses (or a per-run temp dir when caching is disabled), then bind-mounts
 # the result read-only into the server container below.
-QUILT_MOUNT_ARGS=""
+PREINSTALL_MOUNT_ARGS=""
+FORGE_EXPECT_REFUSED=0
 if [ "$LOADER" = "quilt" ]; then
   QUILT_CACHE_KEY="quilt-${VERSION}-loader${QUILT_LOADER_VERSION}-installer${QUILT_INSTALLER_VERSION}"
   if [ -n "$E2E_JAR_CACHE" ]; then
     QUILT_INSTALL_DIR="${E2E_JAR_CACHE}/${QUILT_CACHE_KEY}"
   else
-    QUILT_TMP_DIR="$(mktemp -d)"
-    QUILT_INSTALL_DIR="$QUILT_TMP_DIR"
+    PREINSTALL_TMP_DIR="$(mktemp -d)"
+    QUILT_INSTALL_DIR="$PREINSTALL_TMP_DIR"
   fi
   mkdir -p "$QUILT_INSTALL_DIR"
   # quilt-server-launch.jar is a THIN jar (Main-Class + a relative
@@ -159,7 +175,76 @@ if [ "$LOADER" = "quilt" ]; then
       exit 1
     fi
   fi
-  QUILT_MOUNT_ARGS="-v ${QUILT_INSTALL_DIR}:/quilt-preinstalled:ro"
+  PREINSTALL_MOUNT_ARGS="-v ${QUILT_INSTALL_DIR}:/quilt-preinstalled:ro"
+fi
+
+# Forge path: same host-side-install trick, different installer. Forge has no
+# launcher jar to download — `--installServer` materialises a whole server tree
+# (libraries/, the vanilla jar, and a `unix_args.txt` @argfile), which is then
+# cached and bind-mounted read-only exactly like Quilt's.
+if [ "$LOADER" = "forge" ]; then
+  if [ -z "$FORGE_BUILD" ]; then
+    PROMOS="$(curl -fsSL "$FORGE_PROMOTIONS_URL" || true)"
+    for _channel in recommended latest; do
+      # `|| true`: not every Minecraft version has a -recommended promotion (1.21
+      # has only -latest), and under `set -e` a failing grep in a command
+      # substitution kills this script outright — silently, before it can write a
+      # verdict. Found the hard way; the fallback loop only works if it can fail.
+      FORGE_BUILD="$(printf '%s' "$PROMOS" \
+        | grep -oE "\"${VERSION}-${_channel}\" *: *\"[^\"]+\"" \
+        | grep -oE '[^"]+"$' | tr -d '"' | head -1 || true)"
+      [ -n "$FORGE_BUILD" ] && break
+    done
+  fi
+  if [ -z "$FORGE_BUILD" ]; then
+    printf 'E2E %s java%s FAIL no-forge-build-for-version\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+    echo "[e2e] <- FAIL Minecraft $VERSION: Forge publishes no build for this version"
+    exit 1
+  fi
+  echo "[e2e] Forge build for Minecraft $VERSION: $FORGE_BUILD"
+
+  # The spike jar's mods.toml declares minecraft [1.20.6,1.21.6) — see
+  # forge/gradle.properties for why those exact bounds, and keep the two in
+  # step. Outside the range Forge MUST refuse to load the mod: below 1.20.6 the
+  # runtime is SRG-mapped, so this jar's official-name calls resolve to nothing
+  # and the server dies on the FIRST command executed. A metadata string is the
+  # only thing preventing that, so the harness asserts the refusal rather than
+  # trusting it.
+  case "$VERSION" in
+    1.20.6|1.21|1.21.1|1.21.2|1.21.3|1.21.4|1.21.5) ;;
+    *) FORGE_EXPECT_REFUSED=1 ;;
+  esac
+
+  FORGE_CACHE_KEY="forge-${VERSION}-${FORGE_BUILD}"
+  if [ -n "$E2E_JAR_CACHE" ]; then
+    FORGE_INSTALL_DIR="${E2E_JAR_CACHE}/${FORGE_CACHE_KEY}"
+  else
+    PREINSTALL_TMP_DIR="$(mktemp -d)"
+    FORGE_INSTALL_DIR="$PREINSTALL_TMP_DIR"
+  fi
+  mkdir -p "$FORGE_INSTALL_DIR"
+  if [ -d "${FORGE_INSTALL_DIR}/libraries" ]; then
+    echo "[e2e] Forge install cache HIT for Minecraft $VERSION (build $FORGE_BUILD)"
+  else
+    echo "[e2e] Installing Forge server for Minecraft $VERSION (build $FORGE_BUILD)..."
+    FORGE_STAGE_DIR="$(mktemp -d)"
+    FORGE_INSTALLER_URL="https://maven.minecraftforge.net/net/minecraftforge/forge/${VERSION}-${FORGE_BUILD}/forge-${VERSION}-${FORGE_BUILD}-installer.jar"
+    # --user: same host-ownership reason as the Quilt block above.
+    if docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        -v "${FORGE_STAGE_DIR}:/out" \
+        "eclipse-temurin:${FORGE_INSTALL_JDK}-jdk-jammy" \
+        sh -c "cd /out && curl -fsSL '${FORGE_INSTALLER_URL}' -o /tmp/installer.jar && java -jar /tmp/installer.jar --installServer /out"; then
+      cp -R "${FORGE_STAGE_DIR}/." "$FORGE_INSTALL_DIR/"
+      rm -rf "$FORGE_STAGE_DIR"
+    else
+      rm -rf "$FORGE_STAGE_DIR"
+      printf 'E2E %s java%s FAIL forge-install-failed\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+      echo "[e2e] <- FAIL Minecraft $VERSION: Forge install failed"
+      exit 1
+    fi
+  fi
+  PREINSTALL_MOUNT_ARGS="-v ${FORGE_INSTALL_DIR}:/forge-preinstalled:ro"
 fi
 
 echo "[e2e] -> starting Minecraft $VERSION on java $JAVA_VERSION (container $CONTAINER_NAME)"
@@ -172,9 +257,9 @@ if [ -n "$E2E_JAR_CACHE" ]; then
   mkdir -p "$E2E_JAR_CACHE"
   set -- -v "${E2E_JAR_CACHE}:/jar-cache"
 fi
-if [ -n "$QUILT_MOUNT_ARGS" ]; then
-  # shellcheck disable=SC2086 # QUILT_MOUNT_ARGS is a "-v host:container:ro" pair; word splitting is the point
-  set -- "$@" $QUILT_MOUNT_ARGS
+if [ -n "$PREINSTALL_MOUNT_ARGS" ]; then
+  # shellcheck disable=SC2086 # PREINSTALL_MOUNT_ARGS is a "-v host:container:ro" pair; word splitting is the point
+  set -- "$@" $PREINSTALL_MOUNT_ARGS
 fi
 
 # NOTE: no -p/--publish. RCON is reached from inside the container over
@@ -186,6 +271,7 @@ if docker run --rm \
     -e BOOT_TIMEOUT="$BOOT_TIMEOUT" \
     -e PLAYER_PHASE="$PLAYER_PHASE" \
     -e LOADER="$LOADER" \
+    -e FORGE_EXPECT_REFUSED="$FORGE_EXPECT_REFUSED" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
     "$@" \
     "$IMAGE" 2>&1 | tee "$LOG_FILE" | sed -u "s/^/[$KEY] /"; then

@@ -130,3 +130,71 @@ The default `VERSIONS` in the Makefile samples the matrix:
   jar; their one distinguishing property is the older `Recon` RCON spelling
   (see [e2e-harness.md](e2e-harness.md)). Suspect the bottom of the range?
   `make e2e VERSIONS="1.14.4 1.15.2"`.
+
+## Forge: a fifth jar, narrower by construction
+
+Issue #23 phase 1 adds ONE Forge jar, `commandsspy-<ver>+mc1.21.x-forge.jar`,
+built by a separate Gradle project in `forge/` (ForgeGradle 7, its own
+`settings.gradle`/`build.gradle`/`gradle.properties`) that is not part of the
+root build — `make build` still produces exactly the four jars above; the
+Forge jar is `make build-forge`, on demand. It compiles the same shared core
+from one copy (`sourceSets.main.java.srcDir '../src/main/java'`), against
+Minecraft 1.21.1 / Forge 52.1.16, Java 21 toolchain.
+
+Forge needs no Mixin: `forge/src/main/java/.../CommandsSpyForge.java`
+registers a `net.minecraftforge.event.CommandEvent` listener on
+`MinecraftForge.EVENT_BUS` instead. `CommandEvent` fires inside
+`Commands#performCommand` — the same call site the Fabric mixins inject
+into — carrying the same `ParseResults`; the raw command is recovered as
+`event.getParseResults().getReader().getString()`, measured byte-identical
+to what the mixins receive (every existing log-literal assertion passed
+unchanged).
+
+### Measured range
+
+Booted as a real Forge dedicated server in the e2e harness with the full
+assertion set, per Minecraft version. Measured with `minecraft_range`
+temporarily widened to `[1.20.3,1.21.6)` so Forge's own metadata gate would
+not be what limited the answer; the shipped range is the narrower one this
+table produced.
+
+| Minecraft | Forge build | Result |
+|---|---|---|
+| 1.20.4 | 49.2.0 | boots, banner logs, then the first executed command throws `NoSuchMethodError: CommandSourceStack.getEntity()` and the server crashes |
+| 1.20.5 | — | Forge publishes no build for 1.20.5 at all |
+| 1.20.6 | 50.2.0 | PASS |
+| 1.21 | 51.0.33 | PASS |
+| 1.21.1 | 52.1.0 | PASS (compile target) |
+| 1.21.3 | 53.1.0 | PASS |
+| 1.21.4 | 54.1.14 | PASS |
+| 1.21.5 | 55.1.0 | PASS |
+
+One jar spans Minecraft **1.20.6–1.21.5**: six Minecraft versions across six
+consecutive Forge branches (50, 51, 52, 53, 54, 55). Shipped `mods.toml`
+declares `minecraft = [1.20.6,1.21.6)`, `forge`/`loaderVersion = [50,)`.
+
+### Why that range and not more
+
+`javap` on the built jar shows zero SRG member names (`m_xxxxx_`) — only
+plain Mojang official names (`CommandSourceStack.getEntity`,
+`CommandSourceStack.getTextName`, `ServerPlayer.getName`,
+`Component.getString`), plus brigadier and Forge API classes, which are
+never obfuscated. Forge ships Mojang official mappings at runtime from
+Minecraft 1.20.5 onward; within that era Forge has the same cross-version
+member stability Fabric gets from intermediary. Below 1.20.5 the Forge
+runtime is SRG-mapped, which is exactly why 1.20.4 fails.
+
+- **1.20.6 is a hard floor**, not conservatism.
+- **`<1.21.6` is declared, not measured**: Forge's EventBus 6 -> 7 API break
+  lands between 1.21.5 and 1.21.8 (`MinecraftForge.EVENT_BUS.addListener` ->
+  `CommandEvent.BUS.addListener`; `Event` -> `MutableEvent` + `Cancellable`)
+  and needs a second entrypoint variant.
+- A sub-1.20.5 Forge jar would need ForgeGradle's separate
+  `net.minecraftforge.renamer` reobfuscation step, whose own cross-version
+  range is unmeasured. Not supported: every Forge era outside
+  1.20.6–1.21.5, including 1.16.5 and 1.20.1 — the largest legacy Forge
+  server bases — which would require that unmeasured reobfuscated path.
+
+For calibration: the Fabric mc121 jar covers 1.20.3–1.21.x (~13 versions).
+Forge's era simply started later; both jars are era-maximal for their
+loader.

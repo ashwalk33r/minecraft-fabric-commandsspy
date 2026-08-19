@@ -38,6 +38,11 @@ Verdict line grammar (the final line of container output is authoritative):
   `player-command-not-logged`, `player-misattributed`, `boot-failed`.
   `scripts/e2e-run-one.sh` adds `below-java-floor-<n>` for a JVM below the
   version's floor.
+- `E2E <version> PASS forge-out-of-range-refused-as-expected` — reachable
+  only when `FORGE_EXPECT_REFUSED=1` (a Forge leg outside the jar's declared
+  Minecraft range): Forge refused the mod (`needs language provider
+  javafml`) and no `[CommandsSpy] [` line was ever logged. See "Forge
+  server install" below.
 
 The player assertions are a positive/negative pair: player1's `/list` must be
 attributed to player1, and player2 (who sent nothing) must appear in **zero**
@@ -101,6 +106,50 @@ assertions, all of which are loader-agnostic. Default pins:
 hardcoded in `scripts/e2e-run-one.sh`, mirroring how the Fabric harness's
 own `LOADER_VERSION`/`INSTALLER_VERSION` defaults live in
 `scripts/e2e-entrypoint.sh` rather than in `gradle.properties`).
+
+## Forge server install
+
+`LOADER` accepts `fabric|quilt|forge` (Makefile, `scripts/e2e-run-one.sh`,
+`scripts/e2e-entrypoint.sh`). Forge build resolution reads
+`promotions_slim.json` and prefers `<mc>-recommended`, falling back to
+`<mc>-latest` when no recommended build exists for that Minecraft version
+(true for 1.21, which ships only `-latest`). The resolved installer,
+`maven.minecraftforge.net/.../forge-<mc>-<build>-installer.jar`, is run
+host-side — `java -jar installer.jar --installServer` inside a one-off
+`eclipse-temurin:21-jdk-jammy` container — the same host-side-install trick
+the Quilt path above already uses. Output is cached under `E2E_JAR_CACHE`
+as `forge-<mc>-<build>` and bind-mounted read-only into the server
+container at `/forge-preinstalled`.
+
+`SERVER_LAUNCH_JAR` is gone, replaced by `SERVER_LAUNCH_ARGS`. This is a
+real refactor, not a new branch: Forge is neither a Fabric fat jar nor a
+Quilt thin launch jar. 1.17+ installs
+`libraries/net/minecraftforge/forge/<mc>-<build>/unix_args.txt`, launched as
+`java <flags> @<argfile> nogui`; <=1.16.5 instead produces a runnable
+`forge-<mc>-<build>.jar`. The loader-varying thing had to become the whole
+launch argument list, not just a jar name.
+
+Forge legs run with `-Xms1G -Xmx1G` instead of the 512M tuned for
+vanilla+Fabric — Forge's ModLauncher/transformer stack does not fit in
+512M. The `mixin-not-applied` assertion is skipped for Forge: there is no
+Mixin on the Forge side (a `CommandEvent` listener on
+`MinecraftForge.EVENT_BUS`, not a Mixin injection), so the command-logged
+assertions are what prove the hook is live. Every other assertion carries
+over unchanged.
+
+An out-of-range GUARD leg exercises the boundary directly:
+`scripts/e2e-run-one.sh` sets `FORGE_EXPECT_REFUSED=1` for any Minecraft
+version outside the jar's declared range, and `scripts/e2e-entrypoint.sh`
+then asserts (a) Forge refused the mod (`needs language provider javafml`)
+and (b) no `[CommandsSpy] [` line was ever logged — verdict `PASS
+forge-out-of-range-refused-as-expected`. A metadata string is the only
+thing standing between a user on Forge <=1.20.4 and a server that dies
+mid-command, and an unasserted guard is not a guard.
+
+Also fixed while adding this leg: a `set -e` trap where a failing `grep`
+inside a command substitution silently killed `scripts/e2e-run-one.sh`
+before it could write a verdict — hit on Minecraft 1.21, which has no
+`-recommended` promotion.
 
 ## Routing drift protection
 

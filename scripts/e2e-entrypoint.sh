@@ -10,6 +10,9 @@ RCON_PORT="25575"
 # PLAYER_PHASE=1 runs the baked-in Go bot phase; 0 = console+RCON only.
 PLAYER_PHASE="${PLAYER_PHASE:-0}"
 LOADER="${LOADER:-fabric}"
+# 1 = this Minecraft version is OUTSIDE the Forge jar's declared range and Forge
+# is expected to refuse the mod. Decided by scripts/e2e-run-one.sh.
+FORGE_EXPECT_REFUSED="${FORGE_EXPECT_REFUSED:-0}"
 
 cd /mc-server
 
@@ -33,8 +36,8 @@ if [ "$LOADER" = "fabric" ]; then
     echo "[e2e] Downloading Fabric server launcher for Minecraft $MC_VERSION (loader $LOADER_VERSION, installer $INSTALLER_VERSION)"
     curl -fsSL "$LAUNCHER_URL" -o fabric-server-launch.jar
   fi
-  SERVER_LAUNCH_JAR="fabric-server-launch.jar"
-else
+  SERVER_LAUNCH_ARGS="-jar fabric-server-launch.jar"
+elif [ "$LOADER" = "quilt" ]; then
   # Quilt: the host (scripts/e2e-run-one.sh) already ran quilt-installer
   # (it needs Java 17+, which this container may not have — mc114 runs
   # Java 8) and bind-mounted the result read-only. Copy the whole tree in —
@@ -42,7 +45,22 @@ else
   # at a relative libraries/ dir, not a fat jar.
   echo "[e2e] Copying pre-installed Quilt server for Minecraft $MC_VERSION..."
   cp -R /quilt-preinstalled/. .
-  SERVER_LAUNCH_JAR="quilt-server-launch.jar"
+  SERVER_LAUNCH_ARGS="-jar quilt-server-launch.jar"
+else
+  # Forge: same host-side-install trick as Quilt (the installer wants a modern
+  # JDK), but Forge is NEITHER a fat jar NOR a thin jar — 1.17+ installs a
+  # `libraries/.../unix_args.txt` @argfile holding the module path and main
+  # class, which is why the loader-varying thing here is the whole launch
+  # ARGUMENT LIST and not a jar filename.
+  echo "[e2e] Copying pre-installed Forge server for Minecraft $MC_VERSION..."
+  cp -R /forge-preinstalled/. .
+  FORGE_ARGS_FILE="$(find libraries/net/minecraftforge/forge -name unix_args.txt 2>/dev/null | head -1)"
+  if [ -n "$FORGE_ARGS_FILE" ]; then
+    SERVER_LAUNCH_ARGS="@${FORGE_ARGS_FILE}"
+  else
+    # <=1.16.5 layout: a single runnable forge-<mc>-<build>.jar, no argfile.
+    SERVER_LAUNCH_ARGS="-jar $(find . -maxdepth 1 -name 'forge-*.jar' | head -1)"
+  fi
 fi
 
 if [ -f "/tmp/mod.jar" ]; then
@@ -87,10 +105,16 @@ EOF
 # Boot the server with stdin attached to a fifo so we can send console commands
 # after it finishes starting up.
 mkfifo console.in
-echo "[e2e] Starting Fabric server for Minecraft $MC_VERSION..."
+echo "[e2e] Starting $LOADER server for Minecraft $MC_VERSION..."
 # Intentionally NOT using -XX:+AlwaysPreTouch: it front-loads page faulting and
 # would increase time-to-"Done", the metric being optimized.
-JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx512M -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
+# 512M is tuned for vanilla+Fabric; Forge's ModLauncher/transformer stack does
+# not fit in it, so that leg gets its own floor.
+if [ "$LOADER" = "forge" ]; then
+  JAVA_FLAGS="${JAVA_FLAGS:--Xms1G -Xmx1G -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
+else
+  JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx512M -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
+fi
 # The fifo is held open read-write on fd 3 and handed to java as stdin directly.
 # A `tail -f console.in |` pipeline here is a trap: tail never exits, so a
 # crashed java would block this script forever. With fd 3, $! is `timeout`'s
@@ -98,8 +122,8 @@ JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx512M -XX:+UseSerialGC -XX:TieredStopAtLev
 # this leaves behind on a hard kill is harmless: the whole container, and
 # everything in it, is torn down the moment this script (its PID 1) exits.
 exec 3<>console.in
-# shellcheck disable=SC2086 # JAVA_FLAGS is a whitespace-separated flag list; word splitting is the point
-timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS -jar "$SERVER_LAUNCH_JAR" nogui <&3 > server.log 2>&1 &
+# shellcheck disable=SC2086 # both are whitespace-separated arg lists; word splitting is the point
+timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS $SERVER_LAUNCH_ARGS nogui <&3 > server.log 2>&1 &
 SERVER_PID=$!
 
 BOOTED=0
@@ -170,6 +194,35 @@ else
   LOG_FILE="server.log"
 fi
 
+# Out-of-range guard leg: the assertions below all assume the mod RAN. Here the
+# whole point is that it must not have, so this path has its own two and returns
+# its own verdict. An unasserted guard is not a guard — this leg is what fails
+# the day someone widens mods.toml's range back over the SRG-runtime era.
+if [ "$FORGE_EXPECT_REFUSED" = "1" ]; then
+  echo "[e2e] Assertion results (Forge out-of-range guard leg):"
+  GUARD_FAILURES=""
+  if grep -q 'needs language provider javafml' "$LOG_FILE"; then
+    echo "  [PASS] Forge refused the mod: $MC_VERSION is outside its declared minecraft range"
+  else
+    echo "  [FAIL] Forge did NOT refuse the mod on $MC_VERSION — mods.toml no longer guards the SRG-runtime era"
+    GUARD_FAILURES="${GUARD_FAILURES}forge-out-of-range-not-refused,"
+  fi
+  if grep -q '\[CommandsSpy\] \[' "$LOG_FILE"; then
+    echo "  [FAIL] the mod logged a command on $MC_VERSION, where its Minecraft calls do not resolve"
+    GUARD_FAILURES="${GUARD_FAILURES}forge-out-of-range-executed,"
+  else
+    echo "  [PASS] no [CommandsSpy] line: the mod never ran"
+  fi
+  echo "[e2e] Full contents of $LOG_FILE:"
+  cat "$LOG_FILE" || true
+  if [ -z "$GUARD_FAILURES" ]; then
+    echo "E2E ${MC_VERSION} PASS forge-out-of-range-refused-as-expected"
+    exit 0
+  fi
+  echo "E2E ${MC_VERSION} FAIL ${GUARD_FAILURES%,}"
+  exit 1
+fi
+
 # RCON source name: 'Recon' <1.16, 'Rcon' >=1.16 — exact literal on purpose.
 # See docs/e2e-harness.md.
 case "$MC_VERSION" in
@@ -208,8 +261,10 @@ elif ! grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
 fi
 
 # Two phrasings, era-exact: older Mixin says "was not found", modern Mixin
-# "could not find any targets matching".
-if grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then
+# "could not find any targets matching". Forge has no Mixin — it hooks
+# CommandEvent — so there is no injection to check; the command-logged
+# assertions below are what prove the hook is live there.
+if [ "$LOADER" != "forge" ] && grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then
   FAILURES="${FAILURES}mixin-not-applied,"
 fi
 
@@ -242,7 +297,8 @@ echo "[e2e] Assertion results:"
 if [ "$QUILT_ENTRYPOINT_GAP" = "1" ]; then
   if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18 entrypoint gap has closed upstream — update docs/version-matrix.md and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18: entrypoint banner absent as expected (mixins still asserted below)"; fi
 elif grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [PASS] mod loaded (Loading CommandsSpy)"; else echo "  [FAIL] mod not loaded (Loading CommandsSpy)"; fi
-if grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
+if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandEvent, no Mixin to apply";
+elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
 if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
 if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
 if [ "$PLAYER_PHASE" = "1" ]; then

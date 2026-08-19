@@ -94,3 +94,7 @@ loaders (Quilt reads its bundled `quilt.mod.json`; Fabric reads
 `fabric.mod.json`) — every version above is e2e-tested against real server
 boots on both. Why the boundaries sit where they do:
 [docs/version-matrix.md](docs/version-matrix.md).
+
+A fifth, separately-built jar covers Forge, narrowly: Minecraft 1.20.6-1.21.5
+only (`make build-forge`, on demand). Details and why the range stops there:
+[docs/version-matrix.md](docs/version-matrix.md) -> "Forge: a fifth jar".
