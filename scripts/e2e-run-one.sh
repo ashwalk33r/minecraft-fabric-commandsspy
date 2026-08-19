@@ -38,26 +38,33 @@ case "$VERSION" in
 esac
 
 # Forge routing — version-only, this case statement is the single home for
-# which of the three Forge jars (legacy/modern/eventbus7) a version maps to,
-# computed unconditionally (cheap, LOADER-independent) so both the probe below
-# and the LOADER=forge runtime path further down read the same values. Ranges
-# mirror forge/gradle.properties' minecraft_range_legacy/_modern/_eventbus7;
-# keep them in step. FORGE_KNOWN_GOOD_LEGACY/MODERN/EB7 are overridable for ad
-# hoc probing (e.g. widening one jar's declared range to measure how far the
-# underlying code actually stretches, independent of the mods.toml metadata
-# gate a real Forge run enforces separately). Sub-1.17 versions deliberately
-# fall through to modern: they are out of every jar's range (always refused),
-# and the 1.16.5 java-8 guard leg's refusal probe stays on the jar it has
-# always used.
+# which of the four Forge jars (mc116/legacy/modern/eventbus7) a version maps
+# to, computed unconditionally (cheap, LOADER-independent) so both the probe
+# below and the LOADER=forge runtime path further down read the same values.
+# Ranges mirror forge/gradle.properties' minecraft_range_mc116/_legacy/
+# _modern/_eventbus7; keep them in step. FORGE_KNOWN_GOOD_MC116/LEGACY/MODERN/
+# EB7 are overridable for ad hoc probing (e.g. widening one jar's declared
+# range to measure how far the underlying code actually stretches, independent
+# of the mods.toml metadata gate a real Forge run enforces separately).
+# 1.14/1.15 route to mc116 (the nearest jar, whose declared range they sit
+# just below) so their refusal guard probes the jar a user would actually try.
 case "$VERSION" in
+  1.14*|1.15*|1.16*)                                   FORGE_JAR_BAND=mc116 ;;
   1.17*|1.18*|1.19*|1.20|1.20.1|1.20.2|1.20.3|1.20.4)  FORGE_JAR_BAND=legacy ;;
   1.21.6|1.21.7|1.21.8|1.21.9|1.21.10|1.21.11|26*)     FORGE_JAR_BAND=eventbus7 ;;
   *)                                                   FORGE_JAR_BAND=modern ;;
 esac
+# 1.16.4 is deliberately ABSENT from the mc116 known-good list despite being
+# inside the jar's declared range: its whole Forge 35.x line predates the
+# ModLauncher fix for the JDK 8u321+ ManifestEntryVerifier change and cannot
+# boot ANY current JDK 8 (mod-independent; the mod itself passed the full
+# assertion set on a pre-8u321 JDK 8). See docs/version-matrix.md.
+FORGE_KNOWN_GOOD_MC116="${FORGE_KNOWN_GOOD_MC116:-1.14.4 1.15.2 1.16.1 1.16.2 1.16.3 1.16.5}"
 FORGE_KNOWN_GOOD_LEGACY="${FORGE_KNOWN_GOOD_LEGACY:-1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4}"
 FORGE_KNOWN_GOOD_MODERN="${FORGE_KNOWN_GOOD_MODERN:-1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5}"
 FORGE_KNOWN_GOOD_EB7="${FORGE_KNOWN_GOOD_EB7:-1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2}"
 case "$FORGE_JAR_BAND" in
+  mc116)     FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_MC116" ;;
   legacy)    FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_LEGACY" ;;
   eventbus7) FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_EB7" ;;
   *)         FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_MODERN" ;;
@@ -98,6 +105,7 @@ fi
 # resolved.
 if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
   case "$FORGE_JAR_BAND" in
+    mc116)  FLOOR_JAVA=8 ;;
     legacy) FLOOR_JAVA=17 ;;
     modern) FLOOR_JAVA=21 ;;
   esac
@@ -127,7 +135,9 @@ if [ "$LOADER" = "forge" ]; then
   : "${MOD_JAR_FORGE:?MOD_JAR_FORGE must be set when LOADER=forge}"
   : "${MOD_JAR_FORGE_LEGACY:?MOD_JAR_FORGE_LEGACY must be set when LOADER=forge}"
   : "${MOD_JAR_FORGE_EB7:?MOD_JAR_FORGE_EB7 must be set when LOADER=forge}"
+  : "${MOD_JAR_FORGE_MC116:?MOD_JAR_FORGE_MC116 must be set when LOADER=forge}"
   case "$FORGE_JAR_BAND" in
+    mc116)     MOD_JAR="$MOD_JAR_FORGE_MC116" ;;
     legacy)    MOD_JAR="$MOD_JAR_FORGE_LEGACY" ;;
     eventbus7) MOD_JAR="$MOD_JAR_FORGE_EB7" ;;
     *)         MOD_JAR="$MOD_JAR_FORGE" ;;
@@ -304,8 +314,9 @@ if [ "$LOADER" = "forge" ]; then
   fi
   echo "[e2e] Forge build for Minecraft $VERSION: $FORGE_BUILD"
 
-  # Each jar's mods.toml declares its own minecraft range -- modern
-  # [1.20.6,1.21.6), legacy [1.17.1,1.20.5), eventbus7 [1.21.6,26.3).
+  # Each jar's mods.toml declares its own minecraft range -- mc116
+  # [1.14,1.17), legacy [1.17.1,1.20.5), modern [1.20.6,1.21.6),
+  # eventbus7 [1.21.6,26.3).
   # Outside its own jar's range
   # Forge MUST refuse to load the mod: the selected jar's official-name
   # (modern) or SRG-name (legacy) calls would resolve to nothing on a
