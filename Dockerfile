@@ -29,9 +29,9 @@ RUN if [ "$BASE_VARIANT" = "alpine" ]; then \
 
 COPY --from=build /tools /usr/local/bin/tools
 
-WORKDIR /fabric-server
+WORKDIR /mc-server
 
-COPY scripts/e2e-entrypoint.sh /fabric-server/entrypoint.sh
-RUN chmod +x /fabric-server/entrypoint.sh
+COPY scripts/e2e-entrypoint.sh /mc-server/entrypoint.sh
+RUN chmod +x /mc-server/entrypoint.sh
 
-ENTRYPOINT ["/fabric-server/entrypoint.sh"]
+ENTRYPOINT ["/mc-server/entrypoint.sh"]

@@ -9,27 +9,39 @@ RCON_PASSWORD="e2etest"
 RCON_PORT="25575"
 # PLAYER_PHASE=1 runs the baked-in Go bot phase; 0 = console+RCON only.
 PLAYER_PHASE="${PLAYER_PHASE:-0}"
+LOADER="${LOADER:-fabric}"
 
-cd /fabric-server
+cd /mc-server
 
-# Mutable .fabric state is deliberately NOT cached — only immutable
-# downloads. See docs/e2e-harness.md.
-JAR_CACHE_KEY="/jar-cache/${MC_VERSION}-loader${LOADER_VERSION}-installer${INSTALLER_VERSION}"
+if [ "$LOADER" = "fabric" ]; then
+  # Mutable .fabric state is deliberately NOT cached — only immutable
+  # downloads. See docs/e2e-harness.md.
+  JAR_CACHE_KEY="/jar-cache/${MC_VERSION}-loader${LOADER_VERSION}-installer${INSTALLER_VERSION}"
 
-# Download the Fabric server launcher jar (bundles the loader + installer logic;
-# downloads/verifies the vanilla Minecraft server on first boot).
-LAUNCHER_URL="https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}/${LOADER_VERSION}/${INSTALLER_VERSION}/server/jar"
-if [ -f "${JAR_CACHE_KEY}/fabric-server-launch.jar" ] \
-   && [ -f "${JAR_CACHE_KEY}/server/${MC_VERSION}-server.jar" ]; then
-  echo "[e2e] Jar cache HIT for Minecraft $MC_VERSION (loader $LOADER_VERSION, installer $INSTALLER_VERSION) — skipping downloads"
-  cp "${JAR_CACHE_KEY}/fabric-server-launch.jar" fabric-server-launch.jar
-  # Pre-seed the launcher's own download target; it verifies the jar in
-  # place and skips the piston-data fetch.
-  mkdir -p .fabric/server
-  cp -R "${JAR_CACHE_KEY}/server/." .fabric/server/
+  # Download the Fabric server launcher jar (bundles the loader + installer logic;
+  # downloads/verifies the vanilla Minecraft server on first boot).
+  LAUNCHER_URL="https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}/${LOADER_VERSION}/${INSTALLER_VERSION}/server/jar"
+  if [ -f "${JAR_CACHE_KEY}/fabric-server-launch.jar" ] \
+     && [ -f "${JAR_CACHE_KEY}/server/${MC_VERSION}-server.jar" ]; then
+    echo "[e2e] Jar cache HIT for Minecraft $MC_VERSION (loader $LOADER_VERSION, installer $INSTALLER_VERSION) — skipping downloads"
+    cp "${JAR_CACHE_KEY}/fabric-server-launch.jar" fabric-server-launch.jar
+    # Pre-seed the launcher's own download target; it verifies the jar in
+    # place and skips the piston-data fetch.
+    mkdir -p .fabric/server
+    cp -R "${JAR_CACHE_KEY}/server/." .fabric/server/
+  else
+    echo "[e2e] Downloading Fabric server launcher for Minecraft $MC_VERSION (loader $LOADER_VERSION, installer $INSTALLER_VERSION)"
+    curl -fsSL "$LAUNCHER_URL" -o fabric-server-launch.jar
+  fi
+  SERVER_LAUNCH_JAR="fabric-server-launch.jar"
 else
-  echo "[e2e] Downloading Fabric server launcher for Minecraft $MC_VERSION (loader $LOADER_VERSION, installer $INSTALLER_VERSION)"
-  curl -fsSL "$LAUNCHER_URL" -o fabric-server-launch.jar
+  # Quilt: the host (scripts/e2e-run-one.sh) already ran quilt-installer
+  # (it needs Java 17+, which this container may not have — mc114 runs
+  # Java 8) and bind-mounted the result read-only. Just copy it in.
+  echo "[e2e] Copying pre-installed Quilt server for Minecraft $MC_VERSION..."
+  cp /quilt-preinstalled/quilt-server-launch.jar quilt-server-launch.jar
+  cp /quilt-preinstalled/server.jar server.jar
+  SERVER_LAUNCH_JAR="quilt-server-launch.jar"
 fi
 
 if [ -f "/tmp/mod.jar" ]; then
@@ -86,7 +98,7 @@ JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx512M -XX:+UseSerialGC -XX:TieredStopAtLev
 # everything in it, is torn down the moment this script (its PID 1) exits.
 exec 3<>console.in
 # shellcheck disable=SC2086 # JAVA_FLAGS is a whitespace-separated flag list; word splitting is the point
-timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS -jar fabric-server-launch.jar nogui <&3 > server.log 2>&1 &
+timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS -jar "$SERVER_LAUNCH_JAR" nogui <&3 > server.log 2>&1 &
 SERVER_PID=$!
 
 BOOTED=0
