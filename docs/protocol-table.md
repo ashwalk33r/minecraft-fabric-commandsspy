@@ -44,6 +44,7 @@ trigger.
 | 1.15.2 | 578 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.15.2` |
 | 1.16.5 | 754 | no | none | — | chat | 0x03 | 0x1F / 0x10 | 0x24 | md `pc/1.16.2` (alias) |
 | 1.17.1 | 756 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.17.1` |
+| 1.18, 1.18.1 | 757 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.18` |
 | 1.18.2 | 758 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.18.2` |
 | 1.19.2 | 760 | no | opt (+sig opt) | era-760 | chat_command | 0x04 | 0x20 / 0x12 | 0x25 | md `pc/1.19.2` |
 | 1.19.4 | 762 | no | opt | era-761 | chat_command | 0x04 | 0x23 / 0x12 | 0x28 | md `pc/1.19.4` |
