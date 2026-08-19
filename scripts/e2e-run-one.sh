@@ -6,14 +6,15 @@
 # missing file is treated as a failure. No failure can be lost.
 set -euo pipefail
 
-VERSION="${1:?usage: e2e-run-one.sh <minecraft-version> | --print-java|--print-routing <minecraft-version>}"
+VERSION="${1:?usage: e2e-run-one.sh <minecraft-version> | --print-java|--print-routing|--print-forge-routing <minecraft-version>}"
 
 # Probe modes: query the routing table and exit, before any env validation.
-#   --print-java     -> the era-correct Java floor        ("17")
-#   --print-routing  -> jar family and Java floor         ("1192 17")
+#   --print-java           -> the era-correct Java floor            ("17")
+#   --print-routing        -> jar family and Java floor             ("1192 17")
+#   --print-forge-routing  -> Forge jar band and expect-refused flag ("legacy 0")
 PROBE=""
 case "$VERSION" in
-  --print-java|--print-routing)
+  --print-java|--print-routing|--print-forge-routing)
     PROBE="$VERSION"
     VERSION="${2:?usage: e2e-run-one.sh $VERSION <minecraft-version>}"
     ;;
@@ -36,9 +37,36 @@ case "$VERSION" in
   *)                   FLOOR_JAVA=21; JAR_FAMILY=121 ;;
 esac
 
+# Forge routing — version-only, this case statement is the single home for
+# which of the two Forge jars (legacy/modern) a version maps to, computed
+# unconditionally (cheap, LOADER-independent) so both the probe below and the
+# LOADER=forge runtime path further down read the same values. Ranges mirror
+# forge/gradle.properties' minecraft_range_legacy/minecraft_range_modern;
+# keep the two in step. FORGE_KNOWN_GOOD_LEGACY/MODERN are overridable for ad
+# hoc probing (e.g. widening one jar's declared range to measure how far the
+# underlying code actually stretches, independent of the mods.toml metadata
+# gate a real Forge run enforces separately).
+case "$VERSION" in
+  1.17*|1.18*|1.19*|1.20|1.20.1|1.20.2|1.20.3|1.20.4) FORGE_JAR_BAND=legacy ;;
+  *)                                                  FORGE_JAR_BAND=modern ;;
+esac
+FORGE_KNOWN_GOOD_LEGACY="${FORGE_KNOWN_GOOD_LEGACY:-1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4}"
+FORGE_KNOWN_GOOD_MODERN="${FORGE_KNOWN_GOOD_MODERN:-1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5}"
+if [ "$FORGE_JAR_BAND" = "legacy" ]; then
+  FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_LEGACY"
+else
+  FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_MODERN"
+fi
+FORGE_EXPECT_REFUSED=0
+case " $FORGE_KNOWN_GOOD " in
+  *" $VERSION "*) ;;
+  *) FORGE_EXPECT_REFUSED=1 ;;
+esac
+
 case "$PROBE" in
-  --print-java)    echo "$FLOOR_JAVA"; exit 0 ;;
-  --print-routing) echo "$JAR_FAMILY $FLOOR_JAVA"; exit 0 ;;
+  --print-java)          echo "$FLOOR_JAVA"; exit 0 ;;
+  --print-routing)       echo "$JAR_FAMILY $FLOOR_JAVA"; exit 0 ;;
+  --print-forge-routing) echo "$FORGE_JAR_BAND $FORGE_EXPECT_REFUSED"; exit 0 ;;
 esac
 
 LOADER="${LOADER:-fabric}"
@@ -67,11 +95,14 @@ if [ "$LOADER" = "neoforge" ]; then
 fi
 
 if [ "$LOADER" = "forge" ]; then
-  # Phase-1 spike: ONE Forge jar, no band routing. Measuring how far its
-  # Minecraft range stretches (risk R1) is the point, so every version in a
-  # forge run deliberately gets the same jar.
+  # FORGE_JAR_BAND was computed above, in the single-home routing table.
   : "${MOD_JAR_FORGE:?MOD_JAR_FORGE must be set when LOADER=forge}"
-  MOD_JAR="$MOD_JAR_FORGE"
+  : "${MOD_JAR_FORGE_LEGACY:?MOD_JAR_FORGE_LEGACY must be set when LOADER=forge}"
+  if [ "$FORGE_JAR_BAND" = "legacy" ]; then
+    MOD_JAR="$MOD_JAR_FORGE_LEGACY"
+  else
+    MOD_JAR="$MOD_JAR_FORGE"
+  fi
 else
   _mod_jar_var="MOD_JAR_${JAR_FAMILY}"
   MOD_JAR="${!_mod_jar_var}"
@@ -178,7 +209,6 @@ trap cleanup EXIT INT TERM
 # uses (or a per-run temp dir when caching is disabled), then bind-mounts
 # the result read-only into the server container below.
 PREINSTALL_MOUNT_ARGS=""
-FORGE_EXPECT_REFUSED=0
 if [ "$LOADER" = "quilt" ]; then
   QUILT_CACHE_KEY="quilt-${VERSION}-loader${QUILT_LOADER_VERSION}-installer${QUILT_INSTALLER_VERSION}"
   if [ -n "$E2E_JAR_CACHE" ]; then
@@ -245,17 +275,14 @@ if [ "$LOADER" = "forge" ]; then
   fi
   echo "[e2e] Forge build for Minecraft $VERSION: $FORGE_BUILD"
 
-  # The spike jar's mods.toml declares minecraft [1.20.6,1.21.6) — see
-  # forge/gradle.properties for why those exact bounds, and keep the two in
-  # step. Outside the range Forge MUST refuse to load the mod: below 1.20.6 the
-  # runtime is SRG-mapped, so this jar's official-name calls resolve to nothing
-  # and the server dies on the FIRST command executed. A metadata string is the
-  # only thing preventing that, so the harness asserts the refusal rather than
-  # trusting it.
-  case "$VERSION" in
-    1.20.6|1.21|1.21.1|1.21.2|1.21.3|1.21.4|1.21.5) ;;
-    *) FORGE_EXPECT_REFUSED=1 ;;
-  esac
+  # Each jar's mods.toml declares its own minecraft range -- modern
+  # [1.20.6,1.21.6), legacy [1.17.1,1.20.5). Outside its own jar's range
+  # Forge MUST refuse to load the mod: the selected jar's official-name
+  # (modern) or SRG-name (legacy) calls would resolve to nothing on a
+  # runtime whose mapping shape does not match, and the server would die on
+  # the FIRST command executed. A metadata string is the only thing
+  # preventing that, so the harness asserts the refusal (FORGE_EXPECT_REFUSED,
+  # computed above in the single-home routing table) rather than trusting it.
 
   FORGE_CACHE_KEY="forge-${VERSION}-${FORGE_BUILD}"
   if [ -n "$E2E_JAR_CACHE" ]; then

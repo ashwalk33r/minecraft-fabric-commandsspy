@@ -162,6 +162,26 @@ check "gate pair 26.2/java25/fabric" "1" \
 check "gate pair 26.2/java25/quilt" "1" \
       "$(grep -cF '{ mc: "26.2", java: "25", loader: "quilt" }' "$gate_yml")"
 
+# Probe 3a — LOADER=forge routing (legacy vs modern jar, and the
+# out-of-range refusal flag), via the --print-forge-routing probe. Offline:
+# the probe exits before any env validation, network call or Docker run.
+echo "== LOADER=forge routing (legacy vs modern, refusal flag)"
+# 1.19 is excluded (like the Fabric EXPECTED table): the era case statement
+# treats it as globally unsupported before any probe runs, forge included.
+FORGE_LEGACY_VERSIONS="1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4"
+FORGE_MODERN_VERSIONS="1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5"
+FORGE_OUT_OF_RANGE_VERSIONS="1.14.4 1.15.2 1.16.5 1.20.5 1.21.6 1.21.11 26.1 26.2"
+for v in $FORGE_LEGACY_VERSIONS; do
+  check "forge-routing $v -> legacy, not refused" "legacy 0"         "$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
+done
+for v in $FORGE_MODERN_VERSIONS; do
+  check "forge-routing $v -> modern, not refused" "modern 0"         "$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
+done
+for v in $FORGE_OUT_OF_RANGE_VERSIONS; do
+  got="$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
+  check "forge-routing $v refused" "1" "${got##* }"
+done
+
 # Probe 3b — LOADER=neoforge. NeoForge publishes one version line per Minecraft
 # version (no Intermediary-equivalent stable mapping to ride), so exactly two
 # versions are supported and every other one must be REFUSED by name, never
