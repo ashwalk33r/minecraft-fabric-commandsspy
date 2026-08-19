@@ -17,6 +17,7 @@ var allKeys = []string{
 	"t0_java21", "t0_java25", "t0_java26",
 	"mc1192_java17", "mc1192_java21",
 	"mc114_java8", "mc114_java17", "mc114_java21",
+	"forge_java21", "forge_legacy_java17", "forge_legacy_guard_java8",
 }
 
 func runGrid(t *testing.T, repoRoot, event, bands string) (string, map[string]string) {
@@ -76,9 +77,13 @@ var expected = map[string]map[string]int{
 	"mc114_java8":  {"pull_request": 3, "workflow_dispatch": 3},
 	"mc114_java17": {"pull_request": 2, "workflow_dispatch": 2},
 	"mc114_java21": {"pull_request": 2, "workflow_dispatch": 5},
+	// Forge bands: floor rows only, no coverage rows, no lean/full split.
+	"forge_java21":             {"pull_request": 3, "workflow_dispatch": 3},
+	"forge_legacy_java17":      {"pull_request": 10, "workflow_dispatch": 10},
+	"forge_legacy_guard_java8": {"pull_request": 1, "workflow_dispatch": 1},
 }
 
-const allBands = "t0 mc1192 mc114"
+const allBands = "t0 mc1192 mc114 forge forge_legacy"
 
 func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 	_, out := runGrid(t, emptyRoot(t), "pull_request", allBands)
@@ -92,6 +97,11 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		"mc1192_java17": `["1.19.2","1.19.4","1.20.1","1.20.2"]`,
 		"mc114_java8":   `["1.14.4","1.15.2","1.16.5"]`,
 		"mc114_java17":  `["1.17.1","1.18.2"]`,
+		// Forge literals, formerly hand-listed in e2e.yml — byte-pinned so a
+		// coverage change is a deliberate edit here, not drift.
+		"forge_java21":             `["1.20.4","1.20.6","1.21.5"]`,
+		"forge_legacy_java17":      `["1.17.1","1.18","1.18.1","1.18.2","1.19.1","1.19.2","1.20.1","1.20.2","1.20.3","1.20.4"]`,
+		"forge_legacy_guard_java8": `["1.16.5"]`,
 	} {
 		if out[name] != want {
 			t.Errorf("%s = %s, want %s", name, out[name], want)
@@ -106,7 +116,8 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 		_, out := runGrid(t, emptyRoot(t), event, "")
 		for _, name := range []string{"t0_java21", "t0_java25", "t0_java26",
 			"mc1192_java17", "mc1192_java21",
-			"mc114_java8", "mc114_java17", "mc114_java21"} {
+			"mc114_java8", "mc114_java17", "mc114_java21",
+			"forge_java21", "forge_legacy_java17", "forge_legacy_guard_java8"} {
 			if got, ok := out[name]; !ok || got != "[]" {
 				t.Errorf("[%s] %s = %q, want the literal []", event, name, got)
 			}
@@ -115,7 +126,11 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 39, "workflow_dispatch": 68}
+	totals := map[string]int{"pull_request": 53, "workflow_dispatch": 82}
+	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
+	// caller job) + forge pairs (single-loader) + 8 fixed jobs.
+	// PR: 2*39 + 14 + 8 = 100. Dispatch: 2*68 + 14 + 8 = 158.
+	jobTotals := map[string]int{"pull_request": 100, "workflow_dispatch": 158}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -131,7 +146,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 		}
 		for _, line := range []string{
 			fmt.Sprintf("GATED_PAIRS=%d\n", totals[event]),
-			fmt.Sprintf("TOTAL_JOBS=%d\n", totals[event]+4),
+			fmt.Sprintf("TOTAL_JOBS=%d\n", jobTotals[event]),
 			fmt.Sprintf("EVENT_NAME=%s\n", event),
 		} {
 			if !strings.Contains(stdout, line) {
@@ -142,31 +157,42 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 }
 
 // 3. every option combination, both triggers
-// Totals are GATED PAIRS; whole-run job count = gated + 4 (build-jars,
-// unit-tests, and the two e2e-gate canaries). Run against an empty fixture
-// root so FORCE_BANDS alone decides.
+// Totals are GATED PAIRS; TOTAL_JOBS is what the workflow spawns: 2 caller
+// jobs per fabric pair (-fabric/-quilt), 1 per forge pair (single-loader),
+// plus 8 fixed jobs (build-jars, unit-tests, the 4 e2e-gate canaries, and
+// the 2 literal NeoForge jobs). Run against an empty fixture root so
+// FORCE_BANDS alone decides. The forge-less cases double as proof that
+// absent Forge bands emit [] and add zero pairs. Note the forge-without-
+// forge_legacy case: forge_java21 drops to 2 pairs because 1.20.4 is keyed
+// on the legacy band (it boots the legacy jar).
 func TestOptionCombinationTotals(t *testing.T) {
 	cases := []struct {
-		bands      string
-		lean, full int
+		bands              string
+		lean, full         int
+		leanJobs, fullJobs int
 	}{
-		{"", 18, 38},
-		{"t0", 26, 50},
-		{"t0 mc1192", 32, 58},
-		{"t0 mc1192 mc114", 39, 68},
+		{"", 18, 38, 44, 84},
+		{"t0", 26, 50, 60, 108},
+		{"t0 mc1192", 32, 58, 72, 124},
+		{"t0 mc1192 mc114", 39, 68, 86, 144},
+		{"t0 mc1192 mc114 forge", 41, 70, 88, 146},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 82, 100, 158},
 	}
 	for _, c := range cases {
-		for event, want := range map[string]int{"pull_request": c.lean, "workflow_dispatch": c.full} {
+		for event, want := range map[string][2]int{
+			"pull_request":      {c.lean, c.leanJobs},
+			"workflow_dispatch": {c.full, c.fullJobs},
+		} {
 			stdout, out := runGrid(t, emptyRoot(t), event, c.bands)
 			total := 0
 			for _, v := range out {
 				total += len(versionsOf(t, v))
 			}
-			if total != want {
-				t.Errorf("gated pairs [%s] bands=%q = %d, want %d", event, c.bands, total, want)
+			if total != want[0] {
+				t.Errorf("gated pairs [%s] bands=%q = %d, want %d", event, c.bands, total, want[0])
 			}
-			if !strings.Contains(stdout, fmt.Sprintf("TOTAL_JOBS=%d\n", want+4)) {
-				t.Errorf("TOTAL_JOBS [%s] bands=%q: want %d", event, c.bands, want+4)
+			if !strings.Contains(stdout, fmt.Sprintf("TOTAL_JOBS=%d\n", want[1])) {
+				t.Errorf("TOTAL_JOBS [%s] bands=%q: want %d", event, c.bands, want[1])
 			}
 		}
 	}
@@ -240,6 +266,44 @@ func TestBandDetection(t *testing.T) {
 		}
 		if want := `["1.17.1","1.18.2"]`; out["mc114_java17"] != want {
 			t.Errorf("mc114_java17 = %s, want %s", out["mc114_java17"], want)
+		}
+	})
+	t.Run("forge via range keys in forge/gradle.properties", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "forge/gradle.properties",
+			"minecraft_range_modern=[1.20.6,1.21.6)\nminecraft_range_legacy=[1.17.1,1.20.5)\n")
+		_, out := runGrid(t, root, "pull_request", "")
+		if want := `["1.20.4","1.20.6","1.21.5"]`; out["forge_java21"] != want {
+			t.Errorf("forge_java21 = %s, want %s", out["forge_java21"], want)
+		}
+		if got := versionsOf(t, out["forge_legacy_java17"]); len(got) != 10 {
+			t.Errorf("forge_legacy_java17 = %s, want 10 versions", out["forge_legacy_java17"])
+		}
+		if want := `["1.16.5"]`; out["forge_legacy_guard_java8"] != want {
+			t.Errorf("forge_legacy_guard_java8 = %s, want %s", out["forge_legacy_guard_java8"], want)
+		}
+	})
+	t.Run("forge modern-only range leaves the legacy rows empty", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "forge/gradle.properties", "minecraft_range_modern=[1.20.6,1.21.6)\n")
+		_, out := runGrid(t, root, "pull_request", "")
+		// 1.20.4 boots the legacy jar, so it must NOT appear without the
+		// legacy band.
+		if want := `["1.20.6","1.21.5"]`; out["forge_java21"] != want {
+			t.Errorf("forge_java21 = %s, want %s", out["forge_java21"], want)
+		}
+		for _, name := range []string{"forge_legacy_java17", "forge_legacy_guard_java8"} {
+			if out[name] != "[]" {
+				t.Errorf("%s = %s, want []", name, out[name])
+			}
+		}
+	})
+	t.Run("no forge/gradle.properties yields all Forge rows empty", func(t *testing.T) {
+		_, out := runGrid(t, t.TempDir(), "pull_request", "")
+		for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_legacy_guard_java8"} {
+			if out[name] != "[]" {
+				t.Errorf("%s = %s, want []", name, out[name])
+			}
 		}
 	})
 }

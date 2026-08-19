@@ -35,7 +35,16 @@ row's name. It also fails if any expected floor row is missing from the
 generator's output.
 
 Coverage rows (runs on newer Java than the floor) are intentionally not
-checked.
+checked. Forge rows are also not in `floorRows`: `--print-java` is the
+Fabric floor table, and the Forge jars carry their own bytecode floors.
+
+### TestGenMatrixForgeRowsAgreeWithForgeRouting
+
+The Forge analogue, against `--print-forge-routing` instead of
+`--print-java`: every version the generator emits in `forge_legacy_java17`
+must route "legacy 0"; `forge_java21` versions route "modern 0" except
+1.20.4 ("legacy 0" — the legacy jar's ceiling riding in the modern job);
+the 1.16.5 guard routes "modern 1" (outside both ranges, expect refused).
 
 ## How to run
 

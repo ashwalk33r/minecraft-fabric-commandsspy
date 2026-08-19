@@ -433,9 +433,11 @@ straight to Java 17 like every other 1.17.1+ target in this project, since
 
 ### Gate coverage
 
-`.github/workflows/e2e.yml`'s `e2e-forge-legacy-java17` job hand-lists every
-measured PASS version above plus the 1.16.5 guard leg — unlike the modern
-jar's three-leg floor/ceiling/guard job, the whole point of this range was
+`.github/workflows/e2e.yml`'s `e2e-forge-legacy-java17` job reads every
+measured PASS version above from `tools/gen_matrix.go`'s
+`forge_legacy_java17` output (the 1.16.5 guard leg from
+`forge_legacy_guard_java8`) — unlike the modern
+jar's edges-only job, the whole point of this range was
 proving SRG member-id stability *across* seven Forge major branches, so a
 floor+ceiling-only gate would not exercise the thing being measured.
 `scripts/e2e-run-one.sh` routes each Minecraft version to the legacy or
