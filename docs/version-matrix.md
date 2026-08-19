@@ -74,6 +74,15 @@ Which floors get the alpine base image vs. jammy, and why:
 - mc114: deliberately a high floor (>=0.19.3), the line verified to serve
   working server launchers all the way down to 1.14.4. Do not lower it.
 
+Quilt Loader natively loads a jar's `fabric.mod.json` — this project also
+ships a `quilt.mod.json` (same jar, both loaders) purely for an accurate
+platform badge, not because Quilt needs it to load the mod. All four eras
+declare the same Quilt Loader floor, `>=0.30.0`, and the same Java floor as
+their Fabric counterpart (Quilt Loader itself imposes no additional JVM
+floor at any era). This is asserted, not assumed: the e2e matrix runs every
+version in this file on both loaders (`LOADER=fabric`/`LOADER=quilt`); see
+[e2e-harness.md](e2e-harness.md) → "Quilt server install".
+
 ## Default e2e version list
 
 The default `VERSIONS` in the Makefile samples the matrix:

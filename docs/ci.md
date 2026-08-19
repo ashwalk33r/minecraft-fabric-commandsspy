@@ -60,7 +60,13 @@ before runner minutes are spent on the long tail.
    build costs 2 e2e jobs instead of the whole fan-out. `fail-fast` is off so
    both canaries always report.
 3. **Band stages** — one reusable submatrix (`e2e-stage.yml`) per
-   {band, Java} pair: mc121, mc26, T0 (1.20.3–1.20.6), mc1192, mc114.
+   {band, Java} pair: mc121, mc26, T0 (1.20.3–1.20.6), mc1192, mc114. Each
+   submatrix additionally crosses every version with a static
+   `loader: [fabric, quilt]` dimension inside `e2e-stage.yml` itself — the
+   loader axis is orthogonal to band/version generation
+   (`tools/gen_matrix.go` has no concept of it), so every `uses:` call site
+   below doubles automatically with no per-band edits. `e2e-gate`'s two
+   canary pairs become four the same way.
 
 Lean grid on `pull_request` (floor rows exhaustive, newest-Java coverage rows
 only at each band's ends), full cross-product on `workflow_dispatch`.

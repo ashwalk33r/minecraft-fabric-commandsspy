@@ -79,6 +79,29 @@ immutable downloads. The cache is populated only from a successfully booted
 server, atomically via stage-dir + `mv`, because parallel jobs race.
 Disposable: `rm -rf` it any time; `make e2e E2E_JAR_CACHE=` disables it.
 
+## Quilt server install
+
+`LOADER=quilt` (default `fabric`) swaps which server boots. Quilt's
+install tool, `quilt-installer`, requires a Java 17+ JVM to run — but some
+server containers in the matrix run Java 8 (the `mc114` band) or Java 11,
+so the install cannot happen inside the container under test. Instead
+`scripts/e2e-run-one.sh` runs it on the **host**, before starting the
+server container, via a one-off `eclipse-temurin:17-jre-jammy` container
+that downloads `quilt-installer` and runs
+`install server <version> <loader-version> --download-server`, producing
+`quilt-server-launch.jar` + `server.jar`. Those two files are cached under
+`E2E_JAR_CACHE` (key `quilt-<version>-loader<N>-installer<N>`, alongside
+the existing Fabric cache entries) and bind-mounted read-only into the
+server container at `/quilt-preinstalled`; `scripts/e2e-entrypoint.sh`'s
+`LOADER=quilt` branch just copies them into its working directory and
+launches `quilt-server-launch.jar` exactly like the Fabric path launches
+`fabric-server-launch.jar` — same console-fifo boot wait, same RCON/player
+assertions, all of which are loader-agnostic. Default pins:
+`QUILT_LOADER_VERSION=0.30.0`, `QUILT_INSTALLER_VERSION=0.15.1` (both
+hardcoded in `scripts/e2e-run-one.sh`, mirroring how the Fabric harness's
+own `LOADER_VERSION`/`INSTALLER_VERSION` defaults live in
+`scripts/e2e-entrypoint.sh` rather than in `gradle.properties`).
+
 ## Routing drift protection
 
 The version→jar/Java mapping lives in one executable home — the `case`
