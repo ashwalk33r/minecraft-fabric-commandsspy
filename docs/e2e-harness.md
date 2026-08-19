@@ -1,8 +1,10 @@
 # E2E harness
 
-Every supported Minecraft version boots as a real Fabric server in Docker,
-receives commands over console, RCON, and from a protocol-level player bot,
-and the log is asserted line by line. Entry points:
+Every supported Minecraft version boots as a real server in Docker — Fabric,
+Quilt, Forge or NeoForge, per the `LOADER` axis — receives commands over
+console, RCON, and from a protocol-level player bot, and the log is asserted
+line by line.
+Entry points:
 
 - `make e2e` — local dev: unbounded parallel fan-out over the default matrix.
 - `make e2e-ci` — same flow, bounded (`PARALLEL=4` default).
@@ -35,9 +37,14 @@ Verdict line grammar (the final line of container output is authoritative):
   only; reachable only on standalone `PLAYER_PHASE=0` runs.
 - `E2E <version> FAIL <code>,<code>,...` with codes: `mod-not-loaded`,
   `mixin-not-applied`, `console-command-not-logged`, `rcon-command-not-logged`,
-  `player-command-not-logged`, `player-misattributed`, `boot-failed`.
-  `scripts/e2e-run-one.sh` adds `below-java-floor-<n>` for a JVM below the
-  version's floor.
+  `player-command-not-logged`, `player-misattributed`, `boot-failed`,
+  `neoforge-install-failed`. `scripts/e2e-run-one.sh` adds
+  `below-java-floor-<n>` for a JVM below the version's floor,
+  `neoforge-unsupported-version` for a Minecraft version with no shipped
+  NeoForge line, and `mod-jar-missing` when the jar under test does not exist
+  (`docker run -v <missing path>` silently creates an empty directory and mounts
+  that, so without this check a build or path bug arrives disguised as
+  `mod-not-loaded` on a perfectly healthy server).
 - `E2E <version> PASS forge-out-of-range-refused-as-expected` — reachable
   only when `FORGE_EXPECT_REFUSED=1` (a Forge leg outside the jar's declared
   Minecraft range): Forge refused the mod (`needs language provider
@@ -150,6 +157,64 @@ Also fixed while adding this leg: a `set -e` trap where a failing `grep`
 inside a command substitution silently killed `scripts/e2e-run-one.sh`
 before it could write a verdict — hit on Minecraft 1.21, which has no
 `-recommended` promotion.
+
+## NeoForge server install
+
+`LOADER=neoforge` boots a real NeoForge server. Unlike Quilt this needs **no
+host-side install trick**: Quilt needed one because `quilt-installer` requires
+Java 17+ while the `mc114` band boots Java 8, but NeoForge never targets a
+Minecraft version below 1.20.2 and so never runs below Java 17 anyway. The whole
+install therefore happens inside the same container that runs the server, on the
+shape of the Fabric code path.
+
+`scripts/e2e-entrypoint.sh` downloads
+`neoforge-<ver>-installer.jar` from `maven.neoforged.net` and runs
+`--install-server .`. The installer is headless-safe, exits non-zero on failure,
+downloads the vanilla server jar itself, and needs only a **JRE** — no JDK, no
+`javac` — which is what the e2e images have. It produces a `libraries/` tree
+plus `run.sh`/`user_jvm_args.txt`.
+
+Launch is **not** `-jar`: it is the argfile the installer generates,
+`java @libraries/net/neoforged/neoforge/<ver>/unix_args.txt nogui`, which
+carries the module path and the main class. Every path inside it is relative, so
+it only works from the server directory — launching from anywhere else fails
+with `Could not find or load main class ...BootstrapLauncher`. The entrypoint's
+launch line is generalised to a `SERVER_LAUNCH_ARGS` variable for this; the
+Fabric and Quilt paths still pass `-jar <launcher>.jar` through it unchanged.
+
+NeoForge servers also get a larger default max heap (1G vs 512M) — the modular
+bootstrap plus NeoForge's own mod-loading sits on top of vanilla. `JAVA_FLAGS`
+still overrides both wholesale.
+
+Which NeoForge version goes with which Minecraft version is pinned in
+`scripts/e2e-run-one.sh` (mirroring `neoforge/gradle.properties`), not resolved
+at run time. The Maven `latest/version?filter=<mcMinor>.<mcPatch>.` endpoint
+exists and works — note the **trailing dot is load-bearing**, `filter=21.1`
+returns `21.11.45` — but an e2e run that silently retargets itself when upstream
+publishes is not a regression test, so the pins are explicit.
+
+**Deliberately not cached.** The Fabric path caches its launcher and server jar
+under `E2E_JAR_CACHE`; the NeoForge install tree is ~250MB per Minecraft version
+against GitHub's 10GB per-repo cache budget, and with only two shipped lines the
+download costs less than the cache round-trip. Revisit only with a measurement.
+
+### Assertion differences
+
+Every existing assertion carries over **unchanged**. Source names come from
+vanilla `CommandSourceStack`, so `[CommandsSpy] [Server] list`,
+`[CommandsSpy] [Rcon] save-all` and `[CommandsSpy] [Player: e2e_player1] list`
+are byte-identical to the Fabric path.
+
+The one exception is the mixin assertion, which is reported as `[SKIP]` on
+`LOADER=neoforge`: those jars contain no mixin at all (they listen to NeoForge's
+own `CommandEvent`), so the "no missing-target report" grep could not fail there
+and would prove nothing. What proves the NeoForge hook is the console, RCON and
+player assertions themselves.
+
+Two verdict codes are NeoForge-specific: `neoforge-install-failed` (the
+installer exited non-zero; its log tail is printed) and
+`neoforge-unsupported-version` (a Minecraft version with no shipped NeoForge
+line — an explicit failure, never a silent fallback to a jar that cannot load).
 
 ## Routing drift protection
 
