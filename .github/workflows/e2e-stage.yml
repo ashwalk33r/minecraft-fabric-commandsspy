@@ -17,11 +17,18 @@ on:
         description: "github.sha of the run that uploaded the jar artifacts"
         required: true
         type: string
+      loader:
+        description: "fabric or quilt — one per call, so each loader renders as its own job group in the Actions UI"
+        required: true
+        type: string
 
 jobs:
   run:
-    # Displays as "<caller job name> / <mc> (<loader>)", e.g. "e2e 1.21.x java 21 / 1.21.4 (quilt)".
-    name: "${{ matrix.mc }} (${{ matrix.loader }})"
+    # Displays as "<caller job name> / <mc>", e.g. "e2e 1.21.x java 21 (quilt) / 1.21.4" —
+    # the caller job name itself carries the loader (see e2e.yml), so each
+    # loader is its own visually separate group instead of interleaved rows
+    # in one shared group.
+    name: "${{ matrix.mc }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,7 +38,6 @@ jobs:
       fail-fast: false
       matrix:
         mc: ${{ fromJSON(inputs.versions) }}
-        loader: [fabric, quilt]
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -67,16 +73,16 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-e2e-jars
-          key: e2e-jar-${{ matrix.mc }}-${{ matrix.loader }}
+          key: e2e-jar-${{ matrix.mc }}-${{ inputs.loader }}
 
-      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ inputs.java }} (${{ matrix.loader }})"
-        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ inputs.java }}" LOADER="${{ matrix.loader }}" PARALLEL=1
+      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ inputs.java }} (${{ inputs.loader }})"
+        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ inputs.java }}" LOADER="${{ inputs.loader }}" PARALLEL=1
 
-      - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ inputs.java }}, ${{ matrix.loader }})"
+      - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ inputs.java }}, ${{ inputs.loader }})"
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: e2e-logs-mc${{ matrix.mc }}-java${{ inputs.java }}-${{ matrix.loader }}-${{ inputs.jar-sha }}
+          name: e2e-logs-mc${{ matrix.mc }}-java${{ inputs.java }}-${{ inputs.loader }}-${{ inputs.jar-sha }}
           path: |
             build/e2e-logs/
             build/e2e-results/

@@ -174,8 +174,15 @@ jobs:
   # !cancelled() lets an upstream SKIP pass through, !contains(...'failure') still
   # stops on a real failure, and != '[]' skips an empty band (GitHub errors on a
   # [] matrix). Full explanation in docs/ci.md.
-  e2e-mc121-java21:
-    name: "e2e 1.21.x java 21"
+  #
+  # Every band below runs as two separate job groups, one per loader
+  # (fabric/quilt), in parallel — not one group with loader mixed into its
+  # matrix rows — purely so the Actions UI shows two clearly separate,
+  # independently-collapsible groups instead of interleaved rows in one
+  # shared group. Stage ordering (popularity-first) is unaffected: each
+  # band's `needs:` lists both loader variants of every prior band.
+  e2e-mc121-java21-fabric:
+    name: "e2e 1.21.x java 21 (fabric)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
@@ -188,10 +195,28 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc121_java21 }}
       java: "21"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc121-java25:
-    name: "e2e 1.21.x java 25"
+  e2e-mc121-java21-quilt:
+    name: "e2e 1.21.x java 21 (quilt)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc121_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc121_java21 }}
+      java: "21"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc121-java25-fabric:
+    name: "e2e 1.21.x java 25 (fabric)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
@@ -204,10 +229,28 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc121_java25 }}
       java: "25"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc121-java26:
-    name: "e2e 1.21.x java 26"
+  e2e-mc121-java25-quilt:
+    name: "e2e 1.21.x java 25 (quilt)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc121_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc121_java25 }}
+      java: "25"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc121-java26-fabric:
+    name: "e2e 1.21.x java 26 (fabric)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
@@ -220,10 +263,28 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc121_java26 }}
       java: "26"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc26-java25:
-    name: "e2e 26.x java 25"
+  e2e-mc121-java26-quilt:
+    name: "e2e 1.21.x java 26 (quilt)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc121_java26 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc121_java26 }}
+      java: "26"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc26-java25-fabric:
+    name: "e2e 26.x java 25 (fabric)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
@@ -236,10 +297,28 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc26_java25 }}
       java: "25"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc26-java26:
-    name: "e2e 26.x java 26"
+  e2e-mc26-java25-quilt:
+    name: "e2e 26.x java 25 (quilt)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc26_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc26_java25 }}
+      java: "25"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc26-java26-fabric:
+    name: "e2e 26.x java 26 (fabric)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
@@ -252,13 +331,34 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc26_java26 }}
       java: "26"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-t0-java21:
-    name: "e2e 1.20.3-1.20.6 java 21"
+  e2e-mc26-java26-quilt:
+    name: "e2e 26.x java 26 (quilt)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc26_java26 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc26_java26 }}
+      java: "26"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-t0-java21-fabric:
+    name: "e2e 1.20.3-1.20.6 java 21 (fabric)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -270,13 +370,39 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.t0_java21 }}
       java: "21"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-t0-java25:
-    name: "e2e 1.20.3-1.20.6 java 25"
+  e2e-t0-java21-quilt:
+    name: "e2e 1.20.3-1.20.6 java 21 (quilt)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.t0_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.t0_java21 }}
+      java: "21"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-t0-java25-fabric:
+    name: "e2e 1.20.3-1.20.6 java 25 (fabric)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -288,13 +414,39 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.t0_java25 }}
       java: "25"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-t0-java26:
-    name: "e2e 1.20.3-1.20.6 java 26"
+  e2e-t0-java25-quilt:
+    name: "e2e 1.20.3-1.20.6 java 25 (quilt)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.t0_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.t0_java25 }}
+      java: "25"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-t0-java26-fabric:
+    name: "e2e 1.20.3-1.20.6 java 26 (fabric)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -306,14 +458,42 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.t0_java26 }}
       java: "26"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc1192-java17:
-    name: "e2e 1.19-1.20.2 java 17"
+  e2e-t0-java26-quilt:
+    name: "e2e 1.20.3-1.20.6 java 26 (quilt)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26,
-            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.t0_java26 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.t0_java26 }}
+      java: "26"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc1192-java17-fabric:
+    name: "e2e 1.19-1.20.2 java 17 (fabric)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -325,14 +505,45 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc1192_java17 }}
       java: "17"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc1192-java21:
-    name: "e2e 1.19-1.20.2 java 21"
+  e2e-mc1192-java17-quilt:
+    name: "e2e 1.19-1.20.2 java 17 (quilt)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26,
-            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc1192_java17 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc1192_java17 }}
+      java: "17"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc1192-java21-fabric:
+    name: "e2e 1.19-1.20.2 java 21 (fabric)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -344,16 +555,48 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc1192_java21 }}
       java: "21"
+      loader: "fabric"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc1192-java21-quilt:
+    name: "e2e 1.19-1.20.2 java 21 (quilt)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc1192_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc1192_java21 }}
+      java: "21"
+      loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   # Stage 5 — mc114 band: 1.14-1.18, split floors (1.14-1.16.x java 8, 1.17-1.18 java 17).
-  e2e-mc114-java8:
-    name: "e2e 1.14-1.16 java 8"
+  e2e-mc114-java8-fabric:
+    name: "e2e 1.14-1.16 java 8 (fabric)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26,
-            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26,
-            e2e-mc1192-java17, e2e-mc1192-java21]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt,
+            e2e-mc1192-java17-fabric, e2e-mc1192-java17-quilt,
+            e2e-mc1192-java21-fabric, e2e-mc1192-java21-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -365,15 +608,49 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc114_java8 }}
       java: "8"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc114-java17:
-    name: "e2e 1.17-1.18 java 17"
+  e2e-mc114-java8-quilt:
+    name: "e2e 1.14-1.16 java 8 (quilt)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26,
-            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26,
-            e2e-mc1192-java17, e2e-mc1192-java21]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt,
+            e2e-mc1192-java17-fabric, e2e-mc1192-java17-quilt,
+            e2e-mc1192-java21-fabric, e2e-mc1192-java21-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc114_java8 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc114_java8 }}
+      java: "8"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc114-java17-fabric:
+    name: "e2e 1.17-1.18 java 17 (fabric)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt,
+            e2e-mc1192-java17-fabric, e2e-mc1192-java17-quilt,
+            e2e-mc1192-java21-fabric, e2e-mc1192-java21-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -385,15 +662,49 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc114_java17 }}
       java: "17"
+      loader: "fabric"
       jar-sha: ${{ github.sha }}
 
-  e2e-mc114-java21:
-    name: "e2e 1.14-1.18 java 21"
+  e2e-mc114-java17-quilt:
+    name: "e2e 1.17-1.18 java 17 (quilt)"
     needs: [build-jars, unit-tests, e2e-gate,
-            e2e-mc121-java21, e2e-mc121-java25, e2e-mc121-java26,
-            e2e-mc26-java25, e2e-mc26-java26,
-            e2e-t0-java21, e2e-t0-java25, e2e-t0-java26,
-            e2e-mc1192-java17, e2e-mc1192-java21]
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt,
+            e2e-mc1192-java17-fabric, e2e-mc1192-java17-quilt,
+            e2e-mc1192-java21-fabric, e2e-mc1192-java21-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc114_java17 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc114_java17 }}
+      java: "17"
+      loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc114-java21-fabric:
+    name: "e2e 1.14-1.18 java 21 (fabric)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt,
+            e2e-mc1192-java17-fabric, e2e-mc1192-java17-quilt,
+            e2e-mc1192-java21-fabric, e2e-mc1192-java21-quilt]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -405,4 +716,32 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.mc114_java21 }}
       java: "21"
+      loader: "fabric"
+      jar-sha: ${{ github.sha }}
+
+  e2e-mc114-java21-quilt:
+    name: "e2e 1.14-1.18 java 21 (quilt)"
+    needs: [build-jars, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt,
+            e2e-mc1192-java17-fabric, e2e-mc1192-java17-quilt,
+            e2e-mc1192-java21-fabric, e2e-mc1192-java21-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.mc114_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.mc114_java21 }}
+      java: "21"
+      loader: "quilt"
       jar-sha: ${{ github.sha }}

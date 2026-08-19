@@ -56,17 +56,23 @@ before runner minutes are spent on the long tail.
 1. **build-jars + unit-tests** — jars are built once and shared as artifacts;
    the offline routing contract (`scripts/test-jar-routing.sh`) and the grid
    count assertions run here, before anything boots.
-2. **e2e-gate** — two canary pairs: 1.21.11/java21 and 26.2/java25. A broken
-   build costs 2 e2e jobs instead of the whole fan-out. `fail-fast` is off so
-   both canaries always report.
-3. **Band stages** — one reusable submatrix (`e2e-stage.yml`) per
-   {band, Java} pair: mc121, mc26, T0 (1.20.3–1.20.6), mc1192, mc114. Each
-   submatrix additionally crosses every version with a static
-   `loader: [fabric, quilt]` dimension inside `e2e-stage.yml` itself — the
-   loader axis is orthogonal to band/version generation
-   (`tools/gen_matrix.go` has no concept of it), so every `uses:` call site
-   below doubles automatically with no per-band edits. `e2e-gate`'s two
-   canary pairs become four the same way.
+2. **e2e-gate** — two canary pairs (1.21.11/java21, 26.2/java25), each
+   crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
+   four canary jobs run. `fail-fast` is off so all four always report.
+3. **Band stages** — one reusable submatrix call (`e2e-stage.yml`) per
+   {band, Java, loader} triple: mc121, mc26, T0 (1.20.3-1.20.6), mc1192,
+   mc114. Loader is a `uses:`-time input, not a dimension inside
+   `e2e-stage.yml`'s own matrix — every band therefore has TWO separate
+   `e2e.yml` job entries (`-fabric`/`-quilt` suffix), so the Actions UI
+   renders fabric and quilt as two independent, side-by-side job groups
+   instead of interleaved rows in one shared group. The loader axis is
+   orthogonal to band/version generation (`tools/gen_matrix.go` has no
+   concept of it) - both loader variants of a band read the exact same
+   `needs.build-jars.outputs.*` version list, they just run as separate
+   jobs. Each band's `needs:` lists both loader variants of every prior
+   band, so stage ordering (popularity-first) still holds across both
+   loaders; the two loader variants of the same band run fully in parallel
+   with no dependency between them.
 
 Lean grid on `pull_request` (floor rows exhaustive, newest-Java coverage rows
 only at each band's ends), full cross-product on `workflow_dispatch`.
