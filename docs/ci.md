@@ -34,6 +34,10 @@ and JDK 25 (for the 26.x target's toolchain) alongside Go and shellcheck, so
 Docker-unavailable escape hatch for these three (unlike `ci-host`): run
 `./gradlew` directly against a local JDK instead.
 
+`make build` still builds exactly the four Fabric/Quilt jars; the Forge jar
+(a separate Gradle build in `forge/`) is `make build-forge`, on demand —
+not part of the default `make build`/`make ci` path.
+
 ## gradle.yml
 
 Unit tests run before static analysis on purpose: a behavioural regression
@@ -55,11 +59,28 @@ before runner minutes are spent on the long tail.
 
 1. **build-jars + unit-tests** — jars are built once and shared as artifacts;
    the offline routing contract (`scripts/test-jar-routing.sh`) and the grid
-   count assertions run here, before anything boots.
+   count assertions run here, before anything boots. `build-jars` also runs
+   `make build-forge` — a separate step, a separate Gradle build (`forge/`),
+   uploaded as its own artifact (`commandsspy-jar-forge-<sha>`) — in the same
+   pinned CI image as the four Fabric/Quilt jars. `forge/build.gradle` and
+   `forge/gradle.properties` are in the `ci-gradle` cache key alongside the
+   root build files, because the first Forge build decompiles Minecraft and
+   is slow on a cold cache.
 2. **e2e-gate** — two canary pairs (1.21.11/java21, 26.2/java25), each
    crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
    four canary jobs run. `fail-fast` is off so all four always report.
-3. **Band stages** — one reusable submatrix call (`e2e-stage.yml`) per
+3. **e2e-forge-java21** — one caller job ("e2e 1.20.6-1.21.5 java 21
+   (forge)"), calling `e2e-stage.yml` with `loader: forge`, `java: 21`,
+   `versions: ["1.20.4","1.20.6","1.21.5"]` — the measured floor, the
+   measured ceiling, and the out-of-range guard (`docs/e2e-harness.md` ->
+   "Forge server install"). +3 jobs on top of the existing ~84-job grid.
+   Hand-listed rather than driven by `tools/gen_matrix.go`, which is still
+   loader-unaware — making loader a real dimension of the generator is
+   Phase 2 of issue #23, out of scope here. No middle versions: the
+   mapping regime and EventBus generation are uniform across the range, so
+   nothing can fail in the middle while both edges pass; they were measured
+   locally instead (`docs/version-matrix.md` -> "Forge: a fifth jar").
+4. **Band stages** — one reusable submatrix call (`e2e-stage.yml`) per
    {band, Java, loader} triple: mc121, mc26, T0 (1.20.3-1.20.6), mc1192,
    mc114. Loader is a `uses:`-time input, not a dimension inside
    `e2e-stage.yml`'s own matrix — every band therefore has TWO separate
@@ -72,7 +93,11 @@ before runner minutes are spent on the long tail.
    jobs. Each band's `needs:` lists both loader variants of every prior
    band, so stage ordering (popularity-first) still holds across both
    loaders; the two loader variants of the same band run fully in parallel
-   with no dependency between them.
+   with no dependency between them. `e2e-stage.yml`'s `loader` input
+   generalized to `forge` for free; it gained one conditional step that
+   moves the Forge jar from `build/libs` into `forge/build/libs` before the
+   run, since the two Gradle builds place their output in different
+   directories.
 
 Lean grid on `pull_request` (floor rows exhaustive, newest-Java coverage rows
 only at each band's ends), full cross-product on `workflow_dispatch`.

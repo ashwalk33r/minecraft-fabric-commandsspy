@@ -18,7 +18,7 @@ on:
         required: true
         type: string
       loader:
-        description: "fabric or quilt — one per call, so each loader renders as its own job group in the Actions UI"
+        description: "fabric, quilt or forge — one per call, so each loader renders as its own job group in the Actions UI"
         required: true
         type: string
 
@@ -53,6 +53,16 @@ jobs:
           pattern: commandsspy-jar-*-${{ inputs.jar-sha }}
           merge-multiple: true
           path: build/libs
+
+      # The Forge jar travels in the same artifact bundle, but it is produced by
+      # the separate forge/ Gradle build, so `make` expects it under
+      # forge/build/libs. Move it there rather than teaching Make two locations.
+      - name: "Stage the Forge jar"
+        if: inputs.loader == 'forge'
+        run: |
+          mkdir -p forge/build/libs
+          mv build/libs/commandsspy-*+mc1.21.x-forge.jar forge/build/libs/
+          ls -l forge/build/libs
 
       # Present jar files mean Gradle is never invoked here. The JVM under test
       # lives in the Docker image, not on the runner.

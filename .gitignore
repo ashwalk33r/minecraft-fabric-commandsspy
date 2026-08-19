@@ -1,6 +1,8 @@
 .idea
 .gradle
 /build
+/forge/build
+/forge/.gradle
 /run
 .worktrees/
 build/e2e-logs/

@@ -1,0 +1,58 @@
+// Phase-1 Forge spike. Separate Gradle build ON PURPOSE: ForgeGradle and Loom both
+// own a `minecraft` extension and remap/run tasks, and the root build produces four
+// SHIPPING jars verified across ~84 CI jobs. Isolation costs one settings.gradle;
+// cleanup, if the R1 measurement kills this, is `rm -rf forge/`. See docs/forge.md.
+plugins {
+	id 'java'
+	id 'net.minecraftforge.gradle' version '[7.0.29,8.0)'
+}
+
+// Root .env.version stays the single MOD_VERSION source for every loader.
+def envVersionProps = new Properties()
+file("${rootDir}/../.env.version").withInputStream { envVersionProps.load(it) }
+def modVersion = envVersionProps.getProperty('MOD_VERSION')
+if (modVersion == null || modVersion.isBlank()) {
+	throw new GradleException("MOD_VERSION not found or empty in ../.env.version")
+}
+
+// Same naming shape as the Fabric jars (commandsspy-<ver>+mc<band>.jar).
+version = "${modVersion}+mc1.21.x-forge"
+group = 'm2x.commandsspy'
+base.archivesName = 'commandsspy'
+
+// Minecraft 1.20.5-1.21.11 ship Java 21 to end users.
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+minecraft {
+	mappings channel: 'official', version: mapping_version
+}
+
+repositories {
+	minecraft.mavenizer(it)
+	maven fg.forgeMaven
+	maven fg.minecraftLibsMaven
+	mavenCentral()
+}
+
+dependencies {
+	implementation minecraft.dependency("net.minecraftforge:forge:${minecraft_version}-${forge_version}")
+}
+
+// The shared core is COMPILED FROM ONE COPY, never forked. It contains no loader
+// API references, which is what Phase 0 bought.
+sourceSets.main.java.srcDir '../src/main/java'
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+}
+
+tasks.named('processResources', ProcessResources) {
+	def props = [
+		version: modVersion,
+		minecraft_range: minecraft_range,
+		forge_range: forge_range,
+		loader_range: loader_range,
+	]
+	inputs.property 'replaceProperties', props
+	filesMatching('META-INF/mods.toml') { expand props }
+}

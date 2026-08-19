@@ -38,6 +38,8 @@ MOD_JAR_121 := build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x.jar
 MOD_JAR_1192 := build/libs/commandsspy-$(MOD_VERSION)+mc1.19-1.20.2.jar
 MOD_JAR_114 := build/libs/commandsspy-$(MOD_VERSION)+mc1.14.x.jar
 MOD_JAR_26 := build/libs/commandsspy-$(MOD_VERSION)+mc26.x.jar
+# Phase-1 Forge spike: ONE jar, built by the separate forge/ Gradle build.
+MOD_JAR_FORGE := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x-forge.jar
 
 # Optional Java override applied to EVERY version in this run:
 #   make e2e VERSIONS="1.21.11" JAVA=25
@@ -48,12 +50,13 @@ JAVA ?=
 # adding. 11 is manual-override only.
 JAVA_VERSIONS_SUPPORTED := 8 11 17 21 25 26
 
-# fabric (default) | quilt — which loader's server boots. See docs/e2e-harness.md.
+# fabric (default) | quilt | forge — which loader's server boots. See docs/e2e-harness.md.
 LOADER ?= fabric
 
-# Key = version[-quilt][-java<N>], mirroring scripts/e2e-run-one.sh's own KEY
+# Key = version[-<loader>][-java<N>], mirroring scripts/e2e-run-one.sh's own KEY
 # construction, so grid runs never collide across loaders or Java overrides.
-_loader_suffix := $(if $(filter quilt,$(LOADER)),-quilt,)
+_loader_suffix := $(if $(filter fabric,$(LOADER)),,-$(LOADER))
+_forge_jar_dep := $(if $(filter forge,$(LOADER)),$(MOD_JAR_FORGE),)
 E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS)))
 
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
@@ -128,11 +131,11 @@ e2e-images: ## pull-or-build the per-Java server Docker images serially, tag loc
 	  docker tag "$$ghcr_tag" "$$local_tag"; \
 	done
 
-e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
+e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),$(words $(VERSIONS)))
 
-e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
+e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),4)
 
@@ -140,8 +143,8 @@ e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2
 .PHONY: _e2e-fanout
 _e2e-fanout:
 	@case "$(LOADER)" in \
-	  fabric|quilt) ;; \
-	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt"; exit 1 ;; \
+	  fabric|quilt|forge) ;; \
+	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt forge"; exit 1 ;; \
 	esac
 	@echo "[e2e] Testing Minecraft versions: $(VERSIONS)"
 	@echo "[e2e] Loader: $(LOADER)"
@@ -154,6 +157,7 @@ _e2e-fanout:
 	  MOD_JAR_1192="$(MOD_JAR_1192)" \
 	  MOD_JAR_114="$(MOD_JAR_114)" \
 	  MOD_JAR_26="$(MOD_JAR_26)" \
+	  MOD_JAR_FORGE="$(MOD_JAR_FORGE)" \
 	  E2E_LOG_DIR="$(E2E_LOG_DIR)" \
 	  E2E_RESULT_DIR="$(E2E_RESULT_DIR)" \
 	  E2E_RUN_ID="$(E2E_RUN_ID)" \
@@ -174,7 +178,7 @@ _e2e-fanout:
 	  fi; \
 	  echo "  $$line"; \
 	  case "$$line" in \
-	    *" PASS"|*" PASS players-skipped-unsupported-protocol") ;; \
+	    *" PASS"|*" PASS players-skipped-unsupported-protocol"|*" PASS forge-out-of-range-refused-as-expected") ;; \
 	    *) failed=1 ;; \
 	  esac; \
 	done; \
@@ -213,6 +217,17 @@ $(MOD_JAR_114): $(MOD_SOURCES) | ci-image
 $(MOD_JAR_26): $(MOD_SOURCES) | ci-image
 	@echo "[build] Building 26.x jar..."
 	@$(call in_ci_image_gradle,gradle build -PmcTarget=26 --no-daemon --quiet)
+
+# Deliberately NOT a dependency of `build`: the Forge jar is a Phase-1 spike and
+# its first build decompiles Minecraft (~5 min, ~1.2G of ForgeGradle cache under
+# GRADLE_USER_HOME). Built on demand and by the LOADER=forge e2e legs.
+# `-p forge` runs the separate forge/ build; same pinned image as everything else.
+$(MOD_JAR_FORGE): $(shell git ls-files forge src/main/java .env.version) | ci-image
+	@echo "[build] Building Forge spike jar (MC 1.21.1, Forge 52.1.x)..."
+	@$(call in_ci_image_gradle,gradle -p forge build --no-daemon --quiet)
+
+.PHONY: build-forge
+build-forge: $(MOD_JAR_FORGE) ## build the Phase-1 Forge spike jar (host gradlew + ForgeGradle 7)
 
 .PHONY: build
 build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) ## build all four era jars (dockerized; needs only make + docker)

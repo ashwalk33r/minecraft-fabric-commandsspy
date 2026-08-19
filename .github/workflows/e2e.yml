@@ -29,7 +29,7 @@ jobs:
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
+          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties') }}
       - name: "Test: unit tests (all four Minecraft targets)"
         run: make test
 
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}
+          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties') }}
       # Same cache the go-tools job (gradle.yml) keeps warm: ci-tools-test/
       # ci-gen-matrix compile tools/ from scratch without it (measured: ~51s
       # cold vs ~4.6s warm combined for these two steps).
@@ -104,6 +104,18 @@ jobs:
         with:
           name: commandsspy-jar-mc26.x-${{ github.sha }}
           path: build/libs/commandsspy-*+mc26.x.jar
+          if-no-files-found: error
+          retention-days: 1
+      # Separate step and separate Gradle build (forge/), on purpose: ForgeGradle
+      # never touches the four shipping jars above. First build decompiles
+      # Minecraft, so it is slow when the ci-gradle cache misses.
+      - name: "Build: mod compilation (Forge target, Minecraft 1.20.6-1.21.5)"
+        run: make build-forge
+      - name: "Build: upload the mod artifact (Forge target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.21.x-forge.jar
           if-no-files-found: error
           retention-days: 1
 
@@ -213,6 +225,29 @@ jobs:
       versions: ${{ needs.build-jars.outputs.mc121_java21 }}
       java: "21"
       loader: "quilt"
+      jar-sha: ${{ github.sha }}
+
+  # Forge: THREE legs, hand-listed rather than driven by tools/gen_matrix.go
+  # (still loader-unaware — see issue #23's Phase 2). 1.20.6 and 1.21.5 are the
+  # measured floor and ceiling of the single Forge jar's Minecraft range;
+  # 1.20.4 is a GUARD leg that asserts Forge refuses the mod below the floor,
+  # where its official-name Minecraft calls would crash the server mid-command.
+  # No middle versions: the mapping regime and EventBus generation are uniform
+  # across the range, so nothing can fail in the middle while both edges pass.
+  e2e-forge-java21:
+    name: "e2e 1.20.6-1.21.5 java 21 (forge)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.20.4","1.20.6","1.21.5"]'
+      java: "21"
+      loader: "forge"
       jar-sha: ${{ github.sha }}
 
   e2e-mc121-java25-fabric:
