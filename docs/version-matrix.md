@@ -1,12 +1,13 @@
 # Version matrix
 
-One shared implementation (`src/main`), eight jars: four era-correct
+One shared implementation (`src/main`), nine jars: four era-correct
 Fabric/Quilt jars, which differ only in their `CommandManagerMixin` source
 set and build settings; two NeoForge jars built from the same core against a
 different loader (see
-[NeoForge](#neoforge-two-more-jars-on-a-different-contract) below); and two
-Forge jars, modern and legacy, built from the same core against a third
-loader (see [Forge](#forge-a-fifth-jar-narrower-by-construction) below).
+[NeoForge](#neoforge-two-more-jars-on-a-different-contract) below); and three
+Forge jars — legacy, modern and eventbus7 — built from the same core against
+a third loader (see [Forge](#forge-a-fifth-jar-narrower-by-construction)
+below).
 
 ## The four Fabric/Quilt jars
 
@@ -319,10 +320,11 @@ member stability Fabric gets from intermediary. Below 1.20.5 the Forge
 runtime is SRG-mapped, which is exactly why 1.20.4 fails.
 
 - **1.20.6 is a hard floor**, not conservatism.
-- **`<1.21.6` is declared, not measured**: Forge's EventBus 6 -> 7 API break
-  lands between 1.21.5 and 1.21.8 (`MinecraftForge.EVENT_BUS.addListener` ->
-  `CommandEvent.BUS.addListener`; `Event` -> `MutableEvent` + `Cancellable`)
-  and needs a second entrypoint variant.
+- **`<1.21.6` is a hard ceiling, now measured**: Forge's EventBus 6 -> 7 API
+  break lands exactly at 1.21.6/Forge 56 (`MinecraftForge.EVENT_BUS.addListener`
+  -> `CommandEvent.BUS.addListener`; `Event` -> `MutableEvent` + `Cancellable`)
+  and needs a second entrypoint variant — the EventBus-7 jar below, whose
+  measured floor is exactly this jar's ceiling.
 - A sub-1.20.5 Forge jar needs ForgeGradle's separate
   `net.minecraftforge.renamer` reobfuscation step — see "Forge legacy jar"
   below for the second Forge jar this project ships to cover it.
@@ -440,8 +442,77 @@ measured PASS version above from `tools/gen_matrix.go`'s
 jar's edges-only job, the whole point of this range was
 proving SRG member-id stability *across* seven Forge major branches, so a
 floor+ceiling-only gate would not exercise the thing being measured.
-`scripts/e2e-run-one.sh` routes each Minecraft version to the legacy or
-modern jar by a single case statement (`FORGE_JAR_BAND`, probed via
-`--print-forge-routing`); `scripts/test-jar-routing.sh` asserts that
-routing offline, including that versions outside both ranges come back
-refused rather than silently handed either jar.
+`scripts/e2e-run-one.sh` routes each Minecraft version to the legacy,
+modern or eventbus7 jar by a single case statement (`FORGE_JAR_BAND`, probed
+via `--print-forge-routing`); `scripts/test-jar-routing.sh` asserts that
+routing offline, including that versions outside every range come back
+refused rather than silently handed a jar.
+
+## Forge EventBus-7 jar: one jar from 1.21.6 through 26.2, and 26.x collapses in
+
+Issue #32 task 2. Forge 56 (Minecraft 1.21.6) ships EventBus 7: `Event` ->
+`MutableEvent` + `Cancellable`, and the global `MinecraftForge.EVENT_BUS` is
+replaced by a static per-event bus, so the modern entrypoint's registration
+call cannot compile there — and an EventBus-7 registration cannot compile on
+Forge 55 and below. The fix is a **sibling entrypoint source**, not a
+mapping trick: `forge/src/eventbus7/java/.../CommandsSpyForge.java` is the
+same class, package and hook body with one line changed
+(`CommandEvent.BUS.addListener(...)` in the `@Mod` constructor), selected by
+`-PforgeTarget=eventbus7`, which swaps only the entrypoint source dir and
+keeps compiling the shared core from its one copy. Compile anchor Minecraft
+1.21.8 / Forge 58.1.0 (recommended-promoted), Java 21 toolchain, official
+mappings at runtime like the modern jar, no renamer. `make
+build-forge-eventbus7` builds it; `MOD_JAR_FORGE_EB7` in the Makefile names
+it (`commandsspy-<ver>+mc1.21.6-26.2-forge.jar`).
+
+### Measured range
+
+One jar, booted as a real Forge dedicated server with the full e2e
+assertion set (mod banner, console `list`, RCON `save-all`, player `list`),
+`minecraft_range` provisionally `[1.21.6,)` during measurement so mods.toml
+metadata was never the limiting factor. Every version Forge publishes above
+1.21.5 was booted — no sampling:
+
+| Minecraft | Forge build | Result |
+|---|---|---|
+| 1.21.6 | 56.0.9 | PASS — the EventBus 6/7 seam is exactly the modern jar's `<1.21.6` ceiling |
+| 1.21.7 | 57.0.3 | PASS |
+| 1.21.8 | 58.1.0 | PASS (compile target) |
+| 1.21.9 | 59.0.5 | PASS |
+| 1.21.10 | 60.1.0 | PASS |
+| 1.21.11 | 61.2.0 | PASS |
+| 26.1 | 62.0.9 | PASS (java 25) |
+| 26.1.1 | 63.0.2 | PASS (java 25) |
+| 26.1.2 | 64.1.0 | PASS (java 25) |
+| 26.2 | 65.1.0 | PASS (java 25) |
+
+One jar spans Minecraft **1.21.6–26.2**: ten versions across ten
+consecutive Forge major branches (56–65), every one Forge publishes above
+1.21.5 — the range ends at 26.2 because Forge publishes nothing newer, not
+because anything failed. Shipped `forge/gradle.properties` (`_eventbus7`
+suffix): `minecraft_range = [1.21.6,26.3)`, `forge_range`/`loader_range =
+[56,66)`.
+
+### 26.x collapses into this jar — unlike Fabric's mc26 band
+
+The open measurement question was whether 26.x (unobfuscated Minecraft)
+needs its own jar the way Fabric's mc26 band does. Answer: **no**. Fabric's
+mc26 split exists because the *Fabric* toolchain axis changed (intermediary
+withdrawn in favor of official names); on Forge the modern/eventbus7 era
+already compiles and runs official names, so 26.x removing obfuscation
+changes nothing the jar can see — 26.1 through 26.2 booted the same
+java-21-bytecode jar built against 1.21.8, on the default installer JDK,
+with the full assertion set passing. The 26.1.1/26.1.2 patch releases are
+included in the measured table (and CI) because each is its own Forge major
+branch (63/64), which is the axis this band's measurement actually probes.
+
+### Gate coverage
+
+Same shape as the legacy band, for the same reason: the measurement's point
+was one jar spanning ten EventBus-7 Forge majors, so
+`.github/workflows/e2e.yml` boots **every** measured version, split across
+two generated jobs by era Java floor — `e2e-forge-eventbus7-java21`
+(1.21.6–1.21.11) and `e2e-forge-eventbus7-java25` (26.1–26.2; 26.x servers
+require Java 25) — reading `tools/gen_matrix.go`'s `forge_eventbus7_java21`
+/`forge_eventbus7_java25` outputs, keyed on the `minecraft_range_eventbus7`
+line in `forge/gradle.properties`.

@@ -56,6 +56,8 @@ jobs:
       forge_java21: ${{ steps.grid.outputs.forge_java21 }}
       forge_legacy_java17: ${{ steps.grid.outputs.forge_legacy_java17 }}
       forge_legacy_guard_java8: ${{ steps.grid.outputs.forge_legacy_guard_java8 }}
+      forge_eventbus7_java21: ${{ steps.grid.outputs.forge_eventbus7_java21 }}
+      forge_eventbus7_java25: ${{ steps.grid.outputs.forge_eventbus7_java25 }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: "Verify action pins"
@@ -132,6 +134,19 @@ jobs:
         with:
           name: commandsspy-jar-forge-legacy-${{ github.sha }}
           path: forge/build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar
+          if-no-files-found: error
+          retention-days: 1
+      # EventBus-7 Forge target: issue #32 task 2, for Forge 56+ (Minecraft
+      # 1.21.6-26.2). Same forge/ Gradle build, -PforgeTarget=eventbus7;
+      # decompiles Minecraft against its own 1.21.8 compile target, so it is
+      # its own slow-on-cache-miss step too.
+      - name: "Build: mod compilation (Forge target, Minecraft 1.21.6-26.2, EventBus 7)"
+        run: make build-forge-eventbus7
+      - name: "Build: upload the mod artifact (Forge EventBus-7 target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-eventbus7-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.21.6-26.2-forge.jar
           if-no-files-found: error
           retention-days: 1
       - name: "Build: upload the mod artifact (NeoForge 21.1, Minecraft 1.21.1)"
@@ -304,7 +319,8 @@ jobs:
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
-  # Forge: three generated jobs (modern band, legacy band, sub-floor guard).
+  # Forge: five generated jobs (modern band, legacy band, sub-floor guard,
+  # and the EventBus-7 band split across its two era Java floors).
   # Version lists and the full per-leg rationale live in tools/gen_matrix.go's
   # Forge stage — floor rows only, no coverage rows, by design.
   e2e-forge-java21:
@@ -355,6 +371,43 @@ jobs:
     with:
       versions: ${{ needs.build-jars.outputs.forge_legacy_guard_java8 }}
       java: "8"
+      loader: "forge"
+      jar-sha: ${{ github.sha }}
+
+  # EventBus-7 band, split by era Java floor: 1.21.6-1.21.11 on java 21,
+  # 26.x on java 25 (the 26.x servers themselves require 25). Every measured
+  # version, like the legacy band — rationale in tools/gen_matrix.go.
+  e2e-forge-eventbus7-java21:
+    name: "e2e 1.21.6-1.21.11 java 21 (forge eventbus7)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.forge_eventbus7_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.forge_eventbus7_java21 }}
+      java: "21"
+      loader: "forge"
+      jar-sha: ${{ github.sha }}
+
+  e2e-forge-eventbus7-java25:
+    name: "e2e 26.1-26.2 java 25 (forge eventbus7)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.forge_eventbus7_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.forge_eventbus7_java25 }}
+      java: "25"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 

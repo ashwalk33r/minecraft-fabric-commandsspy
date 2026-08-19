@@ -133,7 +133,7 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 			t.Errorf("forge_java21 contains %s, routing = %q, want %q", v, got, want)
 		}
 	}
-	// 1.16.5 falls outside both jars' ranges (the case statement maps only
+	// 1.16.5 falls outside every jar's range (the case statement maps only
 	// 1.17*-1.20.4 to legacy, so 1.16* falls through to modern) and must come
 	// back expect-refused.
 	for _, v := range rows["forge_legacy_guard_java8"] {
@@ -141,7 +141,15 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 			t.Errorf("forge_legacy_guard_java8 contains %s, routing = %q, want \"modern 1\"", v, got)
 		}
 	}
-	for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_legacy_guard_java8"} {
+	for _, key := range []string{"forge_eventbus7_java21", "forge_eventbus7_java25"} {
+		for _, v := range rows[key] {
+			if got := printForgeRouting(v); got != "eventbus7 0" {
+				t.Errorf("%s contains %s, routing = %q, want \"eventbus7 0\"", key, v, got)
+			}
+		}
+	}
+	for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_legacy_guard_java8",
+		"forge_eventbus7_java21", "forge_eventbus7_java25"} {
 		if len(rows[name]) == 0 {
 			t.Errorf("%s: no versions emitted (band missing from the real tree?)", name)
 		}

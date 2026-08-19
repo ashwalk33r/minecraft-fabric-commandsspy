@@ -30,8 +30,9 @@ var t0RangeRe = regexp.MustCompile(`(?m)^minecraft_range_121=>=1\.20\.3`)
 // Forge bands are keyed off their declared range lines in
 // forge/gradle.properties, same idiom as t0 above.
 var forgeRangeRe = map[string]*regexp.Regexp{
-	"forge":        regexp.MustCompile(`(?m)^minecraft_range_modern=`),
-	"forge_legacy": regexp.MustCompile(`(?m)^minecraft_range_legacy=`),
+	"forge":           regexp.MustCompile(`(?m)^minecraft_range_modern=`),
+	"forge_legacy":    regexp.MustCompile(`(?m)^minecraft_range_legacy=`),
+	"forge_eventbus7": regexp.MustCompile(`(?m)^minecraft_range_eventbus7=`),
 }
 
 // bandPresent reports whether a band's build target exists in the tree.
@@ -55,7 +56,7 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 	case "mc114":
 		st, err := os.Stat(filepath.Join(repoRoot, "src", "mc114", "java"))
 		return err == nil && st.IsDir()
-	case "forge", "forge_legacy":
+	case "forge", "forge_legacy", "forge_eventbus7":
 		data, err := os.ReadFile(filepath.Join(repoRoot, "forge", "gradle.properties"))
 		return err == nil && forgeRangeRe[name].Match(data)
 	}
@@ -213,8 +214,16 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// see docs/version-matrix.md) and runs on java 8 because that is its
 	// era's real deployment JVM — an old Forge build's refusal/crash
 	// behavior differs (misleadingly, for the guard's string-matching) on a
-	// newer JVM. --print-forge-routing 1.16.5 = "modern 1" (out of both
-	// ranges, expect refused).
+	// newer JVM. --print-forge-routing 1.16.5 = "modern 1" (out of every
+	// jar's range, expect refused).
+	//
+	// EventBus-7 band (1.21.6-26.2, Forge 56-65): EVERY measured version,
+	// same reasoning as legacy — the measurement's point was that one
+	// official-name java-21 jar registers and fires across ten consecutive
+	// EventBus-7 Forge major branches (56-65), so a floor+ceiling pair would
+	// not exercise the thing being proven. Split by the era Java floor the
+	// generic table already assigns: 1.21.x on 21, 26.x (including the
+	// 26.1.1/26.1.2 patch releases — each its own Forge major, 63/64) on 25.
 	forgeModern := band("forge", "1.20.6", "1.21.5")
 	if len(forgeModern) > 0 {
 		forgeModern = append(band("forge_legacy", "1.20.4"), forgeModern...)
@@ -224,6 +233,10 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
 		"1.20.1", "1.20.2", "1.20.3", "1.20.4"))
 	emit("forge_legacy_guard_java8", band("forge_legacy", "1.16.5"))
+	emit("forge_eventbus7_java21", band("forge_eventbus7",
+		"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"))
+	emit("forge_eventbus7_java25", band("forge_eventbus7",
+		"26.1", "26.1.1", "26.1.2", "26.2"))
 
 	if emitErr != nil {
 		return emitErr

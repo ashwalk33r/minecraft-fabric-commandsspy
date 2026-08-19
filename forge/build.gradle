@@ -9,11 +9,12 @@
 //   legacy - issue #28 task 1: SRG-reobfuscated jar for the pre-1.20.5 era,
 //     Minecraft 1.17.1-1.20.4. Needs net.minecraftforge.renamer (below) since
 //     Forge does not ship Mojang official mappings on that era's runtime.
-//   eventbus7 - issue #32 task 2: EventBus-7 entrypoint for 1.21.6+, where
-//     Forge's Event -> MutableEvent break makes the modern entrypoint's
-//     MinecraftForge.EVENT_BUS registration uncompilable. Official mappings
-//     at runtime like modern; only the entrypoint source differs
-//     (src/eventbus7/java replaces src/main/java, shared core unchanged).
+//   eventbus7 - issue #32 task 2: EventBus-7 entrypoint, Minecraft
+//     1.21.6-26.2 (measured), where Forge's Event -> MutableEvent break makes
+//     the modern entrypoint's MinecraftForge.EVENT_BUS registration
+//     uncompilable. Official mappings at runtime like modern; only the
+//     entrypoint source differs (src/eventbus7/java replaces src/main/java,
+//     shared core unchanged).
 plugins {
 	id 'java'
 	id 'net.minecraftforge.gradle' version '[7.0.29,8.0)'
@@ -55,7 +56,7 @@ def targetLoaderRange = project.getProperty("loader_range_${forgeTarget}")
 // unshipped intermediate (official-mapped, not SRG) -- the renamer step below
 // produces the actual shipped legacy artifact with its own name/classifier.
 version = isLegacy ? "${modVersion}+mc1.17-1.20.4"
-	: isEventBus7 ? "${modVersion}+mc1.21.6+-forge"
+	: isEventBus7 ? "${modVersion}+mc1.21.6-26.2-forge"
 	: "${modVersion}+mc1.21.x-forge"
 group = 'm2x.commandsspy'
 base.archivesName = 'commandsspy'

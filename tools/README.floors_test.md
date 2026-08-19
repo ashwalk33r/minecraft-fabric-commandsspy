@@ -44,7 +44,9 @@ The Forge analogue, against `--print-forge-routing` instead of
 `--print-java`: every version the generator emits in `forge_legacy_java17`
 must route "legacy 0"; `forge_java21` versions route "modern 0" except
 1.20.4 ("legacy 0" — the legacy jar's ceiling riding in the modern job);
-the 1.16.5 guard routes "modern 1" (outside both ranges, expect refused).
+`forge_eventbus7_java21`/`forge_eventbus7_java25` versions route
+"eventbus7 0"; the 1.16.5 guard routes "modern 1" (outside every jar's
+range, expect refused).
 
 ## How to run
 

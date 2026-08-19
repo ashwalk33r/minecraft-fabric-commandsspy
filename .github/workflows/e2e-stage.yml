@@ -54,14 +54,14 @@ jobs:
           merge-multiple: true
           path: build/libs
 
-      # Both Forge jars travel in the same artifact bundle, but they are
+      # All three Forge jars travel in the same artifact bundle, but they are
       # produced by the separate forge/ Gradle build, so `make` expects them
       # under forge/build/libs. Move them there rather than teaching Make two
-      # locations. Both, regardless of which versions THIS call's own
+      # locations. All three, regardless of which versions THIS call's own
       # `matrix.mc` covers: this reusable workflow only knows its own
       # `versions` list, not which jar each version needs -- that
       # per-version jar selection is scripts/e2e-run-one.sh's job (its
-      # FORGE_JAR_BAND routing table), so this step just needs both jars on
+      # FORGE_JAR_BAND routing table), so this step just needs every jar on
       # disk, not to decide between them.
       - name: "Stage the Forge jars"
         if: inputs.loader == 'forge'
@@ -69,6 +69,7 @@ jobs:
           mkdir -p forge/build/libs
           mv build/libs/commandsspy-*+mc1.21.x-forge.jar forge/build/libs/
           mv build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar forge/build/libs/
+          mv build/libs/commandsspy-*+mc1.21.6-26.2-forge.jar forge/build/libs/
           ls -l forge/build/libs
 
       # Present jar files mean Gradle is never invoked here. The JVM under test
