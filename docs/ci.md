@@ -28,7 +28,8 @@ runs, on top of the general Go build/module cache.
 ## `make build` / `make test` / `make lint-java`
 
 These also run inside the pinned `Dockerfile.ci` image — it carries JDK 21
-and JDK 25 (for the 26.x target's toolchain) alongside Go and shellcheck, so
+and JDK 25 (for the 26.x and NeoForge 26.2 toolchains) alongside Go and
+shellcheck, so
 `make build`, `make test`, `make lint-java`, and `make ci` together need only
 `make` and `docker` on the host, locally and in CI. There is no
 Docker-unavailable escape hatch for these three (unlike `ci-host`): run
@@ -57,7 +58,8 @@ Gradle](https://docs.github.com/en/actions/automating-builds-and-tests/building-
 Stage order is popularity order: a failure in a widely-run version surfaces
 before runner minutes are spent on the long tail.
 
-1. **build-jars + unit-tests** — jars are built once and shared as artifacts;
+1. **build-jars + unit-tests** — all six jars are built once and shared as
+   artifacts;
    the offline routing contract (`scripts/test-jar-routing.sh`) and the grid
    count assertions run here, before anything boots. `build-jars` also runs
    `make build-forge` — a separate step, a separate Gradle build (`forge/`),
@@ -80,7 +82,10 @@ before runner minutes are spent on the long tail.
    mapping regime and EventBus generation are uniform across the range, so
    nothing can fail in the middle while both edges pass; they were measured
    locally instead (`docs/version-matrix.md` -> "Forge: a fifth jar").
-4. **Band stages** — one reusable submatrix call (`e2e-stage.yml`) per
+4. **NeoForge stages** — two jobs, one per shipped NeoForge line
+   (1.21.1/java21 and 26.2/java25), each a normal `e2e-stage.yml` call with a
+   **literal** one-element version list. See "The NeoForge stages" below.
+5. **Band stages** — one reusable submatrix call (`e2e-stage.yml`) per
    {band, Java, loader} triple: mc121, mc26, T0 (1.20.3-1.20.6), mc1192,
    mc114. Loader is a `uses:`-time input, not a dimension inside
    `e2e-stage.yml`'s own matrix — every band therefore has TWO separate
@@ -107,6 +112,33 @@ band's ends cover the real variable on higher JVMs.
 Stages chain via `needs:`. Each stage's job body is defined once, in
 `e2e-stage.yml`, and reused by every stage — only the version list per stage
 differs, sourced from `tools/gen_matrix.go`.
+
+## The NeoForge stages
+
+Two things about them are deliberate and worth not "fixing":
+
+- **`tools/gen_matrix.go` is not involved.** Every other stage reads its version
+  list from a generator output; the NeoForge jobs carry a literal
+  `'["1.21.1"]'` / `'["26.2"]'`. NeoForge covers exactly two Minecraft versions
+  because one NeoForge jar covers exactly one Minecraft version (see
+  [version-matrix.md](version-matrix.md) → "NeoForge"), so this is the first
+  thing in the project that makes the loader axis *non*-orthogonal to version
+  generation. Teaching the generator a filtered, loader-dependent list to emit
+  two constants is more machinery than the constants. Revisit if the list grows.
+- **NeoForge is not in `e2e-gate`.** The gate exists so a broken build costs a
+  handful of jobs instead of the whole fan-out; putting NeoForge there would let
+  a NeoForge-only break block ~40 Fabric/Quilt jobs that have nothing to do with
+  it. Its own job group also matches the reason Quilt got one: two clearly
+  separate, independently-collapsible groups in the Actions UI.
+
+Both jobs `needs: [build-jars, unit-tests, e2e-gate]` and use the same `if:`
+guard as every other stage minus the `!= '[]'` clause, which cannot fire on a
+literal list. They are not in any other job's `needs:`, so the popularity-first
+band ordering is untouched and they run in parallel with it.
+
+`build-jars` uploads all six jars; `e2e-stage.yml`'s "Verify prebuilt jars"
+step checks for all six, so a jar that silently failed to build fails the stage
+before a server boots rather than surfacing as `mod-not-loaded` later.
 
 ## e2e server images
 

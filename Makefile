@@ -40,6 +40,11 @@ MOD_JAR_114 := build/libs/commandsspy-$(MOD_VERSION)+mc1.14.x.jar
 MOD_JAR_26 := build/libs/commandsspy-$(MOD_VERSION)+mc26.x.jar
 # Phase-1 Forge spike: ONE jar, built by the separate forge/ Gradle build.
 MOD_JAR_FORGE := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x-forge.jar
+# NeoForge jars: one per NeoForge line, each covering exactly one Minecraft
+# version (NeoForge has no Intermediary-equivalent stable mapping to ride).
+# Built by the standalone neoforge/ Gradle build; see docs/version-matrix.md.
+MOD_JAR_NEO121 := build/libs/commandsspy-$(MOD_VERSION)+neoforge-mc1.21.1.jar
+MOD_JAR_NEO26 := build/libs/commandsspy-$(MOD_VERSION)+neoforge-mc26.2.jar
 
 # Optional Java override applied to EVERY version in this run:
 #   make e2e VERSIONS="1.21.11" JAVA=25
@@ -50,13 +55,24 @@ JAVA ?=
 # adding. 11 is manual-override only.
 JAVA_VERSIONS_SUPPORTED := 8 11 17 21 25 26
 
-# fabric (default) | quilt | forge — which loader's server boots. See docs/e2e-harness.md.
+# fabric (default) | quilt | forge | neoforge — which loader's server boots.
+# See docs/e2e-harness.md.
 LOADER ?= fabric
 
 # Key = version[-<loader>][-java<N>], mirroring scripts/e2e-run-one.sh's own KEY
 # construction, so grid runs never collide across loaders or Java overrides.
+# fabric is the default and contributes no suffix, so its keys (and therefore
+# its logs, results and container names) are byte-for-byte what they were before
+# the loader axis existed.
 _loader_suffix := $(if $(filter fabric,$(LOADER)),,-$(LOADER))
+
+# Only LOADER=forge needs the Forge spike jar built; a Fabric/Quilt/NeoForge
+# run must not pay for ForgeGradle's decompile pipeline.
 _forge_jar_dep := $(if $(filter forge,$(LOADER)),$(MOD_JAR_FORGE),)
+
+# Only LOADER=neoforge needs the NeoForge jars built; a Fabric, Quilt or Forge
+# run must not pay for ModDevGradle's NeoForm pipeline.
+_neo_jars := $(if $(filter neoforge,$(LOADER)),$(MOD_JAR_NEO121) $(MOD_JAR_NEO26),)
 E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS)))
 
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
@@ -131,11 +147,11 @@ e2e-images: ## pull-or-build the per-Java server Docker images serially, tag loc
 	  docker tag "$$ghcr_tag" "$$local_tag"; \
 	done
 
-e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
+e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),$(words $(VERSIONS)))
 
-e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
+e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),4)
 
@@ -143,8 +159,8 @@ e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(
 .PHONY: _e2e-fanout
 _e2e-fanout:
 	@case "$(LOADER)" in \
-	  fabric|quilt|forge) ;; \
-	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt forge"; exit 1 ;; \
+	  fabric|quilt|forge|neoforge) ;; \
+	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt forge neoforge"; exit 1 ;; \
 	esac
 	@echo "[e2e] Testing Minecraft versions: $(VERSIONS)"
 	@echo "[e2e] Loader: $(LOADER)"
@@ -158,6 +174,8 @@ _e2e-fanout:
 	  MOD_JAR_114="$(MOD_JAR_114)" \
 	  MOD_JAR_26="$(MOD_JAR_26)" \
 	  MOD_JAR_FORGE="$(MOD_JAR_FORGE)" \
+	  MOD_JAR_NEO121="$(MOD_JAR_NEO121)" \
+	  MOD_JAR_NEO26="$(MOD_JAR_NEO26)" \
 	  E2E_LOG_DIR="$(E2E_LOG_DIR)" \
 	  E2E_RESULT_DIR="$(E2E_RESULT_DIR)" \
 	  E2E_RUN_ID="$(E2E_RUN_ID)" \
@@ -200,7 +218,7 @@ clean-e2e: ## remove e2e logs/results and reap containers/images
 # parallelism lives inside the recipe (xargs -P), so `make -j` is safely serialized.
 .NOTPARALLEL:
 
-MOD_SOURCES := $(shell git ls-files src '*.gradle' gradle.properties .env.version)
+MOD_SOURCES := $(shell git ls-files src neoforge '*.gradle' gradle.properties .env.version)
 
 $(MOD_JAR_121): $(MOD_SOURCES) | ci-image
 	@echo "[build] Building 1.21.x jar..."
@@ -229,8 +247,21 @@ $(MOD_JAR_FORGE): $(shell git ls-files forge src/main/java .env.version) | ci-im
 .PHONY: build-forge
 build-forge: $(MOD_JAR_FORGE) ## build the Phase-1 Forge spike jar (host gradlew + ForgeGradle 7)
 
+# neoforge/ is a standalone Gradle build (`gradle -p neoforge`), not a subproject
+# -- ModDevGradle and Fabric Loom are not supported in one project, and this way
+# the four invocations above stay exactly as they were. First build of each line
+# runs ModDevGradle's NeoForm pipeline (decompile + recompile Minecraft, several
+# minutes); it is cached in GRADLE_USER_HOME afterwards.
+$(MOD_JAR_NEO121): $(MOD_SOURCES) | ci-image
+	@echo "[build] Building NeoForge 21.1 jar (Minecraft 1.21.1)..."
+	@$(call in_ci_image_gradle,gradle -p neoforge build -PneoTarget=121 --no-daemon --quiet)
+
+$(MOD_JAR_NEO26): $(MOD_SOURCES) | ci-image
+	@echo "[build] Building NeoForge 26.2 jar..."
+	@$(call in_ci_image_gradle,gradle -p neoforge build -PneoTarget=26 --no-daemon --quiet)
+
 .PHONY: build
-build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) ## build all four era jars (dockerized; needs only make + docker)
+build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(MOD_JAR_NEO121) $(MOD_JAR_NEO26) ## build all six jars: four Fabric/Quilt eras + two NeoForge lines (dockerized)
 
 .PHONY: test
 test: ci-image ## offline suite: routing contract + 41 unit tests on all four targets (dockerized)

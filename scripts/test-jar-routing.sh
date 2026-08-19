@@ -162,6 +162,60 @@ check "gate pair 26.2/java25/fabric" "1" \
 check "gate pair 26.2/java25/quilt" "1" \
       "$(grep -cF '{ mc: "26.2", java: "25", loader: "quilt" }' "$gate_yml")"
 
+# Probe 3b — LOADER=neoforge. NeoForge publishes one version line per Minecraft
+# version (no Intermediary-equivalent stable mapping to ride), so exactly two
+# versions are supported and every other one must be REFUSED by name, never
+# handed a jar that cannot load it.
+#
+# Driven through the real e2e-run-one.sh, which dies on a named verdict long
+# before Docker — so this stays offline and needs no built jars. Two knobs make
+# the probe unambiguous, because the jar-exists check runs BEFORE the
+# neoforge-version check:
+#   the four family jars point at a real (empty) file, so an unsupported
+#   version sails past that check and reaches neoforge-unsupported-version;
+#   the two NeoForge jars point at paths that do not exist, so a SUPPORTED
+#   version stops at mod-jar-missing — proving it routed to the NeoForge jar
+#   rather than being rejected as unsupported.
+echo "== LOADER=neoforge supported versions (via e2e-run-one.sh)"
+neo_root="$(mktemp -d)"
+trap 'rm -rf "$neo_root"' EXIT
+: > "$neo_root/family.jar"
+neo_verdict() {
+  # e2e-run-one.sh's contract: exactly one result file, verdict as its last field.
+  REPO_ROOT="$neo_root" LOADER=neoforge \
+  E2E_RESULT_DIR=results E2E_LOG_DIR=logs \
+  MOD_JAR_121=family.jar MOD_JAR_1192=family.jar \
+  MOD_JAR_114=family.jar MOD_JAR_26=family.jar \
+  MOD_JAR_NEO121=absent-neoforge.jar MOD_JAR_NEO26=absent-neoforge.jar \
+    "$script_dir/e2e-run-one.sh" "$1" > /dev/null 2>&1
+  awk '{print $NF}' "$neo_root/results/$1-neoforge.result" 2>/dev/null \
+    || echo "no-result-file"
+}
+for v in $ALL_VERSIONS; do
+  case "$v" in
+    1.21.1|26.2) check "neoforge $v routes to its NeoForge jar" \
+                       "mod-jar-missing" "$(neo_verdict "$v")" ;;
+    *)           check "neoforge $v refused" \
+                       "neoforge-unsupported-version" "$(neo_verdict "$v")" ;;
+  esac
+done
+
+# The two NeoForge stage jobs in e2e.yml carry a LITERAL versions list (two
+# versions is not worth generating; tools/gen_matrix.go stays untouched), so
+# they are asserted here rather than against the grid. Version, Java and loader
+# are read from the SAME job block on purpose: a grep -cF per line would still
+# pass with the two pairs crossed over.
+echo "== neoforge stage jobs in e2e.yml"
+neo_job_with() {
+  sed -n "/^  $1:\$/,/jar-sha:/p" "$gate_yml" \
+    | sed -nE 's/^ *(versions|java|loader): *//p' \
+    | tr -d "\"'" | tr '\n' ' ' | sed 's/ $//'
+}
+check "e2e.yml e2e-neoforge-mc1211-java21 with:" "[1.21.1] 21 neoforge" \
+      "$(neo_job_with e2e-neoforge-mc1211-java21)"
+check "e2e.yml e2e-neoforge-mc262-java25 with:" "[26.2] 25 neoforge" \
+      "$(neo_job_with e2e-neoforge-mc262-java25)"
+
 # Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the two
 # `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.
 echo "== e2e-entrypoint.sh era literals (RCON source name, player /list form)"

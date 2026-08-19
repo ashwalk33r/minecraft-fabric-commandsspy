@@ -1,0 +1,39 @@
+# Templated by neoforge/build.gradle's processResources, the same way
+# fabric.mod.json and quilt.mod.json are by the root build.
+#
+# modLoader/loaderVersion are BOTH mandatory, despite being widely documented as
+# optional: omitting modLoader makes FML reject the jar outright with
+# "InvalidModFileException: Missing ModLoader in file" and crash the server at
+# pre-load. e2e-proven on NeoForge 21.1.248 — do not "simplify" them away.
+#
+# loaderVersion is the FML version, a THIRD version axis distinct from both the
+# NeoForge and Minecraft versions: FML 4.x ships with NeoForge 21.1.x, FML 11.x
+# with 26.2.x. Hence the per-line fml_range_* properties.
+modLoader = "javafml"
+loaderVersion = "${fml_range}"
+license = "MIT"
+issueTrackerURL = "https://github.com/ashwalk33r/minecraft-fabric-commandsspy/issues"
+
+[[mods]]
+modId = "commandsspy"
+version = "${version}"
+displayName = "Commands Spy"
+description = '''Log commands to server console.'''
+authors = "Ultra_MC"
+
+# Narrow on purpose. NeoForge has no Intermediary-equivalent stable mapping, so
+# one jar covers one Minecraft version; a wider range would only turn a clean
+# "wrong version" message into a runtime crash. See docs/version-matrix.md.
+[[dependencies.commandsspy]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neoforge_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.commandsspy]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_range}"
+ordering = "NONE"
+side = "BOTH"

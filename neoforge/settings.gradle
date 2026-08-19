@@ -1,0 +1,26 @@
+// neoforge/ is a STANDALONE Gradle build, not a subproject of the root one.
+//
+// ModDevGradle and Fabric Loom are not supported in the same Gradle project
+// (ModDevGradle#234), and the root build applies Loom unconditionally. Keeping
+// this build separate rather than adding `include 'neoforge'` to the root
+// settings.gradle means the two plugins never share a build at all: the root
+// project's four-era logic, its `org.gradle.jvmargs=-Xmx1G`, and every existing
+// `gradle build`/`gradle test` invocation stay byte-for-byte untouched, and
+// `make build` for the Fabric jars never drags ModDevGradle's NeoForm
+// decompile in. Built with `gradle -p neoforge build -PneoTarget=<121|26>`.
+pluginManagement {
+	repositories {
+		maven {
+			name = 'NeoForged'
+			url = 'https://maven.neoforged.net/releases'
+		}
+		mavenCentral()
+		gradlePluginPortal()
+	}
+}
+
+plugins {
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'commandsspy-neoforge'
