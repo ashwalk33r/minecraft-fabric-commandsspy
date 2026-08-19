@@ -13,6 +13,8 @@ LOADER="${LOADER:-fabric}"
 # 1 = this Minecraft version is OUTSIDE the Forge jar's declared range and Forge
 # is expected to refuse the mod. Decided by scripts/e2e-run-one.sh.
 FORGE_EXPECT_REFUSED="${FORGE_EXPECT_REFUSED:-0}"
+# Set by scripts/e2e-run-one.sh for LOADER=neoforge only.
+NEOFORGE_VERSION="${NEOFORGE_VERSION:-}"
 
 cd /mc-server
 
@@ -46,7 +48,7 @@ elif [ "$LOADER" = "quilt" ]; then
   echo "[e2e] Copying pre-installed Quilt server for Minecraft $MC_VERSION..."
   cp -R /quilt-preinstalled/. .
   SERVER_LAUNCH_ARGS="-jar quilt-server-launch.jar"
-else
+elif [ "$LOADER" = "forge" ]; then
   # Forge: same host-side-install trick as Quilt (the installer wants a modern
   # JDK), but Forge is NEITHER a fat jar NOR a thin jar — 1.17+ installs a
   # `libraries/.../unix_args.txt` @argfile holding the module path and main
@@ -61,6 +63,31 @@ else
     # <=1.16.5 layout: a single runnable forge-<mc>-<build>.jar, no argfile.
     SERVER_LAUNCH_ARGS="-jar $(find . -maxdepth 1 -name 'forge-*.jar' | head -1)"
   fi
+else
+  # NeoForge needs NO host-side install trick, unlike Quilt. Quilt needed one
+  # because quilt-installer requires Java 17+ while the mc114 band boots Java 8;
+  # NeoForge never targets a Minecraft version below 1.20.2 and so never runs
+  # below Java 17 anyway. The installer is headless-safe, exits non-zero on
+  # failure, downloads the vanilla server jar itself, and needs only a JRE — no
+  # JDK, no javac — which is exactly what this image has.
+  #
+  # Deliberately NOT cached in /jar-cache: the install tree is ~250MB per
+  # Minecraft version against GitHub's 10GB per-repo cache budget, and with only
+  # two shipped lines the download is cheaper than the cache round-trip.
+  echo "[e2e] Installing NeoForge $NEOFORGE_VERSION server for Minecraft $MC_VERSION..."
+  curl -fsSL "https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_VERSION}/neoforge-${NEOFORGE_VERSION}-installer.jar" \
+    -o neoforge-installer.jar
+  if ! java -jar neoforge-installer.jar --install-server . > neoforge-install.log 2>&1; then
+    echo "[e2e] NeoForge install failed:"
+    tail -40 neoforge-install.log
+    echo "E2E ${MC_VERSION} FAIL neoforge-install-failed"
+    exit 1
+  fi
+  rm -f neoforge-installer.jar
+  # Every path inside unix_args.txt is relative and the argfile carries the main
+  # class, so this must be launched from the server directory (we are: cd
+  # /mc-server above) and needs no -jar and no version string of its own.
+  SERVER_LAUNCH_ARGS="@libraries/net/neoforged/neoforge/${NEOFORGE_VERSION}/unix_args.txt"
 fi
 
 if [ -f "/tmp/mod.jar" ]; then
@@ -108,13 +135,14 @@ mkfifo console.in
 echo "[e2e] Starting $LOADER server for Minecraft $MC_VERSION..."
 # Intentionally NOT using -XX:+AlwaysPreTouch: it front-loads page faulting and
 # would increase time-to-"Done", the metric being optimized.
-# 512M is tuned for vanilla+Fabric; Forge's ModLauncher/transformer stack does
-# not fit in it, so that leg gets its own floor.
-if [ "$LOADER" = "forge" ]; then
-  JAVA_FLAGS="${JAVA_FLAGS:--Xms1G -Xmx1G -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
-else
-  JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx512M -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
+# 512M is tuned for vanilla+Fabric/Quilt; Forge's ModLauncher/transformer stack
+# and NeoForge's own mod-loading pipeline on top of vanilla don't fit in it, so
+# both get their own floor. Still overridable wholesale via JAVA_FLAGS.
+DEFAULT_MAX_HEAP=512M
+if [ "$LOADER" = "forge" ] || [ "$LOADER" = "neoforge" ]; then
+  DEFAULT_MAX_HEAP=1G
 fi
+JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx${DEFAULT_MAX_HEAP} -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
 # The fifo is held open read-write on fd 3 and handed to java as stdin directly.
 # A `tail -f console.in |` pipeline here is a trap: tail never exits, so a
 # crashed java would block this script forever. With fd 3, $! is `timeout`'s
@@ -122,7 +150,7 @@ fi
 # this leaves behind on a hard kill is harmless: the whole container, and
 # everything in it, is torn down the moment this script (its PID 1) exits.
 exec 3<>console.in
-# shellcheck disable=SC2086 # both are whitespace-separated arg lists; word splitting is the point
+# shellcheck disable=SC2086 # both are whitespace-separated argument lists; word splitting is the point
 timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS $SERVER_LAUNCH_ARGS nogui <&3 > server.log 2>&1 &
 SERVER_PID=$!
 
@@ -261,10 +289,11 @@ elif ! grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
 fi
 
 # Two phrasings, era-exact: older Mixin says "was not found", modern Mixin
-# "could not find any targets matching". Forge has no Mixin — it hooks
-# CommandEvent — so there is no injection to check; the command-logged
-# assertions below are what prove the hook is live there.
-if [ "$LOADER" != "forge" ] && grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then
+# "could not find any targets matching". Fabric/Quilt only: neither Forge nor
+# NeoForge ships a mixin — both hook their platform's native CommandEvent — so
+# this grep could not fail there and would prove nothing. What proves the
+# Forge/NeoForge hook is the console/RCON/player assertions below.
+if [ "$LOADER" != "forge" ] && [ "$LOADER" != "neoforge" ] && grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then
   FAILURES="${FAILURES}mixin-not-applied,"
 fi
 
@@ -298,6 +327,7 @@ if [ "$QUILT_ENTRYPOINT_GAP" = "1" ]; then
   if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18 entrypoint gap has closed upstream — update docs/version-matrix.md and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18: entrypoint banner absent as expected (mixins still asserted below)"; fi
 elif grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [PASS] mod loaded (Loading CommandsSpy)"; else echo "  [FAIL] mod not loaded (Loading CommandsSpy)"; fi
 if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandEvent, no Mixin to apply";
+elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoForge jar has no mixin (it hooks CommandEvent)";
 elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
 if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
 if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi

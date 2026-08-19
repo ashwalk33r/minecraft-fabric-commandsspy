@@ -43,8 +43,8 @@ esac
 
 LOADER="${LOADER:-fabric}"
 case "$LOADER" in
-  fabric|quilt|forge) ;;
-  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge" >&2; exit 1 ;;
+  fabric|quilt|forge|neoforge) ;;
+  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge neoforge" >&2; exit 1 ;;
 esac
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
@@ -61,6 +61,10 @@ FORGE_INSTALL_JDK="${FORGE_INSTALL_JDK:-21}"
 : "${MOD_JAR_1192:?MOD_JAR_1192 must be set}"
 : "${MOD_JAR_114:?MOD_JAR_114 must be set}"
 : "${MOD_JAR_26:?MOD_JAR_26 must be set}"
+if [ "$LOADER" = "neoforge" ]; then
+  : "${MOD_JAR_NEO121:?MOD_JAR_NEO121 must be set for LOADER=neoforge}"
+  : "${MOD_JAR_NEO26:?MOD_JAR_NEO26 must be set for LOADER=neoforge}"
+fi
 
 if [ "$LOADER" = "forge" ]; then
   # Phase-1 spike: ONE Forge jar, no band routing. Measuring how far its
@@ -72,6 +76,22 @@ else
   _mod_jar_var="MOD_JAR_${JAR_FAMILY}"
   MOD_JAR="${!_mod_jar_var}"
 fi
+
+# NeoForge OVERRIDES the era table above. Fabric's Intermediary mappings are
+# stable across Minecraft versions, which is why four jars cover 24 of them;
+# NeoForge has no equivalent and publishes one version line per Minecraft
+# version, so a NeoForge jar covers exactly one. A version with no shipped line
+# is an explicit failure below, never a jar that cannot load it. These pins
+# mirror neoforge/gradle.properties -- change both together. Always defined
+# (never just inside the neoforge branch): referenced later under `set -u`
+# regardless of LOADER.
+NEOFORGE_VERSION=""
+if [ "$LOADER" = "neoforge" ]; then
+  case "$VERSION" in
+    1.21.1) NEOFORGE_VERSION="21.1.248"; MOD_JAR="$MOD_JAR_NEO121" ;;
+    26.2)   NEOFORGE_VERSION="26.2.0.64"; MOD_JAR="$MOD_JAR_NEO26" ;;
+  esac
+fi
 : "${E2E_LOG_DIR:=build/e2e-logs}"
 : "${E2E_RESULT_DIR:=build/e2e-results}"
 : "${E2E_RUN_ID:=manual}"
@@ -81,6 +101,9 @@ fi
 
 : "${E2E_JAR_CACHE:=}"
 
+# fabric contributes no suffix, so its keys -- and therefore its log files,
+# result files and container names -- are byte-for-byte what they were before
+# the loader axis existed. Mirrored by the Makefile's _loader_suffix.
 BASE_KEY="$VERSION"
 if [ "$LOADER" != "fabric" ]; then
   BASE_KEY="${BASE_KEY}-${LOADER}"
@@ -119,6 +142,25 @@ fi
 # Default result is failure. Any exit path that does not explicitly overwrite
 # this leaves a FAIL on disk, which is exactly what we want.
 printf 'E2E %s java%s FAIL runner-died\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+
+# Both checks below are reported here, after the result file is armed, so the
+# failure is recorded rather than lost to an early exit.
+
+# A missing jar must fail HERE. `docker run -v <missing path>:/tmp/mod.jar`
+# silently creates an empty DIRECTORY at the source path and mounts that, so the
+# container sees no mod, boots perfectly, and reports mod-not-loaded — a build
+# or path bug wearing a mod bug's clothes.
+if [ ! -f "${REPO_ROOT}/${MOD_JAR}" ]; then
+  printf 'E2E %s java%s FAIL mod-jar-missing\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+  echo "[e2e] <- FAIL Minecraft $VERSION: no mod jar at ${REPO_ROOT}/${MOD_JAR} (build it first)"
+  exit 1
+fi
+
+if [ "$LOADER" = "neoforge" ] && [ -z "$NEOFORGE_VERSION" ]; then
+  printf 'E2E %s java%s FAIL neoforge-unsupported-version\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+  echo "[e2e] <- FAIL Minecraft $VERSION on neoforge: no NeoForge line ships for it (supported: 1.21.1, 26.2)"
+  exit 1
+fi
 
 PREINSTALL_TMP_DIR=""
 # shellcheck disable=SC2329 # invoked via the trap below, not directly
@@ -272,6 +314,7 @@ if docker run --rm \
     -e PLAYER_PHASE="$PLAYER_PHASE" \
     -e LOADER="$LOADER" \
     -e FORGE_EXPECT_REFUSED="$FORGE_EXPECT_REFUSED" \
+    -e NEOFORGE_VERSION="$NEOFORGE_VERSION" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
     "$@" \
     "$IMAGE" 2>&1 | tee "$LOG_FILE" | sed -u "s/^/[$KEY] /"; then
