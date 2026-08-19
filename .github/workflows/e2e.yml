@@ -53,6 +53,11 @@ jobs:
       mc114_java8: ${{ steps.grid.outputs.mc114_java8 }}
       mc114_java17: ${{ steps.grid.outputs.mc114_java17 }}
       mc114_java21: ${{ steps.grid.outputs.mc114_java21 }}
+      forge_java21: ${{ steps.grid.outputs.forge_java21 }}
+      forge_legacy_java17: ${{ steps.grid.outputs.forge_legacy_java17 }}
+      forge_legacy_guard_java8: ${{ steps.grid.outputs.forge_legacy_guard_java8 }}
+      forge_eventbus7_java21: ${{ steps.grid.outputs.forge_eventbus7_java21 }}
+      forge_eventbus7_java25: ${{ steps.grid.outputs.forge_eventbus7_java25 }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: "Verify action pins"
@@ -129,6 +134,19 @@ jobs:
         with:
           name: commandsspy-jar-forge-legacy-${{ github.sha }}
           path: forge/build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar
+          if-no-files-found: error
+          retention-days: 1
+      # EventBus-7 Forge target: issue #32 task 2, for Forge 56+ (Minecraft
+      # 1.21.6-26.2). Same forge/ Gradle build, -PforgeTarget=eventbus7;
+      # decompiles Minecraft against its own 1.21.8 compile target, so it is
+      # its own slow-on-cache-miss step too.
+      - name: "Build: mod compilation (Forge target, Minecraft 1.21.6-26.2, EventBus 7)"
+        run: make build-forge-eventbus7
+      - name: "Build: upload the mod artifact (Forge EventBus-7 target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-eventbus7-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.21.6-26.2-forge.jar
           if-no-files-found: error
           retention-days: 1
       - name: "Build: upload the mod artifact (NeoForge 21.1, Minecraft 1.21.1)"
@@ -301,73 +319,95 @@ jobs:
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
-  # Forge: TWO bands, hand-listed rather than driven by tools/gen_matrix.go
-  # (still loader-unaware — see issue #23's Phase 2), one job each below.
-  #
-  # Modern band (this job): THREE legs. 1.20.6 and 1.21.5 are the measured
-  # floor and ceiling of the modern Forge jar's Minecraft range; 1.20.4 is a
-  # GUARD leg that asserts Forge refuses the mod below the floor, where its
-  # official-name Minecraft calls would crash the server mid-command. No
-  # middle versions: the mapping regime and EventBus generation are uniform
-  # across the range (one Forge major branch's worth of behavior), so nothing
-  # can fail in the middle while both edges pass.
+  # Forge: five generated jobs (modern band, legacy band, sub-floor guard,
+  # and the EventBus-7 band split across its two era Java floors).
+  # Version lists and the full per-leg rationale live in tools/gen_matrix.go's
+  # Forge stage — floor rows only, no coverage rows, by design.
   e2e-forge-java21:
     name: "e2e 1.20.6-1.21.5 java 21 (forge)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
-          && !contains(needs.*.result, 'failure') }}
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.forge_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: '["1.20.4","1.20.6","1.21.5"]'
+      versions: ${{ needs.build-jars.outputs.forge_java21 }}
       java: "21"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
-  # Legacy band: issue #28 task 1's SRG-reobfuscated jar. Every measured
-  # version is hand-listed here, not just the edges: the R1 measurement's
-  # whole point was SRG member-id stability ACROSS Forge major branches
-  # (37/39/40/42/43/47/48/49 — seven of them), so a floor+ceiling-only leg
-  # pair would not exercise the thing being proven.
   e2e-forge-legacy-java17:
     name: "e2e 1.17.1-1.20.4 java 17 (forge legacy)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
-          && !contains(needs.*.result, 'failure') }}
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.forge_legacy_java17 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: '["1.17.1","1.18","1.18.1","1.18.2","1.19.1","1.19.2","1.20.1","1.20.2","1.20.3","1.20.4"]'
+      versions: ${{ needs.build-jars.outputs.forge_legacy_java17 }}
       java: "17"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
-  # 1.16.5 is the GUARD leg just below the legacy floor — see
-  # docs/version-matrix.md for why it fails (a Mojang class rename, not an
-  # SRG instability). Its own natural floor is Java 8 (1.14-1.16.x), NOT 17
-  # like the rest of the legacy band — a real deployer of 1.16.5 would run
-  # it on Java 8, and an old Forge build's refusal/crash behavior differs
-  # (misleadingly, for this guard's string-matching) on a newer JVM. A
-  # separate job, own java input, rather than folding it into the band above.
   e2e-forge-legacy-guard-java8:
     name: "e2e 1.16.5 java 8 (forge legacy guard)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
-          && !contains(needs.*.result, 'failure') }}
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.forge_legacy_guard_java8 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: '["1.16.5"]'
+      versions: ${{ needs.build-jars.outputs.forge_legacy_guard_java8 }}
       java: "8"
+      loader: "forge"
+      jar-sha: ${{ github.sha }}
+
+  # EventBus-7 band, split by era Java floor: 1.21.6-1.21.11 on java 21,
+  # 26.x on java 25 (the 26.x servers themselves require 25). Every measured
+  # version, like the legacy band — rationale in tools/gen_matrix.go.
+  e2e-forge-eventbus7-java21:
+    name: "e2e 1.21.6-1.21.11 java 21 (forge eventbus7)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.forge_eventbus7_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.forge_eventbus7_java21 }}
+      java: "21"
+      loader: "forge"
+      jar-sha: ${{ github.sha }}
+
+  e2e-forge-eventbus7-java25:
+    name: "e2e 26.1-26.2 java 25 (forge eventbus7)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.build-jars.outputs.forge_eventbus7_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.build-jars.outputs.forge_eventbus7_java25 }}
+      java: "25"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 

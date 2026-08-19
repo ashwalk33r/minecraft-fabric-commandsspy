@@ -35,8 +35,9 @@ shellcheck, so
 Docker-unavailable escape hatch for these three (unlike `ci-host`): run
 `./gradlew` directly against a local JDK instead.
 
-`make build` still builds exactly the four Fabric/Quilt jars; the Forge jar
-(a separate Gradle build in `forge/`) is `make build-forge`, on demand —
+`make build` still builds exactly the four Fabric/Quilt jars; the Forge jars
+(a separate Gradle build in `forge/`) are `make build-forge`/
+`make build-forge-legacy`/`make build-forge-eventbus7`, on demand —
 not part of the default `make build`/`make ci` path.
 
 ## gradle.yml
@@ -58,30 +59,35 @@ Gradle](https://docs.github.com/en/actions/automating-builds-and-tests/building-
 Stage order is popularity order: a failure in a widely-run version surfaces
 before runner minutes are spent on the long tail.
 
-1. **build-jars + unit-tests** — all six jars are built once and shared as
-   artifacts;
+1. **build-jars + unit-tests** — all six `make build` jars are built once
+   and shared as artifacts;
    the offline routing contract (`scripts/test-jar-routing.sh`) and the grid
    count assertions run here, before anything boots. `build-jars` also runs
-   `make build-forge` — a separate step, a separate Gradle build (`forge/`),
-   uploaded as its own artifact (`commandsspy-jar-forge-<sha>`) — in the same
+   `make build-forge`, `make build-forge-legacy` and
+   `make build-forge-eventbus7` — separate steps, a separate Gradle build
+   (`forge/`), each uploaded as its own artifact
+   (`commandsspy-jar-forge[-legacy|-eventbus7]-<sha>`) — in the same
    pinned CI image as the four Fabric/Quilt jars. `forge/build.gradle` and
    `forge/gradle.properties` are in the `ci-gradle` cache key alongside the
-   root build files, because the first Forge build decompiles Minecraft and
-   is slow on a cold cache.
+   root build files, because the first Forge build of each target decompiles
+   Minecraft and is slow on a cold cache.
 2. **e2e-gate** — two canary pairs (1.21.11/java21, 26.2/java25), each
    crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
    four canary jobs run. `fail-fast` is off so all four always report.
-3. **e2e-forge-java21** — one caller job ("e2e 1.20.6-1.21.5 java 21
-   (forge)"), calling `e2e-stage.yml` with `loader: forge`, `java: 21`,
-   `versions: ["1.20.4","1.20.6","1.21.5"]` — the measured floor, the
-   measured ceiling, and the out-of-range guard (`docs/e2e-harness.md` ->
-   "Forge server install"). +3 jobs on top of the existing ~84-job grid.
-   Hand-listed rather than driven by `tools/gen_matrix.go`, which is still
-   loader-unaware — making loader a real dimension of the generator is
-   Phase 2 of issue #23, out of scope here. No middle versions: the
-   mapping regime and EventBus generation are uniform across the range, so
-   nothing can fail in the middle while both edges pass; they were measured
-   locally instead (`docs/version-matrix.md` -> "Forge: a fifth jar").
+3. **Forge stages** — five caller jobs (`e2e-forge-java21`,
+   `e2e-forge-legacy-java17`, `e2e-forge-legacy-guard-java8`,
+   `e2e-forge-eventbus7-java21`, `e2e-forge-eventbus7-java25`), each a normal
+   `e2e-stage.yml` call with `loader: forge` reading its version list from a
+   `tools/gen_matrix.go` output of the same name, like the Fabric/Quilt
+   bands. Forge's loader-awareness in the generator is floor rows only — no
+   newest-Java coverage rows, no lean/full split: the Forge jars' own
+   bytecode floors (legacy = 17 uniform, modern/eventbus7 = 21, with
+   eventbus7's 26.x half running 25 because those servers require it) are
+   what matter, and the forward-JVM coverage-row pattern is a Fabric-jar
+   concept that must not be reused with `loader: forge`. Per-leg rationale
+   (why the modern band is edges-only, why the legacy and eventbus7 bands
+   list every measured version, why the 1.16.5 guard runs on java 8) lives
+   in the generator's Forge stage comment.
 4. **NeoForge stages** — two jobs, one per shipped NeoForge line
    (1.21.1/java21 and 26.2/java25), each a normal `e2e-stage.yml` call with a
    **literal** one-element version list. See "The NeoForge stages" below.
@@ -91,11 +97,10 @@ before runner minutes are spent on the long tail.
    `e2e-stage.yml`'s own matrix — every band therefore has TWO separate
    `e2e.yml` job entries (`-fabric`/`-quilt` suffix), so the Actions UI
    renders fabric and quilt as two independent, side-by-side job groups
-   instead of interleaved rows in one shared group. The loader axis is
-   orthogonal to band/version generation (`tools/gen_matrix.go` has no
-   concept of it) - both loader variants of a band read the exact same
-   `needs.build-jars.outputs.*` version list, they just run as separate
-   jobs. Each band's `needs:` lists both loader variants of every prior
+   instead of interleaved rows in one shared group. The fabric/quilt axis is
+   orthogonal to band/version generation - both loader variants of a band
+   read the exact same `needs.build-jars.outputs.*` version list, they just
+   run as separate jobs. Each band's `needs:` lists both loader variants of every prior
    band, so stage ordering (popularity-first) still holds across both
    loaders; the two loader variants of the same band run fully in parallel
    with no dependency between them. `e2e-stage.yml`'s `loader` input
@@ -194,6 +199,14 @@ Two non-obvious rules it must keep:
   hard-error the run. The `[]` literal keeps the `!= '[]'` skip guard honest.
 - **The gate canaries are moved to the gate, never duplicated** in the band
   lists.
+- **Forge bands emit floor rows only** (`forge_java21`, `forge_legacy_java17`,
+  `forge_legacy_guard_java8`, `forge_eventbus7_java21`,
+  `forge_eventbus7_java25`) — no coverage rows, no lean/full split. Presence
+  is keyed off the `minecraft_range_modern`/`_legacy`/`_eventbus7` lines in
+  `forge/gradle.properties`; another Forge band is one more range-key case,
+  one emit, and one `uses:` block. Within `forge_java21`, 1.20.4 is keyed on
+  the *legacy* band — it boots the legacy jar (see the rationale comment in
+  `tools/gen_matrix.go`).
 
 Each band job's `if:` guard is `!cancelled() && no needed job failed &&
 list != '[]'` — plain `success()` would skip the band when an unrelated
@@ -201,7 +214,13 @@ sibling failed, and `fromJSON` on an empty string would kill the run.
 
 Job counts per band and trigger are pinned in `tools/gen_matrix_test.go`;
 `tools/floors_test.go` pins the Java floors against
-`scripts/e2e-run-one.sh`. Change the grid → those tests name the new numbers.
+`scripts/e2e-run-one.sh` (and the Forge rows against
+`--print-forge-routing`). Change the grid → those tests name the new numbers.
+`TOTAL_JOBS = 2 x fabric pairs + forge pairs + 8`: every fabric band key
+feeds two caller jobs (`-fabric` and `-quilt`), Forge keys feed one
+(single-loader), and the 8 fixed jobs are build-jars, unit-tests, the 4
+e2e-gate canaries (2 versions x fabric/quilt), and the 2 literal NeoForge
+jobs. On `pull_request` that is 2x39 + 24 + 8 = 110 jobs.
 
 Grid policy: every version runs on its own floor JVM. Newest-Java coverage
 rows sample only the band's ends on `pull_request` (lean) and the whole band

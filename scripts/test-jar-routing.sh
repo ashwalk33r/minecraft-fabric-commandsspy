@@ -170,12 +170,16 @@ echo "== LOADER=forge routing (legacy vs modern, refusal flag)"
 # treats it as globally unsupported before any probe runs, forge included.
 FORGE_LEGACY_VERSIONS="1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4"
 FORGE_MODERN_VERSIONS="1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5"
-FORGE_OUT_OF_RANGE_VERSIONS="1.14.4 1.15.2 1.16.5 1.20.5 1.21.6 1.21.11 26.1 26.2"
+FORGE_EB7_VERSIONS="1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2"
+FORGE_OUT_OF_RANGE_VERSIONS="1.14.4 1.15.2 1.16.5 1.20.5"
 for v in $FORGE_LEGACY_VERSIONS; do
   check "forge-routing $v -> legacy, not refused" "legacy 0"         "$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
 done
 for v in $FORGE_MODERN_VERSIONS; do
   check "forge-routing $v -> modern, not refused" "modern 0"         "$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
+done
+for v in $FORGE_EB7_VERSIONS; do
+  check "forge-routing $v -> eventbus7, not refused" "eventbus7 0"   "$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
 done
 for v in $FORGE_OUT_OF_RANGE_VERSIONS; do
   got="$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
