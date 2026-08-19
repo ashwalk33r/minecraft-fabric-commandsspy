@@ -1,9 +1,12 @@
 # Version matrix
 
-One shared implementation (`src/main`), six jars: four era-correct Fabric/Quilt
-jars, which differ only in their `CommandManagerMixin` source set and build
-settings, and two NeoForge jars built from the same core against a different
-loader (see [NeoForge](#neoforge-two-more-jars-on-a-different-contract) below).
+One shared implementation (`src/main`), eight jars: four era-correct
+Fabric/Quilt jars, which differ only in their `CommandManagerMixin` source
+set and build settings; two NeoForge jars built from the same core against a
+different loader (see
+[NeoForge](#neoforge-two-more-jars-on-a-different-contract) below); and two
+Forge jars, modern and legacy, built from the same core against a third
+loader (see [Forge](#forge-a-fifth-jar-narrower-by-construction) below).
 
 ## The four Fabric/Quilt jars
 
@@ -320,12 +323,123 @@ runtime is SRG-mapped, which is exactly why 1.20.4 fails.
   lands between 1.21.5 and 1.21.8 (`MinecraftForge.EVENT_BUS.addListener` ->
   `CommandEvent.BUS.addListener`; `Event` -> `MutableEvent` + `Cancellable`)
   and needs a second entrypoint variant.
-- A sub-1.20.5 Forge jar would need ForgeGradle's separate
-  `net.minecraftforge.renamer` reobfuscation step, whose own cross-version
-  range is unmeasured. Not supported: every Forge era outside
-  1.20.6–1.21.5, including 1.16.5 and 1.20.1 — the largest legacy Forge
-  server bases — which would require that unmeasured reobfuscated path.
+- A sub-1.20.5 Forge jar needs ForgeGradle's separate
+  `net.minecraftforge.renamer` reobfuscation step — see "Forge legacy jar"
+  below for the second Forge jar this project ships to cover it.
 
 For calibration: the Fabric mc121 jar covers 1.20.3–1.21.x (~13 versions).
 Forge's era simply started later; both jars are era-maximal for their
 loader.
+
+## Forge legacy jar: SRG member ids are stable, class identities are not
+
+Issue #28 task 1 asked a narrower question than "can a legacy Forge jar
+exist": are SRG member ids (`m_xxxxx_`/`f_xxxxx_`) as stable *within* the
+pre-1.20.5 SRG era as Mojang's official names are within the modern era —
+stable enough that ForgeGradle's `net.minecraftforge.renamer` plugin, run
+once, produces a jar that boots correctly across multiple legacy Minecraft
+versions? Answer: **mostly yes, with one sharp, well-understood boundary.**
+
+`forge/build.gradle` dispatches on `-PforgeTarget` (default `modern`, the
+jar described above; `legacy` for this one) the same way the root build
+dispatches on `-PmcTarget` — one Gradle project, two compile targets,
+selected by a property rather than forked into a second directory. The
+`legacy` target adds a second output alongside the plain `jar` task:
+`renamer.classes(tasks.named('jar', Jar)) { map.from
+minecraft.dependency.toSrgFile; archiveClassifier = 'forge' }`, pinned to
+`net.minecraftforge.renamer` version `1.1.2` (exact, not a range — the
+plugin is young and actively iterating). Compiled once against Minecraft
+1.20.1 / Forge 47.4.20 official mappings, `renameJar` maps the output down
+to that version's SRG names — the only mapping ForgeGradle 7's Mavenizer
+resolves for a `minecraft.dependency(...)` declaration; there is no
+per-target-version remapping built into the plugin. `javap` on the result
+confirms it: `CommandSourceStack.getEntity` -> `CommandSourceStack.m_81373_`,
+`ServerPlayer.getName` -> `ServerPlayer.m_7755_`,
+`CommandSourceStack.getTextName` -> `CommandSourceStack.m_81368_` — brigadier
+and Forge API calls (`ParseResults.getContext`, `CommandEvent.getParseResults`)
+stay as-is, never obfuscated, same pattern the modern jar's own `javap`
+check uses in reverse. `make build-forge-legacy` builds it;
+`MOD_JAR_FORGE_LEGACY` in the Makefile names it.
+
+### Measured range
+
+One SRG-renamed jar, booted as a real Forge dedicated server with the full
+e2e assertion set, `minecraft_range` widened to `[1.16,1.20.6)` during
+measurement so mods.toml metadata was never the limiting factor:
+
+| Minecraft | Forge build | Result |
+|---|---|---|
+| 1.16.4 | 35.1.4 | FAIL — `NoSuchMethodError` inside Forge's own `cpw.mods.modlauncher.SecureJarHandler`, before any mod code runs. An ancient ModLauncher/JDK incompatibility, not a signal about this mod or SRG stability. |
+| 1.16.5 | 36.2.34 | FAIL — `NoClassDefFoundError: net/minecraft/commands/CommandSourceStack`. Decisive: see below. |
+| 1.17.1 | 37.1.1 | PASS |
+| 1.18 | 38.0.14 | PASS |
+| 1.18.1 | 39.1.0 | PASS — all three e2e legs (console, RCON, player). Confirming this leg required fixing a harness gap first: the e2e bot's protocol table (`tools/table.go`) was missing protocol 757 (1.18/1.18.1), so this version's player-phase leg used to fail with an unrelated "unsupported protocol" error, never reaching a real assertion. Fixed alongside this jar (see docs/protocol-table.md); confirmed live with keep_alive `0x21`/`0x0F` and chat `0x03`, identical to 756 and 758. |
+| 1.18.2 | 40.3.0 | PASS |
+| 1.19.1 | 42.0.9 | PASS |
+| 1.19.2 | 43.5.0 | PASS |
+| 1.20.1 | 47.4.10 | PASS (compile target) |
+| 1.20.2 | 48.1.0 | PASS |
+| 1.20.3 | — | PASS |
+| 1.20.4 | 49.2.0 | PASS |
+| 1.20.5 | — | Forge publishes no build at all — same gap the modern jar hits at its floor. |
+
+One jar spans Minecraft **1.17.1–1.20.4**: nine Minecraft versions across
+seven consecutive Forge branches (37, 39, 40, 42, 43, 47, 48, 49) — directly
+adjacent to the modern jar's own 1.20.6 floor, with only the
+Forge-publishes-nothing 1.20.5 gap between them. Shipped
+`forge/gradle.properties` (`_legacy` suffix): `minecraft_range =
+[1.17.1,1.20.5)`, `forge_range`/`loader_range = [37,50)`. The jar itself is
+`commandsspy-<ver>+mc1.17-1.20.4-forge.jar`.
+
+### Why 1.16.x fails: a class rename, not an SRG rename
+
+`m_81373_` etc. are stable across every branch above — SRG **member** ids
+genuinely do not drift within this span, seven Forge majors and three years
+of Minecraft releases. 1.16.x fails for a different, sharper reason: the
+1.16.5 crash log shows the vanilla call site itself as
+`net.minecraft.command.Commands.func_197059_a` — package `command`, class
+`Commands`/`CommandSource`. By 1.17.1 (and every version above), the same
+call site is `net.minecraft.commands.CommandSourceStack` — package
+`commands`, class renamed. This is Mojang's own official-mapping vocabulary
+changing shape, upstream of and unrelated to Forge's SRG obfuscation layer;
+`renamer.mappings` remaps method/field ids inside a fixed class reference,
+it cannot retarget a hardcoded class name to a class that did not exist yet
+under that name when the jar was compiled. No amount of "point
+`renamer.classes` at 1.16.5's own SRG file" fixes this on a single
+compiled-once jar — the compiled bytecode already says
+`net/minecraft/commands/CommandSourceStack`, a class absent from 1.16.5
+entirely, so class loading fails before any renaming question is reached.
+A 1.16.x-and-below jar would need its own compile pass against
+1.16.5-shaped official mappings (a genuinely separate source variant, the
+same shape the Fabric mc114/mc1192/mc121 source-set split already uses for
+exactly this reason), not just a different renamer mapping file on the
+existing compiled output. This is also why 1.16.x is excluded from the
+shipped range rather than folded in: the fix is a third compile target, not
+a wider range on this one, and nothing in the measured 1.17.1-1.20.4 span
+needs it.
+
+1.16.4's failure is a second, independent finding: even setting the
+class-identity question aside, Forge 35.1.4's own `ModLauncher`
+(2020-era `cpw.mods.modlauncher`) throws `NoSuchMethodError` inside its own
+jar-signature verification on the JDK the 1.16.x e2e floor (Java 8) ships,
+before FML ever inspects the mod jar. Old Forge branches carry their own
+JDK-patch-level fragility independent of anything under this project's
+control. Probing 1.16.x during measurement needed a temporary Java 8
+compile pass (`--release 8`, plus a matching classic-cast rewrite of
+`CommandsSpyForge.java`'s one pattern-matching `instanceof`, a Java 16+
+feature); neither is part of the shipped `legacy` target, which compiles
+straight to Java 17 like every other 1.17.1+ target in this project, since
+1.16.x never entered the shipped range.
+
+### Gate coverage
+
+`.github/workflows/e2e.yml`'s `e2e-forge-legacy-java17` job hand-lists every
+measured PASS version above plus the 1.16.5 guard leg — unlike the modern
+jar's three-leg floor/ceiling/guard job, the whole point of this range was
+proving SRG member-id stability *across* seven Forge major branches, so a
+floor+ceiling-only gate would not exercise the thing being measured.
+`scripts/e2e-run-one.sh` routes each Minecraft version to the legacy or
+modern jar by a single case statement (`FORGE_JAR_BAND`, probed via
+`--print-forge-routing`); `scripts/test-jar-routing.sh` asserts that
+routing offline, including that versions outside both ranges come back
+refused rather than silently handed either jar.
