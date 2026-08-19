@@ -1,10 +1,21 @@
-// Phase-1 Forge spike. Separate Gradle build ON PURPOSE: ForgeGradle and Loom both
-// own a `minecraft` extension and remap/run tasks, and the root build produces four
-// SHIPPING jars verified across ~84 CI jobs. Isolation costs one settings.gradle;
-// cleanup, if the R1 measurement kills this, is `rm -rf forge/`. See docs/forge.md.
+// Separate Gradle build ON PURPOSE: ForgeGradle and Loom both own a `minecraft`
+// extension and remap/run tasks, and the root build produces four SHIPPING jars
+// verified across ~84 CI jobs. Isolation costs one settings.gradle; see docs/forge.md.
+//
+// -PforgeTarget switches which Forge era this build compiles/renames for --
+// same idiom as the root build's -PmcTarget and neoforge/'s -PneoTarget:
+//   modern (default) - Phase-1 shipping jar, Mojang official mappings at
+//     runtime, Minecraft 1.20.6-1.21.5.
+//   legacy - issue #28 task 1: SRG-reobfuscated jar for the pre-1.20.5 era,
+//     Minecraft 1.17.1-1.20.4. Needs net.minecraftforge.renamer (below) since
+//     Forge does not ship Mojang official mappings on that era's runtime.
 plugins {
 	id 'java'
 	id 'net.minecraftforge.gradle' version '[7.0.29,8.0)'
+	// Pinned exact, not a range -- the plugin is young, v1.x, actively
+	// iterating; MDK-Examples pins 1.1.2 against FG7 [7.0.29,8.0).
+	// `apply false`: only the legacy target needs it.
+	id 'net.minecraftforge.renamer' version '1.1.2' apply false
 }
 
 // Root .env.version stays the single MOD_VERSION source for every loader.
@@ -15,16 +26,40 @@ if (modVersion == null || modVersion.isBlank()) {
 	throw new GradleException("MOD_VERSION not found or empty in ../.env.version")
 }
 
-// Same naming shape as the Fabric jars (commandsspy-<ver>+mc<band>.jar).
-version = "${modVersion}+mc1.21.x-forge"
+def forgeTarget = (findProperty('forgeTarget') ?: 'modern') as String
+if (!(forgeTarget in ['modern', 'legacy'])) {
+	throw new GradleException("Unknown -PforgeTarget=${forgeTarget}. Supported values: modern (default), legacy")
+}
+def isLegacy = forgeTarget == 'legacy'
+if (isLegacy) {
+	apply plugin: 'net.minecraftforge.renamer'
+}
+
+// One row per target, sourced from gradle.properties, derived once -- adding
+// a target is a change in the two files, not a scavenger hunt.
+def targetMinecraftVersion = project.getProperty("minecraft_version_${forgeTarget}")
+def targetForgeVersion = project.getProperty("forge_version_${forgeTarget}")
+def targetMappingVersion = project.getProperty("mapping_version_${forgeTarget}")
+def targetMinecraftRange = project.getProperty("minecraft_range_${forgeTarget}")
+def targetForgeRange = project.getProperty("forge_range_${forgeTarget}")
+def targetLoaderRange = project.getProperty("loader_range_${forgeTarget}")
+
+// modern reproduces today's exact Phase-1 filename: commandsspy-<ver>+mc1.21.x-forge.jar
+// (baked into `version`, no classifier). legacy's plain `jar` task output is an
+// unshipped intermediate (official-mapped, not SRG) -- the renamer step below
+// produces the actual shipped legacy artifact with its own name/classifier.
+version = isLegacy ? "${modVersion}+mc1.17-1.20.4" : "${modVersion}+mc1.21.x-forge"
 group = 'm2x.commandsspy'
 base.archivesName = 'commandsspy'
 
-// Minecraft 1.20.5-1.21.11 ship Java 21 to end users.
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+// Minecraft 1.20.6+ ships Java 21 to end users; the legacy 1.17.1-1.20.4 era
+// ships Java 17. No Java-8 complexity here: the only sub-range that needs
+// Java 8 (1.14-1.16.x) is OUT of the measured legacy range -- see
+// docs/version-matrix.md for why.
+java.toolchain.languageVersion = JavaLanguageVersion.of(isLegacy ? 17 : 21)
 
 minecraft {
-	mappings channel: 'official', version: mapping_version
+	mappings channel: 'official', version: targetMappingVersion
 }
 
 repositories {
@@ -35,7 +70,7 @@ repositories {
 }
 
 dependencies {
-	implementation minecraft.dependency("net.minecraftforge:forge:${minecraft_version}-${forge_version}")
+	implementation minecraft.dependency("net.minecraftforge:forge:${targetMinecraftVersion}-${targetForgeVersion}")
 }
 
 // The shared core is COMPILED FROM ONE COPY, never forked. It contains no loader
@@ -49,10 +84,24 @@ tasks.withType(JavaCompile).configureEach {
 tasks.named('processResources', ProcessResources) {
 	def props = [
 		version: modVersion,
-		minecraft_range: minecraft_range,
-		forge_range: forge_range,
-		loader_range: loader_range,
+		minecraft_range: targetMinecraftRange,
+		forge_range: targetForgeRange,
+		loader_range: targetLoaderRange,
 	]
 	inputs.property 'replaceProperties', props
 	filesMatching('META-INF/mods.toml') { expand props }
+}
+
+if (isLegacy) {
+	// Renames the compiled official-mapped jar down to SRG names for the
+	// 1.17.1-1.20.4 legacy runtime, where Forge does not ship Mojang official
+	// mappings. Creates task 'renameJar'; classifier 'forge' -> final name
+	// commandsspy-<version>+mc1.17-1.20.4-forge.jar. This SRG-renamed jar is
+	// the one the e2e harness boots and the one Makefile's
+	// MOD_JAR_FORGE_LEGACY points at -- not the plain `jar` task's
+	// official-name output, which stays an unshipped intermediate.
+	renamer.classes(tasks.named('jar', Jar)) {
+		map.from minecraft.dependency.toSrgFile
+		archiveClassifier = 'forge'
+	}
 }

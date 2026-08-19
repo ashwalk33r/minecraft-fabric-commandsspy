@@ -118,6 +118,19 @@ jobs:
           path: forge/build/libs/commandsspy-*+mc1.21.x-forge.jar
           if-no-files-found: error
           retention-days: 1
+      # Legacy Forge target: SRG-reobfuscated jar, issue #28 task 1. Same
+      # forge/ Gradle build, -PforgeTarget=legacy; decompiles Minecraft again
+      # (a different compile target than the modern step above), so it is its
+      # own slow-on-cache-miss step too.
+      - name: "Build: mod compilation (Forge target, Minecraft 1.17.1-1.20.4, legacy SRG)"
+        run: make build-forge-legacy
+      - name: "Build: upload the mod artifact (Forge legacy target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-legacy-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar
+          if-no-files-found: error
+          retention-days: 1
       - name: "Build: upload the mod artifact (NeoForge 21.1, Minecraft 1.21.1)"
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -288,13 +301,16 @@ jobs:
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
-  # Forge: THREE legs, hand-listed rather than driven by tools/gen_matrix.go
-  # (still loader-unaware — see issue #23's Phase 2). 1.20.6 and 1.21.5 are the
-  # measured floor and ceiling of the single Forge jar's Minecraft range;
-  # 1.20.4 is a GUARD leg that asserts Forge refuses the mod below the floor,
-  # where its official-name Minecraft calls would crash the server mid-command.
-  # No middle versions: the mapping regime and EventBus generation are uniform
-  # across the range, so nothing can fail in the middle while both edges pass.
+  # Forge: TWO bands, hand-listed rather than driven by tools/gen_matrix.go
+  # (still loader-unaware — see issue #23's Phase 2), one job each below.
+  #
+  # Modern band (this job): THREE legs. 1.20.6 and 1.21.5 are the measured
+  # floor and ceiling of the modern Forge jar's Minecraft range; 1.20.4 is a
+  # GUARD leg that asserts Forge refuses the mod below the floor, where its
+  # official-name Minecraft calls would crash the server mid-command. No
+  # middle versions: the mapping regime and EventBus generation are uniform
+  # across the range (one Forge major branch's worth of behavior), so nothing
+  # can fail in the middle while both edges pass.
   e2e-forge-java21:
     name: "e2e 1.20.6-1.21.5 java 21 (forge)"
     needs: [build-jars, unit-tests, e2e-gate]
@@ -308,6 +324,30 @@ jobs:
     with:
       versions: '["1.20.4","1.20.6","1.21.5"]'
       java: "21"
+      loader: "forge"
+      jar-sha: ${{ github.sha }}
+
+  # Legacy band: issue #28 task 1's SRG-reobfuscated jar. Unlike the modern
+  # band above, every measured version is hand-listed here, not just the
+  # edges: the R1 measurement's whole point was SRG member-id stability
+  # ACROSS Forge major branches (37/39/40/42/43/47/48/49 — seven of them),
+  # so a floor+ceiling-only leg pair would not exercise the thing being
+  # proven. 1.16.5 is the GUARD leg just below the floor — see
+  # docs/version-matrix.md for why it fails (a Mojang class rename, not an
+  # SRG instability).
+  e2e-forge-legacy-java17:
+    name: "e2e 1.17.1-1.20.4 java 17 (forge legacy)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.16.5","1.17.1","1.18","1.18.1","1.18.2","1.19.1","1.19.2","1.20.1","1.20.2","1.20.3","1.20.4"]'
+      java: "17"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 

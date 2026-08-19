@@ -38,8 +38,10 @@ MOD_JAR_121 := build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x.jar
 MOD_JAR_1192 := build/libs/commandsspy-$(MOD_VERSION)+mc1.19-1.20.2.jar
 MOD_JAR_114 := build/libs/commandsspy-$(MOD_VERSION)+mc1.14.x.jar
 MOD_JAR_26 := build/libs/commandsspy-$(MOD_VERSION)+mc26.x.jar
-# Phase-1 Forge spike: ONE jar, built by the separate forge/ Gradle build.
+# Two Forge jars, built by the separate forge/ Gradle build via -PforgeTarget
+# (default 'modern'). See docs/version-matrix.md.
 MOD_JAR_FORGE := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x-forge.jar
+MOD_JAR_FORGE_LEGACY := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.17-1.20.4-forge.jar
 # NeoForge jars: one per NeoForge line, each covering exactly one Minecraft
 # version (NeoForge has no Intermediary-equivalent stable mapping to ride).
 # Built by the standalone neoforge/ Gradle build; see docs/version-matrix.md.
@@ -66,9 +68,12 @@ LOADER ?= fabric
 # the loader axis existed.
 _loader_suffix := $(if $(filter fabric,$(LOADER)),,-$(LOADER))
 
-# Only LOADER=forge needs the Forge spike jar built; a Fabric/Quilt/NeoForge
-# run must not pay for ForgeGradle's decompile pipeline.
-_forge_jar_dep := $(if $(filter forge,$(LOADER)),$(MOD_JAR_FORGE),)
+# Only LOADER=forge needs the Forge jars built; a Fabric/Quilt/NeoForge run
+# must not pay for ForgeGradle's decompile pipeline. Both Forge jars are
+# built for any forge e2e run -- scripts/e2e-run-one.sh routes per version
+# (see its VERSION case statement), and a single run's VERSIONS list can mix
+# legacy and modern versions.
+_forge_jar_dep := $(if $(filter forge,$(LOADER)),$(MOD_JAR_FORGE) $(MOD_JAR_FORGE_LEGACY),)
 
 # Only LOADER=neoforge needs the NeoForge jars built; a Fabric, Quilt or Forge
 # run must not pay for ModDevGradle's NeoForm pipeline.
@@ -174,6 +179,7 @@ _e2e-fanout:
 	  MOD_JAR_114="$(MOD_JAR_114)" \
 	  MOD_JAR_26="$(MOD_JAR_26)" \
 	  MOD_JAR_FORGE="$(MOD_JAR_FORGE)" \
+	  MOD_JAR_FORGE_LEGACY="$(MOD_JAR_FORGE_LEGACY)" \
 	  MOD_JAR_NEO121="$(MOD_JAR_NEO121)" \
 	  MOD_JAR_NEO26="$(MOD_JAR_NEO26)" \
 	  E2E_LOG_DIR="$(E2E_LOG_DIR)" \
@@ -236,16 +242,26 @@ $(MOD_JAR_26): $(MOD_SOURCES) | ci-image
 	@echo "[build] Building 26.x jar..."
 	@$(call in_ci_image_gradle,gradle build -PmcTarget=26 --no-daemon --quiet)
 
-# Deliberately NOT a dependency of `build`: the Forge jar is a Phase-1 spike and
-# its first build decompiles Minecraft (~5 min, ~1.2G of ForgeGradle cache under
-# GRADLE_USER_HOME). Built on demand and by the LOADER=forge e2e legs.
-# `-p forge` runs the separate forge/ build; same pinned image as everything else.
+# Deliberately NOT a dependency of `build`: Forge jars decompile Minecraft on
+# their first build each (~5 min, ~1.2G of ForgeGradle cache under
+# GRADLE_USER_HOME, per -PforgeTarget). Built on demand and by the LOADER=forge
+# e2e legs. `-p forge` runs the separate forge/ build; same pinned image as
+# everything else. `build-forge` (no args, default -PforgeTarget=modern)
+# builds ONLY the modern jar, unchanged from Phase-1.
 $(MOD_JAR_FORGE): $(shell git ls-files forge src/main/java .env.version) | ci-image
-	@echo "[build] Building Forge spike jar (MC 1.21.1, Forge 52.1.x)..."
-	@$(call in_ci_image_gradle,gradle -p forge build --no-daemon --quiet)
+	@echo "[build] Building Forge jar (MC 1.21.1, Forge 52.1.x)..."
+	@$(call in_ci_image_gradle,gradle -p forge build -PforgeTarget=modern --no-daemon --quiet)
 
 .PHONY: build-forge
-build-forge: $(MOD_JAR_FORGE) ## build the Phase-1 Forge spike jar (host gradlew + ForgeGradle 7)
+build-forge: $(MOD_JAR_FORGE) ## build the modern Forge jar, MC 1.20.6-1.21.5 (host gradlew + ForgeGradle 7)
+
+# Legacy jar: issue #28 task 1, SRG-reobfuscated for the pre-1.20.5 era.
+$(MOD_JAR_FORGE_LEGACY): $(shell git ls-files forge src/main/java .env.version) | ci-image
+	@echo "[build] Building legacy Forge jar (MC 1.20.1 compile target, Forge 47.4.x, SRG-renamed)..."
+	@$(call in_ci_image_gradle,gradle -p forge build -PforgeTarget=legacy --no-daemon --quiet)
+
+.PHONY: build-forge-legacy
+build-forge-legacy: $(MOD_JAR_FORGE_LEGACY) ## build the legacy Forge jar, MC 1.17.1-1.20.4, SRG-reobfuscated (host gradlew + ForgeGradle 7)
 
 # neoforge/ is a standalone Gradle build (`gradle -p neoforge`), not a subproject
 # -- ModDevGradle and Fabric Loom are not supported in one project, and this way
