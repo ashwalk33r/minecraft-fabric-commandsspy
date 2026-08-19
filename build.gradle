@@ -112,15 +112,26 @@ processResources {
 	def loaderRange = project.getProperty("loader_range_${propSuffix}")
 	def javaRange = project.getProperty("java_range_${propSuffix}")
 	def mixinCompat = project.getProperty("mixin_compat_${propSuffix}")
+	def quiltLoaderRange = project.getProperty("quilt_loader_range_${propSuffix}")
+	// quilt.mod.json's minecraft dependency needs a JSON array of individual
+	// constraints ([">=1.20.3","<1.22"]); minecraftRange is one space-separated
+	// string ">=1.20.3 <1.22" (Fabric's syntax). Reshape it once, here.
+	def minecraftVersionsJson = groovy.json.JsonOutput.toJson(minecraftRange.trim().split(/\s+/) as List)
 	inputs.property "version", modVersion
 	inputs.property "minecraft_range", minecraftRange
 	inputs.property "loader_range", loaderRange
 	inputs.property "java_range", javaRange
 	inputs.property "mixin_compat", mixinCompat
+	inputs.property "quilt_loader_range", quiltLoaderRange
 
 	filesMatching("fabric.mod.json") {
 		expand "version": modVersion, "minecraft_range": minecraftRange,
 				"loader_range": loaderRange, "java_range": javaRange
+	}
+
+	filesMatching("quilt.mod.json") {
+		expand "version": modVersion, "quilt_loader_range": quiltLoaderRange,
+				"minecraft_versions": minecraftVersionsJson, "java_range": javaRange
 	}
 
 	filesMatching("commandsspy.mixins.json") {
