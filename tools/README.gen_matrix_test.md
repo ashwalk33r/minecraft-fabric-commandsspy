@@ -8,7 +8,7 @@ Every number in the file is a deliberate contract. If you change the matrix in `
 
 - Which output keys exist (all 18 `<band>_java<N>` keys, always emitted).
 - Exact version lists per band, and exact job counts per event type (`pull_request` = lean, `workflow_dispatch` = full). Forge rows have no lean/full split.
-- Totals: 63 gated pairs on PR, 92 on dispatch. `TOTAL_JOBS = 2 x fabric pairs + forge pairs + 8` (fabric keys feed a `-fabric` and a `-quilt` caller job each, Forge keys one; the 8 fixed jobs are build-jars, unit-tests, 4 gate canaries, 2 literal NeoForge jobs): 110 on PR, 168 on dispatch.
+- Totals: 68 gated pairs on PR, 97 on dispatch. `TOTAL_JOBS = 2 x fabric pairs + forge pairs + 8` (fabric keys feed a `-fabric` and a `-quilt` caller job each, Forge keys one; the 8 fixed jobs are build-jars, unit-tests, 4 gate canaries, 2 literal NeoForge jobs): 115 on PR, 173 on dispatch.
 - Output format: every value is a valid JSON string array; absent bands emit the literal `[]`, never a missing key.
 
 ## Main test functions
@@ -16,10 +16,10 @@ Every number in the file is a deliberate contract. If you change the matrix in `
 - `TestKeysAlwaysPresentAndBandLists` — all 18 keys present; exact version arrays for t0, mc1192, mc114, and the five Forge rows (byte-pinned, formerly hand-listed in `e2e.yml`).
 - `TestAbsentBandsEmitEmptyArrayLiteral` — bands not shipped still emit their keys as `[]`, on both event types.
 - `TestSubmatrixCountsAndTotals` — per-key job counts against the `expected` table, plus the `GATED_PAIRS` / `TOTAL_JOBS` / `EVENT_NAME` summary lines.
-- `TestOptionCombinationTotals` — totals for every band combination (`""` up through `t0 mc1192 mc114 forge forge_legacy forge_eventbus7`) on both triggers; the forge-less cases prove absent Forge bands add zero pairs.
+- `TestOptionCombinationTotals` — totals for every band combination (`""` up through `t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116`) on both triggers; the forge-less cases prove absent Forge bands add zero pairs.
 - `TestCanariesMovedNotDuplicated` — canary versions 1.21.11 and 26.2 live in the e2e gate only; they must never also appear in a stage list.
 - `TestOutputsAreJSONStringArrays` — every emitted value parses as `[]string`.
-- `TestBandDetection` — real detection paths, no forcing: t0 turns on via a widened `minecraft_range_121` in `gradle.properties`; mc1192/mc114 via `src/<band>/java` source-set directories; forge/forge_legacy/forge_eventbus7 via the `minecraft_range_modern`/`_legacy`/`_eventbus7` lines in `forge/gradle.properties` (modern-only and file-absent fixtures prove the legacy rows stay `[]`, and that 1.20.4 — which boots the legacy jar — drops out of `forge_java21` without the legacy band).
+- `TestBandDetection` — real detection paths, no forcing: t0 turns on via a widened `minecraft_range_121` in `gradle.properties`; mc1192/mc114 via `src/<band>/java` source-set directories; forge/forge_legacy/forge_mc116/forge_eventbus7 via the `minecraft_range_modern`/`_legacy`/`_mc116`/`_eventbus7` lines in `forge/gradle.properties` (modern-only and file-absent fixtures prove the legacy rows stay `[]`, and that 1.20.4 — which boots the legacy jar — drops out of `forge_java21` without the legacy band).
 - `TestSummaryLineFormat` — the human summary keeps its exact `%-16s %3d` printf shape.
 
 Helpers: `runGrid` runs `genMatrix` and parses its `GITHUB_OUTPUT` lines into a `name -> json` map; `versionsOf` decodes one value; `emptyRoot` gives a fixture tree with no bands.

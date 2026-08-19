@@ -45,8 +45,10 @@ The Forge analogue, against `--print-forge-routing` instead of
 must route "legacy 0"; `forge_java21` versions route "modern 0" except
 1.20.4 ("legacy 0" — the legacy jar's ceiling riding in the modern job);
 `forge_eventbus7_java21`/`forge_eventbus7_java25` versions route
-"eventbus7 0"; the 1.16.5 guard routes "modern 1" (outside every jar's
-range, expect refused).
+"eventbus7 0"; `forge_mc116_java8` versions route "mc116 0" and must never
+include 1.16.4, which is pinned separately as "mc116 1" (in the jar's
+declared range but deliberately not known-good: its Forge 35.x line cannot
+boot any current JDK 8 — see docs/version-matrix.md).
 
 ## How to run
 

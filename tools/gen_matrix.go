@@ -33,6 +33,7 @@ var forgeRangeRe = map[string]*regexp.Regexp{
 	"forge":           regexp.MustCompile(`(?m)^minecraft_range_modern=`),
 	"forge_legacy":    regexp.MustCompile(`(?m)^minecraft_range_legacy=`),
 	"forge_eventbus7": regexp.MustCompile(`(?m)^minecraft_range_eventbus7=`),
+	"forge_mc116":     regexp.MustCompile(`(?m)^minecraft_range_mc116=`),
 }
 
 // bandPresent reports whether a band's build target exists in the tree.
@@ -56,7 +57,7 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 	case "mc114":
 		st, err := os.Stat(filepath.Join(repoRoot, "src", "mc114", "java"))
 		return err == nil && st.IsDir()
-	case "forge", "forge_legacy", "forge_eventbus7":
+	case "forge", "forge_legacy", "forge_eventbus7", "forge_mc116":
 		data, err := os.ReadFile(filepath.Join(repoRoot, "forge", "gradle.properties"))
 		return err == nil && forgeRangeRe[name].Match(data)
 	}
@@ -210,12 +211,20 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// major branches 37-49 (seven of them), so a floor+ceiling pair would
 	// not exercise the thing being proven.
 	//
-	// Guard: 1.16.5 sits just below the legacy floor (a Mojang class rename,
-	// see docs/version-matrix.md) and runs on java 8 because that is its
-	// era's real deployment JVM — an old Forge build's refusal/crash
-	// behavior differs (misleadingly, for the guard's string-matching) on a
-	// newer JVM. --print-forge-routing 1.16.5 = "modern 1" (out of every
-	// jar's range, expect refused).
+	// mc116 band (1.14-1.16.5, Forge 28-36, issue #30): EVERY measured
+	// version, same reasoning as legacy — the measurement's point was that
+	// one SRG-renamed java-8 jar resolves and fires across five consecutive
+	// pre-1.17 Forge major branches (28/31/32/33/34/36), so a floor+ceiling
+	// pair would not exercise the thing being proven. All on java 8, the
+	// era's real deployment JVM and the jar's own bytecode floor. One
+	// in-range version is deliberately ABSENT: 1.16.4 — its whole Forge
+	// 35.x line predates the ModLauncher fix for the JDK 8u321+
+	// ManifestEntryVerifier change and cannot boot ANY current JDK; the
+	// mod itself passed on a pre-8u321 JDK 8 (see docs/version-matrix.md).
+	// No sub-floor refusal guard leg exists either: Forge's next line down
+	// (1.13.2) is below the harness's own 1.14 floor. The old
+	// forge_legacy_guard_java8 leg (1.16.5 expected REFUSED) flipped to an
+	// in-range PASS here.
 	//
 	// EventBus-7 band (1.21.6-26.2, Forge 56-65): EVERY measured version,
 	// same reasoning as legacy — the measurement's point was that one
@@ -232,7 +241,8 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	emit("forge_legacy_java17", band("forge_legacy",
 		"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
 		"1.20.1", "1.20.2", "1.20.3", "1.20.4"))
-	emit("forge_legacy_guard_java8", band("forge_legacy", "1.16.5"))
+	emit("forge_mc116_java8", band("forge_mc116",
+		"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.5"))
 	emit("forge_eventbus7_java21", band("forge_eventbus7",
 		"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"))
 	emit("forge_eventbus7_java25", band("forge_eventbus7",

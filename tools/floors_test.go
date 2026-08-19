@@ -133,13 +133,22 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 			t.Errorf("forge_java21 contains %s, routing = %q, want %q", v, got, want)
 		}
 	}
-	// 1.16.5 falls outside every jar's range (the case statement maps only
-	// 1.17*-1.20.4 to legacy, so 1.16* falls through to modern) and must come
-	// back expect-refused.
-	for _, v := range rows["forge_legacy_guard_java8"] {
-		if got := printForgeRouting(v); got != "modern 1" {
-			t.Errorf("forge_legacy_guard_java8 contains %s, routing = %q, want \"modern 1\"", v, got)
+	// mc116 band: every emitted version must route to the mc116 jar in-range.
+	// 1.16.4 is in the jar's declared range but deliberately NOT known-good
+	// (its Forge 35.x line cannot boot any current JDK 8 — see
+	// docs/version-matrix.md), so it must come back expect-refused and must
+	// not be emitted.
+	for _, v := range rows["forge_mc116_java8"] {
+		if v == "1.16.4" {
+			t.Errorf("forge_mc116_java8 must not emit 1.16.4 (Forge 35.x cannot boot a current JDK 8)")
+			continue
 		}
+		if got := printForgeRouting(v); got != "mc116 0" {
+			t.Errorf("forge_mc116_java8 contains %s, routing = %q, want \"mc116 0\"", v, got)
+		}
+	}
+	if got := printForgeRouting("1.16.4"); got != "mc116 1" {
+		t.Errorf("--print-forge-routing 1.16.4 = %q, want \"mc116 1\" (in-band, deliberately not known-good)", got)
 	}
 	for _, key := range []string{"forge_eventbus7_java21", "forge_eventbus7_java25"} {
 		for _, v := range rows[key] {
@@ -148,7 +157,7 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_legacy_guard_java8",
+	for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
 		"forge_eventbus7_java21", "forge_eventbus7_java25"} {
 		if len(rows[name]) == 0 {
 			t.Errorf("%s: no versions emitted (band missing from the real tree?)", name)
