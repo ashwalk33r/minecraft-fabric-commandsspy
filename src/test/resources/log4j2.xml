@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Test-only log4j configuration. Its real job is CLASSPATH POSITION, not logging policy:
-  in a fabric-loader-junit run the loader resolves its LOG4J_CONFIG "system library" via
-  getResource("log4j2.xml"), i.e. the FIRST classpath entry containing that file. The
-  1.16.5-era Minecraft jar (the mc114 target's game jar) bundles a log4j2.xml at its root,
-  so without this file the loader classifies the WHOLE game jar as a system library, skips
-  it during game location, and fails the test JVM with "couldn't locate the game". Test
-  resources precede every dependency on the test classpath, so this file wins on all
-  targets and the game jar stays classifiable as the game.
-
-  The policy itself is the behavior the suite already relies on: INFO admitted, so the
-  events CapturingAppender captures from CommandsSpy.LOGGER keep flowing.
+  Test-only log4j configuration. Its real job is CLASSPATH POSITION, not logging
+  policy: without it fabric-loader-junit classifies the mc114 game jar (which
+  bundles its own log4j2.xml) as a system library and the test JVM fails with
+  "couldn't locate the game". Do not delete. See docs/testing.md.
 -->
 <Configuration status="WARN">
     <Appenders>

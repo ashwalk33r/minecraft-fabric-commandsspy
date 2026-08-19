@@ -1,16 +1,12 @@
 plugins {
-	// Loom 1.17.19 ships two mutually exclusive plugin IDs from the same artifact:
-	// 'fabric-loom' (legacy, remapping) for obfuscated Minecraft (<=1.21.11), and
-	// 'net.fabricmc.fabric-loom' (non-remapping) for unobfuscated Minecraft (26.1+, no Mojang
-	// mappings are published for these versions since the game ships unobfuscated already).
-	// Both are declared with apply false; the correct one is applied below based on -PmcTarget.
+	// Loom ships two mutually exclusive plugin IDs: 'fabric-loom' (remapping, obfuscated
+	// Minecraft) and 'net.fabricmc.fabric-loom' (non-remapping, unobfuscated 26.x).
+	// Both are declared apply false; the right one is applied below based on -PmcTarget.
 	id 'fabric-loom' version '1.17.19' apply false
 	id 'net.fabricmc.fabric-loom' version '1.17.19' apply false
 	id 'maven-publish'
 	id 'pmd'
 	id 'checkstyle'
-//	id 'jacoco'
-//	id("org.owasp.dependencycheck") version "10.0.4"
 }
 
 def envVersionFile = file("${rootDir}/.env.version")
@@ -46,34 +42,10 @@ checkstyleTest {
 }
 
 pmdTest {
-	// The `pmd` block above applies errorprone + bestpractices to every source set at
-	// rulesMinimumPriority 5. That pulls in PMD's unit-test style rules, which fail any
-	// suite with more than one assertion in a test. Main sources keep the full ruleset;
-	// test sources get the same categories with exactly those two rules excluded.
+	// Same categories as main, minus two unit-test style rules; see config/pmd/test-ruleset.xml.
 	ruleSets = []
 	ruleSetFiles = files("$configDir/pmd/test-ruleset.xml")
 }
-
-//jacoco {
-//	toolVersion = "13.10.0"
-//	reportsDirectory = layout.buildDirectory.dir('customJacocoReportDir')
-//}
-//
-//test {
-//	finalizedBy jacocoTestReport // report is always generated after tests run
-//}
-//jacocoTestReport {
-//	dependsOn test // tests are required to run before generating the report
-//}
-
-//dependencyCheck {
-//	nvd.apiKey = System.getenv('NVD_API_KEY')
-//	formats = ['HTML', 'JSON']
-//	failBuildOnCVSS = 7
-//	//suppressionFile = 'path/to/suppression.xml'
-//
-//	scanProjects = ["$projectDir/src"]
-//}
 
 def mcTarget = mcTargetForPlugins
 if (!(mcTarget in ['1.21', '1192', '114', '26'])) {
@@ -88,13 +60,7 @@ def is114 = mcTarget == '114'
 def jarClassifier = is26 ? '26.x' : (is1192 ? '1.19-1.20.2' : (is114 ? '1.14.x' : '1.21.x'))
 def propSuffix = is26 ? '26' : (is1192 ? '1192' : (is114 ? '114' : '121'))
 def srcSetDir = is26 ? 'src/mc26/java' : (is1192 ? 'src/mc1192/java' : (is114 ? 'src/mc114/java' : 'src/mc121/java'))
-// Era-correct bytecode (2026-08-17 addendum): the 1.19-1.20.2 jar ships Java 17
-// bytecode so frozen-JVM operators on Minecraft's own Java 17 floor are
-// first-class users; 1.20.1's own dependency classfiles are version 61, so
-// --release 17 both works and is required (a >=21 guard would exclude them).
-// The 1.14.x jar goes further: 1.16.5's dependency classfiles are version 52,
-// so it ships Java 8 bytecode (--release 8) and its hook must use classic
-// instanceof + cast — pattern matching is Java 16+ syntax.
+// release 17/8/21 per target: era-correct bytecode. See docs/version-matrix.md.
 def javaRelease = is1192 ? 17 : (is114 ? 8 : 21)
 
 version = "${project.mod_version}+mc${jarClassifier}"
@@ -107,11 +73,6 @@ base {
 }
 
 repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
 }
 
 dependencies {
@@ -123,31 +84,16 @@ dependencies {
 		// 'net.fabricmc.fabric-loom' plugin applied above does not use a mappings dependency.
 		implementation "net.fabricmc:fabric-loader:${project.loader_version_26}"
 	} else {
-		// All obfuscated targets (1.21.x, 1.19-1.20.2 and 1.14.x) take the same
-		// yarn/intermediary path through the legacy remapping 'fabric-loom'
-		// plugin; only the property suffix differs.
 		minecraft "com.mojang:minecraft:${project.getProperty("minecraft_version_${propSuffix}")}"
 		mappings "net.fabricmc:yarn:${project.getProperty("yarn_mappings_${propSuffix}")}:v2"
 		modImplementation "net.fabricmc:fabric-loader:${project.getProperty("loader_version_${propSuffix}")}"
 	}
 
-	// Unit-test wiring. fabric-loader-junit boots a real FabricLoader for the test JVM
-	// (via a JUnit Platform launcher-session-listener) so CommandsSpy's class initializer -
-	// CommandsSpyConfig.load() -> FabricLoader.getInstance().getConfigDir() - runs untouched
-	// and no injectability seam is needed in the mod itself. The version must track the
-	// target's own loader version, not a hardcoded one.
+	// fabric-loader-junit boots a real FabricLoader; version must track the target's own loader version. See docs/testing.md.
 	def loaderJunitVersion = project.getProperty("loader_version_${propSuffix}")
 	testImplementation "net.fabricmc:fabric-loader-junit:${loaderJunitVersion}"
 
-	// mc114 TEST RUNTIME only: 1.16.5's own log4j-core (2.8.1) predates the ServiceLoader
-	// provider file (META-INF/services/org.apache.logging.log4j.spi.Provider) that
-	// fabric-loader-junit's classifier uses to keep logging libraries on the platform
-	// classloader. Without it the knot classloader loads a SECOND log4j-core, LogManager
-	// binds to the platform copy, and CommandsSpy's core.Logger cast dies with a
-	// same-name-different-classloader ClassCastException. A modern core on the test
-	// runtime restores the single-classloader setup every other target already gets from
-	// its era's log4j. Tests only — the jar shipped to servers is untouched, and the e2e
-	// suite proves the mod against the real 2.8.1 inside real 1.14-1.18 servers.
+	// 1.16.5's log4j 2.8.1 lacks the Provider service file -> double-load CCE; modern core on TEST runtime only. See docs/testing.md.
 	if (is114) {
 		testRuntimeOnly "org.apache.logging.log4j:log4j-core:2.19.0"
 	}
@@ -177,9 +123,6 @@ processResources {
 				"loader_range": loaderRange, "java_range": javaRange
 	}
 
-	// The mixin compatibilityLevel must not exceed the era's runtime JRE
-	// (JAVA_21 on a Java 17 JVM fails mixin bootstrap), so it is per-target
-	// data exactly like the depends ranges above.
 	filesMatching("commandsspy.mixins.json") {
 		expand "mixin_compat": mixinCompat
 	}
@@ -195,9 +138,6 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
 	withSourcesJar()
 
 	sourceCompatibility = JavaVersion.toVersion(javaRelease)
@@ -215,7 +155,6 @@ jar {
 	}
 }
 
-// configure the maven publication
 publishing {
 	publications {
 		create("mavenJava", MavenPublication) {
@@ -224,11 +163,6 @@ publishing {
 		}
 	}
 
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
 	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
 	}
 }

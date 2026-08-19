@@ -9,11 +9,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Unit tests for CommandsSpyBlacklist in isolation - constructed directly rather than
- * through CommandsSpy's statics, so matching semantics are pinned down independently of
- * the mod's load-time wiring.
- */
 class CommandsSpyBlacklistTest {
 
     private static final String SAY = "say";
@@ -52,11 +47,8 @@ class CommandsSpyBlacklistTest {
 
     @Test
     void reflectsInPlaceMutationOfTheBackingList() {
-        // This aliasing is the whole basis of the test suite's isolation strategy:
-        // CommandsSpy.BLACKLIST wraps the very list CommandsSpy.CONFIG.blacklist points
-        // at, so mutating that list in place reconfigures the blacklist. If this test
-        // ever fails, CommandsSpyTestSupport.resetState() has stopped working and every
-        // blacklist assertion in CommandsSpyHandleCommandTest is silently vacuous.
+        // Guards the suite's aliasing assumption: if this fails, resetState() is a
+        // no-op and every blacklist assertion in CommandsSpyHandleCommandTest is vacuous.
         final List<String> backing = new ArrayList<>();
         final CommandsSpyBlacklist blacklist = new CommandsSpyBlacklist(backing);
 

@@ -1,8 +1,6 @@
 package main
 
-// Offline assertions for the gen-matrix subcommand (porting the retired
-// bash grid suite). Every number here is a deliberate contract: if a
-// change moves a count, this file is the place the change gets argued about.
+// Offline assertions. Every number here is a deliberate contract.
 
 import (
 	"bytes"
@@ -21,8 +19,6 @@ var allKeys = []string{
 	"mc114_java8", "mc114_java17", "mc114_java21",
 }
 
-// runGrid runs genMatrix against repoRoot and returns the stdout summary and
-// the emitted name->json map (the GITHUB_OUTPUT lines).
 func runGrid(t *testing.T, repoRoot, event, bands string) (string, map[string]string) {
 	t.Helper()
 	var stdout, ghOut bytes.Buffer
@@ -56,10 +52,9 @@ func versionsOf(t *testing.T, jsonVal string) []string {
 	return v
 }
 
-// --- expected per-submatrix job counts (band forced present) ---------------
-// Era-correct floors (2026-08-17 addendum): each version on its own floor JVM
-// (exhaustive on both triggers), plus newest-Java coverage rows — band ends
-// when lean, whole band when full.
+// Expected per-submatrix job counts (band forced present): each version on
+// its own floor JVM, plus newest-Java coverage rows — band ends when lean,
+// whole band when full.
 var expected = map[string]map[string]int{
 	// mainstream: 1.21.x floor 21 (canary 1.21.11 moved to gate), coverage 25/26
 	"mc121_java21": {"pull_request": 11, "workflow_dispatch": 11},
@@ -68,15 +63,15 @@ var expected = map[string]map[string]int{
 	// 26.x floor 25 (canary 26.2 moved to gate)
 	"mc26_java25": {"pull_request": 1, "workflow_dispatch": 1},
 	"mc26_java26": {"pull_request": 2, "workflow_dispatch": 2},
-	// t0 = 1.20.3-1.20.6 (Option A): floor 21, coverage 25/26
+	// t0 = 1.20.3-1.20.6: floor 21, coverage 25/26
 	"t0_java21": {"pull_request": 4, "workflow_dispatch": 4},
 	"t0_java25": {"pull_request": 2, "workflow_dispatch": 4},
 	"t0_java26": {"pull_request": 2, "workflow_dispatch": 4},
-	// mc1192 = 1.19.2 1.19.4 1.20.1 1.20.2 (Option B): floor 17, coverage 21
+	// mc1192 = 1.19.2 1.19.4 1.20.1 1.20.2: floor 17, coverage 21
 	// only (pre-1.20.3 bands have no 25/26 rows).
 	"mc1192_java17": {"pull_request": 4, "workflow_dispatch": 4},
 	"mc1192_java21": {"pull_request": 2, "workflow_dispatch": 4},
-	// mc114 = 1.14.4 1.15.2 1.16.5 | 1.17.1 1.18.2 (Option C): split floors
+	// mc114 = 1.14.4 1.15.2 1.16.5 | 1.17.1 1.18.2: split floors
 	// 8 / 17, coverage 21 across the whole band.
 	"mc114_java8":  {"pull_request": 3, "workflow_dispatch": 3},
 	"mc114_java17": {"pull_request": 2, "workflow_dispatch": 2},
@@ -85,7 +80,6 @@ var expected = map[string]map[string]int{
 
 const allBands = "t0 mc1192 mc114"
 
-// --- 1. every output key exists on every combination, exact band lists -----
 func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 	_, out := runGrid(t, emptyRoot(t), "pull_request", allBands)
 	for _, name := range allKeys {
@@ -105,9 +99,8 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 	}
 }
 
-// Absent bands still emit every key, with the literal []. A missing GitHub
-// output evaluates to the empty string, which is != '[]' and would feed
-// fromJSON of an empty string to a matrix and hard-error the run.
+// Absent bands still emit every key, with the literal []; see the
+// gen_matrix.go header.
 func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		_, out := runGrid(t, emptyRoot(t), event, "")
@@ -121,7 +114,6 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 	}
 }
 
-// --- 2+4. per-submatrix counts and gated-pair totals (all bands present) ---
 func TestSubmatrixCountsAndTotals(t *testing.T) {
 	totals := map[string]int{"pull_request": 39, "workflow_dispatch": 68}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
@@ -149,11 +141,10 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	}
 }
 
-// --- 3. every option combination, both triggers ----------------------------
+// 3. every option combination, both triggers
 // Totals are GATED PAIRS; whole-run job count = gated + 4 (build-jars,
-// unit-tests, and the two e2e-gate canaries). Derivation, per the header
-// table: pre-A baseline 18/38; t0 adds 8/12; mc1192 adds 6/8; mc114 adds
-// 7/10. Run against an empty fixture root so FORCE_BANDS alone decides.
+// unit-tests, and the two e2e-gate canaries). Run against an empty fixture
+// root so FORCE_BANDS alone decides.
 func TestOptionCombinationTotals(t *testing.T) {
 	cases := []struct {
 		bands      string
@@ -181,7 +172,6 @@ func TestOptionCombinationTotals(t *testing.T) {
 	}
 }
 
-// --- 5. the canaries are never duplicated into a stage list ----------------
 func TestCanariesMovedNotDuplicated(t *testing.T) {
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		_, out := runGrid(t, emptyRoot(t), event, allBands)
@@ -198,7 +188,6 @@ func TestCanariesMovedNotDuplicated(t *testing.T) {
 	}
 }
 
-// --- 6. every emitted value is a valid JSON array of strings ---------------
 func TestOutputsAreJSONStringArrays(t *testing.T) {
 	_, out := runGrid(t, emptyRoot(t), "workflow_dispatch", allBands)
 	for name, v := range out {
@@ -207,7 +196,6 @@ func TestOutputsAreJSONStringArrays(t *testing.T) {
 	}
 }
 
-// --- band presence detection (fixture trees, no FORCE_BANDS) ---------------
 func TestBandDetection(t *testing.T) {
 	write := func(t *testing.T, root, rel, content string) {
 		t.Helper()
@@ -256,7 +244,7 @@ func TestBandDetection(t *testing.T) {
 	})
 }
 
-// --- the human summary keeps its exact printf shape ------------------------
+// The human summary keeps its exact printf shape.
 func TestSummaryLineFormat(t *testing.T) {
 	stdout, _ := runGrid(t, emptyRoot(t), "pull_request", "")
 	want := "mc26_java25:       1  [\"26.1\"]\n"

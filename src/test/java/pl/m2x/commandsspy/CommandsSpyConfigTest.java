@@ -46,8 +46,6 @@ class CommandsSpyConfigTest {
         Files.write(CONFIG_PATH, json.getBytes(StandardCharsets.UTF_8));
     }
 
-    // --- default creation / full load ---------------------------------------
-
     @Test
     void createsDefaultConfigFileWhenNoneExists() throws IOException {
         assertFalse(Files.exists(CONFIG_PATH));
@@ -69,8 +67,6 @@ class CommandsSpyConfigTest {
         assertTrue(config.logArguments);
     }
 
-    // --- missing-key defaults ------------------------------------------------
-
     @Test
     void defaultsLogArgumentsToFalseWhenTheKeyIsMissing() throws IOException {
         writeConfig("{\"blacklist\": [\"tell\"]}");
@@ -90,8 +86,6 @@ class CommandsSpyConfigTest {
         assertTrue(config.logArguments);
         assertEquals(Collections.emptyList(), config.blacklist);
     }
-
-    // --- explicit-null blacklist / malformed JSON (characterized) -----------
 
     @Test
     void anExplicitNullBlacklistLoadsAsNull() throws IOException {
@@ -127,8 +121,6 @@ class CommandsSpyConfigTest {
 
         assertThrows(JsonSyntaxException.class, CommandsSpyConfig::load);
     }
-
-    // --- load no-overwrite contract / save round trip ------------------------
 
     @Test
     void loadDoesNotOverwriteAnExistingFile() throws IOException {

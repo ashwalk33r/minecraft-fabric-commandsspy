@@ -1,5 +1,4 @@
-# Strict on purpose (no exclusion presets): protocol/network code, where an
-# ignored error is a silent failure. Lineage: ubuntu/power-state-control.
+# Strict on purpose: in protocol code an ignored error is a silent failure.
 version: "2"
 linters:
   enable:

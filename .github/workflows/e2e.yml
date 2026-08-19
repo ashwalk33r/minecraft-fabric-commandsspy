@@ -1,7 +1,5 @@
 # End-to-end Docker tests: boot a real Fabric server per {Minecraft, Java} pair.
-# Stages run in popularity order and chain via `needs:`, so the mainstream reports first.
 # A band whose list is '[]' skips its stage jobs at zero cost.
-# Stage data lives in tools/gen_matrix.go; the job body lives once in e2e-stage.yml.
 # See docs/ci.md.
 name: E2E
 
@@ -9,7 +7,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A new push supersedes the in-flight sweep.
 concurrency:
   group: e2e-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -74,7 +71,6 @@ jobs:
         with:
           path: ~/.cache/commandsspy-ci-go
           key: ci-go-${{ hashFiles('Dockerfile.ci', 'tools/go.mod') }}
-      # Machine-asserts the per-stage and total job counts offline, before anything is built.
       - name: "Assert the e2e grid contract"
         run: make ci-tools-test
       # Probes the real version->jar routing paths so cross-file drift fails here, not in a boot.
@@ -256,7 +252,6 @@ jobs:
       java: "26"
       jar-sha: ${{ github.sha }}
 
-  # Stage 3 — T0 band: 1.20.3-1.20.6, floor java 21.
   e2e-t0-java21:
     name: "e2e 1.20.3-1.20.6 java 21"
     needs: [build-jars, unit-tests, e2e-gate,
@@ -311,7 +306,6 @@ jobs:
       java: "26"
       jar-sha: ${{ github.sha }}
 
-  # Stage 4 — mc1192 band: 1.19-1.20.2, floor java 17.
   e2e-mc1192-java17:
     name: "e2e 1.19-1.20.2 java 17"
     needs: [build-jars, unit-tests, e2e-gate,

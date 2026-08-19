@@ -1,5 +1,4 @@
 // Command tools is the harness toolbox: one binary, subcommands.
-// Each subcommand lives in its own file (bot.go, rcon.go, gen_matrix.go).
 package main
 
 import (

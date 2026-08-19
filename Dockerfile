@@ -1,11 +1,7 @@
 # Declared before the first FROM so it is usable in the second FROM line.
 ARG JAVA_VERSION=21
-# jammy (glibc) is the safe default. The Makefile's e2e-images target passes
-# BASE_VARIANT=alpine for floors 21/25/26 — see the comment on the RUN below
-# for why the other floors (8/11/17) stay on jammy.
 ARG BASE_VARIANT=jammy
 
-# Stage 1: build the harness tools binary (bot/rcon clients) — static, ~3MB.
 FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY tools/ ./

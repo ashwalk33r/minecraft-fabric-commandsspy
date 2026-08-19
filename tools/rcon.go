@@ -1,6 +1,6 @@
 package main
 
-// RCON client (Issue D). Hand-rolled per judge ruling — no gorcon dependency.
+// RCON client, hand-rolled (no gorcon dependency).
 // Framing: little-endian int32 length | int32 request_id | int32 type | payload | \x00\x00.
 // Fragmented responses (>4096B) are reassembled explicitly: after the command
 // we send a sentinel packet with a distinct request_id and concatenate
@@ -19,7 +19,7 @@ import (
 const (
 	serverdataAuth        = 3
 	serverdataExecCommand = 2
-	rconTimeout           = 10 * time.Second // matches the python client it replaces
+	rconTimeout           = 10 * time.Second
 	authID                = 1
 	cmdID                 = 2
 	sentinelID            = 3
@@ -53,7 +53,6 @@ func readPacket(r io.Reader) (id, typ int32, payload string, err error) {
 	return id, typ, string(body[8 : n-2]), nil
 }
 
-// rconExec connects, authenticates, runs cmd, and returns the reassembled response.
 func rconExec(addr, password, cmd string) (string, error) {
 	conn, err := net.DialTimeout("tcp", addr, rconTimeout)
 	if err != nil {
@@ -85,8 +84,7 @@ func rconExec(addr, password, cmd string) (string, error) {
 		return "", err
 	}
 	// Vanilla closes the connection if two client packets share one TCP
-	// segment (verified empirically on 1.21.11), so read the first response
-	// packet before sending the sentinel.
+	// segment, so read the first response packet before sending the sentinel.
 	var out strings.Builder
 	id, _, payload, err := readPacket(conn)
 	if err != nil {
@@ -95,10 +93,8 @@ func rconExec(addr, password, cmd string) (string, error) {
 	if id == cmdID {
 		out.WriteString(payload)
 	}
-	// Sentinel: the server answers in order, so every packet before the
-	// sentinel's answer belongs to cmd. Tolerates both an empty reply and an
-	// echoed error string for the sentinel — we key on request_id only — and
-	// the connection deadline bounds a server that never answers it.
+	// The server answers in order: everything before the sentinel's reply
+	// belongs to cmd; matched by request_id.
 	if err := writePacket(conn, sentinelID, serverdataExecCommand, ""); err != nil {
 		return "", err
 	}

@@ -4,6 +4,7 @@ A mod to log commands to the server console. Both existing and non-existing comm
 ## Installation
 Simply place the mod into the mods directory of your server, and it will start monitoring executed commands.
 On startup, the config file will be created automatically.
+Pick the matching jar for your server from the Compatibility table below. The mod has no dependencies beyond Fabric Loader — Fabric API is NOT required.
 
 ## Examples
 Player "Ultra_MC" executing "/gamemode creative" command is logged without arguments in server logs when using config `"logArguments": false` (default):
@@ -54,6 +55,3 @@ Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a`
 
 To log arguments of all commands, use `"logArguments": true`.
 Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a b c`
-
-## Compatibility
-Supported Minecraft versions: 1.21.x, 26, 26.1, 26.2

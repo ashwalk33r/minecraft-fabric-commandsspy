@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
-# Offline trap for version->jar / version->Java drift. No GitHub, no network,
-# no Docker.
-#
-# The version->jar-family and version->Java-floor mapping lives in THREE
-# executable places — scripts/e2e-run-one.sh (the routing case, the table's
-# single home), tools/gen_matrix.go (the CI grid's band lists) and the
-# Makefile's default VERSIONS list — plus the two era-literal cases in
-# scripts/e2e-entrypoint.sh and the two gate-canary rows in e2e.yml. They are
-# held in sync by comments alone, and a drift boots a live server wrong before
-# anyone notices. This file is the independent copy that argues back: ONE
-# expected table below, and every source is probed by INVOKING its real code
-# path (never by regex re-parsing) and asserted against it. A drift in any one
-# file disagrees with the table and fails here, offline, in seconds.
+# Asserts the version->jar/Java contract, independently restated in the
+# EXPECTED table below, against every executable source of the mapping.
+# Offline, no network, no Docker. See docs/e2e-harness.md.
 set -uo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,13 +19,9 @@ check() {
 }
 
 # --- THE CONTRACT ----------------------------------------------------------
-# version -> "family floor rcon slash". Every supported version: the
-# 1.14-1.18 samples, the 1.19.1-1.20.2 line, 1.20.3-1.21.11, and both 26.x
-# minors. Boundaries are the point: 1.15.2|1.16 (Recon->Rcon), 1.18.2|1.19.1
-# (mc114->mc1192 jar, /list->list), 1.20.2|1.20.3 (mc1192->mc121 jar, floor
-# 17->21). 1.19 and 1.19.0 are UNSUPPORTED (the mc1192 jar's floor is 1.19.1:
-# 1.19.0's execute() lacks the ParseResults overload the jar hooks) and must
-# route to an error, never to a jar.
+# version -> "family floor rcon slash". Boundaries are the point: 1.15.2|1.16
+# (Recon->Rcon), 1.18.2|1.19.1 (jar + /list->list), 1.20.2|1.20.3 (jar + floor).
+# 1.19 and 1.19.0 are UNSUPPORTED and must route to an error, never to a jar.
 declare -A EXPECTED=(
   [1.14.4]="114 8 Recon /list"
   [1.15.2]="114 8 Recon /list"
@@ -82,10 +68,6 @@ BOUNDARY_EXTRAS="1.16 1.19.1"
 # Versions that must route NOWHERE: the mc1192 jar's floor is 1.19.1.
 UNSUPPORTED="1.19 1.19.0"
 
-# ===========================================================================
-# Probe 1 — scripts/e2e-run-one.sh, the code that picks the jar and JVM for a
-# real container run. --print-routing invokes the actual routing case.
-# ===========================================================================
 echo "== e2e-run-one.sh routing (jar family, java floor)"
 for v in $ALL_VERSIONS $BOUNDARY_EXTRAS; do
   read -r family floor _rcon _slash <<< "${EXPECTED[$v]}"
@@ -100,30 +82,19 @@ for v in $UNSUPPORTED; do
   fi
 done
 
-# ===========================================================================
-# Probe 2 — the Makefile. Its floor table is NOT a second copy (e2e-images
-# queries `e2e-run-one.sh --print-java`, probed above), but its DEFAULT
-# version list is part of the routing surface: a version dropped or added
-# there silently changes what `make e2e` exercises. 1.14.4/1.15.2 are
-# deliberately absent (explicit-run free-riders on the mc114 jar); everything
-# else supported must be present exactly once.
-# ===========================================================================
+# Probe 2 — the Makefile's default VERSIONS list. 1.14.4/1.15.2 are
+# deliberately absent from the default list.
 echo "== Makefile default VERSIONS"
 default_versions="$(make -s -C "$repo_root" print-e2e-versions | tr ' ' '\n' | sort | tr '\n' ' ')"
 # shellcheck disable=SC2086 # word splitting is the point: one version per line
 expected_default="$(printf '%s\n' $ALL_VERSIONS | grep -vx -e 1.14.4 -e 1.15.2 | sort | tr '\n' ' ')"
 check "default VERSIONS (sorted)" "$expected_default" "$default_versions"
 
-# ===========================================================================
-# Probe 3 — grid PROBE. The ONLY place this test reads the CI grid, which
-# lives in tools/gen_matrix.go and is invoked here for real via
-# `go run . gen-matrix` (full trigger).
-#
+# Probe 3 — the CI grid (tools/gen_matrix.go), run for real via `go run . gen-matrix`.
 #   grid_probe_init            runs the real grid once (full trigger)
 #   grid_floor_of <version> -> "band floor" from the floor-row key holding the
 #                              version, or "absent"
 #   grid_has <key> <version> -> true/false membership in one output key
-# ===========================================================================
 GRID_FLOOR_KEYS="mc121_java21 mc26_java25 t0_java21 mc1192_java17 mc114_java8 mc114_java17"
 grid_output=""
 grid_probe_init() {
@@ -150,10 +121,6 @@ grid_has() {
   printf '%s\n' "$grid_output" | grep -E "^${key}=" | cut -d= -f2- \
     | jq --arg v "$2" 'any(. == $v)'
 }
-# --- end of the grid probe -------------------------------------------------
-
-# Which jar family each grid band boots. The band names are the grid's
-# vocabulary; the families are the Makefile's. This pairing IS the contract.
 declare -A BAND_FAMILY=(
   [mc121]="121" [t0]="121" [mc1192]="1192" [mc114]="114" [mc26]="26"
 )
@@ -173,7 +140,6 @@ for v in $ALL_VERSIONS; do
       ;;
   esac
 done
-# The unsupported versions must be absent from every floor row too.
 for v in $UNSUPPORTED; do
   check "grid $v absent" "absent" "$(grid_floor_of "$v")"
 done
@@ -191,13 +157,8 @@ check "gate pair 1.21.11/java21" "1" \
 check "gate pair 26.2/java25" "1" \
       "$(grep -cF '{ mc: "26.2", java: "25" }' "$gate_yml")"
 
-# ===========================================================================
-# Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh (RCON source
-# name flips Recon->Rcon at 1.16; the player /list literal drops its slash at
-# 1.19). The entrypoint runs in-container and takes no flags, so the two
-# `case "$MC_VERSION"` blocks are lifted VERBATIM and executed — the real
-# code runs, only its location is text-addressed.
-# ===========================================================================
+# Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the two
+# `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.
 echo "== e2e-entrypoint.sh era literals (RCON source name, player /list form)"
 entrypoint="$script_dir/e2e-entrypoint.sh"
 # shellcheck disable=SC2016 # the $ is a sed-pattern literal, not an expansion

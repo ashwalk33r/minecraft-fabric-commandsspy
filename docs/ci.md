@@ -16,6 +16,15 @@ tag is content-addressed: editing `Dockerfile.ci` triggers a rebuild.
 different toolchain than the pinned one. `CI_CACHE_DIR` holds warm Go caches;
 disposable, empty it for a cold run.
 
+The image is also published to GHCR (repo is public: free, unlimited
+storage/bandwidth), so `ci-image` can `docker pull` a real registry image
+instead of rebuilding locally on every fresh clone or CI job — a plain
+`docker pull` dedups layers properly, unlike a gzipped image tarball
+round-tripped through an Actions cache.
+
+The cache specifically keeps `go run golangci-lint@<version>` warm across
+runs, on top of the general Go build/module cache.
+
 ## `make build` / `make test` / `make lint-java`
 
 These also run inside the pinned `Dockerfile.ci` image — it carries JDK 21
@@ -35,6 +44,10 @@ A new push to the same ref cancels the in-flight run.
 `scripts/verify-action-pins.sh` asserts every third-party action is pinned to
 a full commit SHA.
 
+Reference: [Building and testing Java with
+Gradle](https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-gradle)
+(GitHub Actions docs) — `gradle.yml` follows this template.
+
 ## e2e.yml — staged matrix
 
 Stage order is popularity order: a failure in a widely-run version surfaces
@@ -53,6 +66,10 @@ Lean grid on `pull_request` (floor rows exhaustive, newest-Java coverage rows
 only at each band's ends), full cross-product on `workflow_dispatch`.
 Rationale: Minecraft breaks are per-patch, JVM breaks are per-JVM, so a
 band's ends cover the real variable on higher JVMs.
+
+Stages chain via `needs:`. Each stage's job body is defined once, in
+`e2e-stage.yml`, and reused by every stage — only the version list per stage
+differs, sourced from `tools/gen_matrix.go`.
 
 ## e2e server images
 
@@ -116,3 +133,17 @@ sibling failed, and `fromJSON` on an empty string would kill the run.
 Job counts per band and trigger are pinned in `tools/gen_matrix_test.go`;
 `tools/floors_test.go` pins the Java floors against
 `scripts/e2e-run-one.sh`. Change the grid → those tests name the new numbers.
+
+Grid policy: every version runs on its own floor JVM. Newest-Java coverage
+rows sample only the band's ends on `pull_request` (lean) and the whole band
+on `workflow_dispatch` (full) — floors and full rationale:
+[version-matrix.md](version-matrix.md).
+
+`tools/gen_matrix.go` env vars:
+
+| Var | Meaning |
+|---|---|
+| `EVENT_NAME` | `pull_request` \| `workflow_dispatch` (default: `pull_request`) |
+| `GITHUB_OUTPUT` | file to append `name=json` lines to (optional) |
+| `FORCE_BANDS` | space-separated band names to treat as present (testing) |
+| `REPO_ROOT` | repo root (default: current working directory) |

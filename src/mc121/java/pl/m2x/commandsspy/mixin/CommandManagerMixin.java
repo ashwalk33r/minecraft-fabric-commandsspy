@@ -11,6 +11,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import pl.m2x.commandsspy.CommandsSpy;
 
+/**
+ * Hook for MC 1.20.3 - 1.21.x: {@code execute} takes {@code ParseResults} and
+ * returns {@code void}. See docs/version-matrix.md.
+ */
 @Mixin(CommandManager.class)
 public class CommandManagerMixin {
     @SuppressWarnings({ "PMD.UnusedPrivateMethod", "PMD.UnusedFormalParameter" })
@@ -22,7 +26,6 @@ public class CommandManagerMixin {
         if (entity instanceof ServerPlayerEntity player) {
             CommandsSpy.handleCommand(fullCommand, true, player.getName().getString());
         } else {
-            // Other sources (e.g., functions, data packs, signs, fullCommand blocks)
             CommandsSpy.handleCommand(fullCommand, false, source.getName());
         }
     }
