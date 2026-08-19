@@ -74,6 +74,14 @@ case "$LOADER" in
   fabric|quilt|forge|neoforge) ;;
   *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge neoforge" >&2; exit 1 ;;
 esac
+# FORGE_EXPECT_REFUSED/FORGE_JAR_BAND above are computed loader-independently
+# (cheap, and --print-forge-routing wants them regardless of LOADER), but the
+# out-of-range guard leg they drive only makes sense for a real Forge run —
+# every other loader has its own mods.toml/fabric.mod.json range gate, unrelated
+# to Forge's. Zero it here, once, rather than gating every consumer downstream.
+if [ "$LOADER" != "forge" ]; then
+  FORGE_EXPECT_REFUSED=0
+fi
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
 # Forge's analogue of Fabric's meta API. FORGE_BUILD pins a build explicitly;
