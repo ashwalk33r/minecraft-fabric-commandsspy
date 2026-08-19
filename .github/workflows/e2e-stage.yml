@@ -20,8 +20,8 @@ on:
 
 jobs:
   run:
-    # Displays as "<caller job name> / <mc>", e.g. "e2e 1.21.x java 21 / 1.21.4".
-    name: "${{ matrix.mc }}"
+    # Displays as "<caller job name> / <mc> (<loader>)", e.g. "e2e 1.21.x java 21 / 1.21.4 (quilt)".
+    name: "${{ matrix.mc }} (${{ matrix.loader }})"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,6 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         mc: ${{ fromJSON(inputs.versions) }}
+        loader: [fabric, quilt]
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -57,24 +58,25 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
 
-      # Keyed by MC version only (not Java): scripts/e2e-run-one.sh's cache
-      # key is version+loader+installer, and the loader/installer choice
-      # never depends on which JVM the server runs on, so a java21 run and a
-      # java25 run of the same MC version share one cache entry.
-      - name: "Restore the Fabric server launcher jar cache"
+      # Keyed by MC version + loader (not Java): scripts/e2e-run-one.sh's
+      # cache key is version+loader+installer, and the loader/installer
+      # choice never depends on which JVM the server runs on, so a java21
+      # run and a java25 run of the same {MC version, loader} share one
+      # cache entry.
+      - name: "Restore the server launcher jar cache"
         uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-e2e-jars
-          key: e2e-jar-${{ matrix.mc }}
+          key: e2e-jar-${{ matrix.mc }}-${{ matrix.loader }}
 
-      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ inputs.java }}"
-        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ inputs.java }}" PARALLEL=1
+      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ inputs.java }} (${{ matrix.loader }})"
+        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ inputs.java }}" LOADER="${{ matrix.loader }}" PARALLEL=1
 
-      - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ inputs.java }})"
+      - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ inputs.java }}, ${{ matrix.loader }})"
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: e2e-logs-mc${{ matrix.mc }}-java${{ inputs.java }}-${{ inputs.jar-sha }}
+          name: e2e-logs-mc${{ matrix.mc }}-java${{ inputs.java }}-${{ matrix.loader }}-${{ inputs.jar-sha }}
           path: |
             build/e2e-logs/
             build/e2e-results/
