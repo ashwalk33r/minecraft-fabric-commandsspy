@@ -74,6 +74,27 @@ case "$LOADER" in
   fabric|quilt|forge|neoforge) ;;
   *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge neoforge" >&2; exit 1 ;;
 esac
+# FORGE_EXPECT_REFUSED/FORGE_JAR_BAND above are computed loader-independently
+# (cheap, and --print-forge-routing wants them regardless of LOADER), but the
+# out-of-range guard leg they drive only makes sense for a real Forge run —
+# every other loader has its own mods.toml/fabric.mod.json range gate, unrelated
+# to Forge's. Zero it here, once, rather than gating every consumer downstream.
+if [ "$LOADER" != "forge" ]; then
+  FORGE_EXPECT_REFUSED=0
+fi
+# In-range Forge legs: the jar's OWN bytecode floor is what matters here, not
+# the generic per-MC-version table above (that table reflects the FABRIC
+# jar's bytecode requirement at 1.20.3+, e.g. 21 -- irrelevant to the Forge
+# legacy jar, which is Java-17 bytecode uniformly across 1.17.1-1.20.4).
+# Guard-leg (out-of-range) probes are deliberately left alone here -- they
+# get their own override further down, once JAVA_VERSION is resolved.
+if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
+  if [ "$FORGE_JAR_BAND" = "legacy" ]; then
+    FLOOR_JAVA=17
+  else
+    FLOOR_JAVA=21
+  fi
+fi
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
 # Forge's analogue of Fabric's meta API. FORGE_BUILD pins a build explicitly;

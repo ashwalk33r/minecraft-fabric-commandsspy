@@ -327,14 +327,11 @@ jobs:
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
-  # Legacy band: issue #28 task 1's SRG-reobfuscated jar. Unlike the modern
-  # band above, every measured version is hand-listed here, not just the
-  # edges: the R1 measurement's whole point was SRG member-id stability
-  # ACROSS Forge major branches (37/39/40/42/43/47/48/49 — seven of them),
-  # so a floor+ceiling-only leg pair would not exercise the thing being
-  # proven. 1.16.5 is the GUARD leg just below the floor — see
-  # docs/version-matrix.md for why it fails (a Mojang class rename, not an
-  # SRG instability).
+  # Legacy band: issue #28 task 1's SRG-reobfuscated jar. Every measured
+  # version is hand-listed here, not just the edges: the R1 measurement's
+  # whole point was SRG member-id stability ACROSS Forge major branches
+  # (37/39/40/42/43/47/48/49 — seven of them), so a floor+ceiling-only leg
+  # pair would not exercise the thing being proven.
   e2e-forge-legacy-java17:
     name: "e2e 1.17.1-1.20.4 java 17 (forge legacy)"
     needs: [build-jars, unit-tests, e2e-gate]
@@ -346,8 +343,31 @@ jobs:
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: '["1.16.5","1.17.1","1.18","1.18.1","1.18.2","1.19.1","1.19.2","1.20.1","1.20.2","1.20.3","1.20.4"]'
+      versions: '["1.17.1","1.18","1.18.1","1.18.2","1.19.1","1.19.2","1.20.1","1.20.2","1.20.3","1.20.4"]'
       java: "17"
+      loader: "forge"
+      jar-sha: ${{ github.sha }}
+
+  # 1.16.5 is the GUARD leg just below the legacy floor — see
+  # docs/version-matrix.md for why it fails (a Mojang class rename, not an
+  # SRG instability). Its own natural floor is Java 8 (1.14-1.16.x), NOT 17
+  # like the rest of the legacy band — a real deployer of 1.16.5 would run
+  # it on Java 8, and an old Forge build's refusal/crash behavior differs
+  # (misleadingly, for this guard's string-matching) on a newer JVM. A
+  # separate job, own java input, rather than folding it into the band above.
+  e2e-forge-legacy-guard-java8:
+    name: "e2e 1.16.5 java 8 (forge legacy guard)"
+    needs: [build-jars, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.16.5"]'
+      java: "8"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
