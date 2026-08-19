@@ -139,7 +139,14 @@ if [ "$LOADER" = "quilt" ]; then
   else
     echo "[e2e] Installing Quilt server for Minecraft $VERSION (loader $QUILT_LOADER_VERSION, installer $QUILT_INSTALLER_VERSION)..."
     QUILT_STAGE_DIR="$(mktemp -d)"
+    # --user maps the container process to the invoking host user, so files
+    # it writes into the bind mount are host-owned and removable afterward —
+    # without it, this runs as root and a later `rm -rf` of root-owned files
+    # fails Permission denied under `set -e`, killing the script before the
+    # server ever boots (macOS/Docker Desktop hides this; a real Linux CI
+    # runner does not).
     if docker run --rm \
+        --user "$(id -u):$(id -g)" \
         -v "${QUILT_STAGE_DIR}:/out" \
         eclipse-temurin:17-jre-jammy \
         sh -c "curl -fsSL https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/${QUILT_INSTALLER_VERSION}/quilt-installer-${QUILT_INSTALLER_VERSION}.jar -o /tmp/installer.jar && java -jar /tmp/installer.jar install server ${VERSION} ${QUILT_LOADER_VERSION} --download-server --install-dir=/out"; then
