@@ -34,7 +34,7 @@ checkstyle {
 }
 
 checkstyleMain {
-	source = fileTree('src/main/java') + fileTree('src/mc121/java') + fileTree('src/mc1192/java') + fileTree('src/mc114/java') + fileTree('src/mc26/java')
+	source = fileTree('src/main/java') + fileTree('src/fabric/java') + fileTree('src/mc121/java') + fileTree('src/mc1192/java') + fileTree('src/mc114/java') + fileTree('src/mc26/java')
 }
 
 checkstyleTest {
@@ -66,6 +66,10 @@ def javaRelease = is1192 ? 17 : (is114 ? 8 : 21)
 version = "${project.mod_version}+mc${jarClassifier}"
 group = project.maven_group
 
+// src/fabric/java holds the ModInitializer entrypoint — the only loader-API-touching
+// class. It is a separate dir, not part of src/main/java, so the forge/ build can
+// source-include src/main/java without dragging a Fabric dependency in.
+sourceSets.main.java.srcDir('src/fabric/java')
 sourceSets.main.java.srcDir(srcSetDir)
 
 base {
