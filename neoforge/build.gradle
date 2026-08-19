@@ -1,0 +1,117 @@
+plugins {
+	id 'net.neoforged.moddev' version '2.0.144'
+	id 'java'
+	id 'checkstyle'
+	id 'pmd'
+}
+
+def repoRoot = file("${projectDir}/..")
+
+def envVersionFile = file("${repoRoot}/.env.version")
+def envVersionProps = new Properties()
+envVersionFile.withInputStream { envVersionProps.load(it) }
+def modVersion = envVersionProps.getProperty('MOD_VERSION')
+if (modVersion == null || modVersion.isBlank()) {
+	throw new GradleException("MOD_VERSION not found or empty in ${envVersionFile}")
+}
+
+// One row per NeoForge line, derived once — same idiom as the root build's
+// -PmcTarget dispatch, so adding a line is a change here and in
+// gradle.properties, not a scavenger hunt.
+def neoTarget = (findProperty('neoTarget') ?: '121') as String
+if (!(neoTarget in ['121', '26'])) {
+	throw new GradleException("Unknown -PneoTarget=${neoTarget}. Supported values: 121 (default), 26")
+}
+def is26 = neoTarget == '26'
+
+def neoforgeVersion = project.getProperty("neoforge_version_${neoTarget}")
+def minecraftVersion = project.getProperty("minecraft_version_${neoTarget}")
+
+// Release must MATCH the line's own Java level, unlike the root build's mc26
+// target which compiles 26.x to release 21. `options.release` also sets this
+// project's `org.gradle.jvm.version` consumer attribute, and NeoForge 26.2's
+// net.neoforged.fancymodloader:loader publishes only a Java 25 variant — asking
+// for 21 fails dependency resolution outright ("no matching variant"), it does
+// not silently downgrade.
+def javaRelease = is26 ? 25 : 21
+
+version = "${modVersion}+neoforge-mc${minecraftVersion}"
+group = 'm2x.commandsspy'
+
+base {
+	archivesName = 'commandsspy'
+	// All six jars land in ONE directory. This build is standalone, but the
+	// Makefile, the e2e fan-out and CI's download-artifact/merge-multiple step
+	// all address jars as build/libs/<name>.jar; keeping the NeoForge output
+	// there too means none of them need a second path to know about.
+	libsDirectory = file("${repoRoot}/build/libs")
+}
+
+neoForge {
+	version = neoforgeVersion
+}
+
+// The loader-neutral core is compiled from the root project's sources, not
+// copied. src/fabric/java is deliberately NOT on this path: it holds
+// CommandsSpyFabric, the ModInitializer entrypoint, whose NeoForge counterpart
+// is this project's own CommandsSpyNeoForge. That split is the entire reason
+// the two directories are separate.
+sourceSets.main.java.srcDir("${repoRoot}/src/main/java")
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(is26 ? 25 : 21)
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = javaRelease
+}
+
+def configDir = "${repoRoot}/config"
+
+checkstyle {
+	toolVersion = "13.10.0"
+	configFile = file("$configDir/checkstyle/checkstyle.xml")
+}
+
+pmd {
+	consoleOutput = true
+	toolVersion = "7.26.0"
+	rulesMinimumPriority = 5
+	ruleSets = ["category/java/errorprone.xml", "category/java/bestpractices.xml"]
+}
+
+// Only this project's own sources: the shared core is on the source set via the
+// srcDir above, but the root build already lints it, and linting it twice just
+// reports every violation twice.
+checkstyleMain {
+	source = fileTree('src/main/java')
+}
+
+pmdMain {
+	source = fileTree('src/main/java')
+}
+
+processResources {
+	def resolvedVersion = project.version
+	def minecraftRange = project.getProperty("minecraft_range_${neoTarget}")
+	def neoforgeRange = project.getProperty("neoforge_range_${neoTarget}")
+	def fmlRange = project.getProperty("fml_range_${neoTarget}")
+	inputs.property "version", resolvedVersion
+	inputs.property "minecraft_range", minecraftRange
+	inputs.property "neoforge_range", neoforgeRange
+	inputs.property "fml_range", fmlRange
+
+	filesMatching("META-INF/neoforge.mods.toml") {
+		expand "version": resolvedVersion, "minecraft_range": minecraftRange,
+				"neoforge_range": neoforgeRange, "fml_range": fmlRange
+	}
+}
+
+jar {
+	def archivesName = project.base.archivesName.get()
+	from("${repoRoot}/LICENSE") {
+		rename { "${it}_${archivesName}" }
+	}
+}

@@ -17,3 +17,8 @@ docs/superpowers/
 
 # fabric-loader 0.19.3 writes its own log during fabric-loader-junit runs
 fabricloader.log
+
+# neoforge/ is a standalone Gradle build, so the root-anchored /build above does
+# not cover its output tree - and that tree is multi-GB: ModDevGradle caches the
+# decompiled and recompiled Minecraft under it.
+neoforge/build/
