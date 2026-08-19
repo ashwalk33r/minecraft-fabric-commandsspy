@@ -1,0 +1,33 @@
+{
+	"schema_version": 1,
+	"quilt_loader": {
+		"group": "pl.m2x",
+		"id": "commandsspy",
+		"version": "${version}",
+		"intermediate_mappings": "net.fabricmc:intermediary",
+		"entrypoints": {
+			"main": [
+				"pl.m2x.commandsspy.CommandsSpy"
+			]
+		},
+		"depends": [
+			{ "id": "quilt_loader", "versions": "${quilt_loader_range}" },
+			{ "id": "minecraft", "versions": { "all": ${minecraft_versions} } },
+			{ "id": "java", "versions": "${java_range}" }
+		],
+		"metadata": {
+			"name": "Commands Spy",
+			"description": "Log commands to server console.",
+			"contributors": {
+				"Ultra_MC": "Owner"
+			},
+			"contact": {
+				"homepage": "https://github.com/",
+				"sources": "https://github.com/"
+			},
+			"license": "MIT",
+			"icon": "assets/commandsspy/icon.png"
+		}
+	},
+	"mixin": "commandsspy.mixins.json"
+}

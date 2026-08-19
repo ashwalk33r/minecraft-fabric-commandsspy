@@ -48,8 +48,13 @@ JAVA ?=
 # adding. 11 is manual-override only.
 JAVA_VERSIONS_SUPPORTED := 8 11 17 21 25 26
 
-# Key = version, +java<N> only on override, so grid runs never collide.
-E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(VERSIONS)),$(VERSIONS))
+# fabric (default) | quilt — which loader's server boots. See docs/e2e-harness.md.
+LOADER ?= fabric
+
+# Key = version[-quilt][-java<N>], mirroring scripts/e2e-run-one.sh's own KEY
+# construction, so grid runs never collide across loaders or Java overrides.
+_loader_suffix := $(if $(filter quilt,$(LOADER)),-quilt,)
+E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS)))
 
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
 # writing the same tag race, so the parallel phase only ever runs containers.
@@ -134,7 +139,12 @@ e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) e2
 # Internal: callers resolve PARALLEL first.
 .PHONY: _e2e-fanout
 _e2e-fanout:
+	@case "$(LOADER)" in \
+	  fabric|quilt) ;; \
+	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt"; exit 1 ;; \
+	esac
 	@echo "[e2e] Testing Minecraft versions: $(VERSIONS)"
+	@echo "[e2e] Loader: $(LOADER)"
 	@echo "[e2e] Java: $(if $(JAVA),$(JAVA) (override),per-version era floor (1.14-1.16=8, 1.17-1.20.2=17, 1.20.3-1.21.x=21, 26.x=25))"
 	@echo "[e2e] Concurrency: $(PARALLEL)"
 	@mkdir -p $(E2E_LOG_DIR) $(E2E_RESULT_DIR)
@@ -149,6 +159,7 @@ _e2e-fanout:
 	  E2E_RUN_ID="$(E2E_RUN_ID)" \
 	  BOOT_TIMEOUT="$(BOOT_TIMEOUT)" \
 	  JAVA_OVERRIDE="$(JAVA)" \
+	  LOADER="$(LOADER)" \
 	  E2E_JAR_CACHE="$(E2E_JAR_CACHE)" \
 	  xargs -P $(PARALLEL) -n 1 ./scripts/e2e-run-one.sh || true
 	@echo ""

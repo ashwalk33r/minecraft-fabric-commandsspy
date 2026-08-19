@@ -148,14 +148,19 @@ check "grid 1.21.11 in mc121_java25 coverage" "true" "$(grid_has mc121_java25 1.
 check "grid 1.21.11 in mc121_java26 coverage" "true" "$(grid_has mc121_java26 1.21.11)"
 check "grid 26.2 in mc26_java26 coverage" "true" "$(grid_has mc26_java26 26.2)"
 
-# The gate itself lives in e2e.yml as two literal include rows; each canary
-# must run on exactly the floor the other sources agree on.
+# The gate itself lives in e2e.yml as four literal include rows (two
+# canaries x two loaders); each canary must run on exactly the floor the
+# other sources agree on, on both loaders.
 echo "== e2e-gate canary pairs in e2e.yml"
 gate_yml="$repo_root/.github/workflows/e2e.yml"
-check "gate pair 1.21.11/java21" "1" \
-      "$(grep -cF '{ mc: "1.21.11", java: "21" }' "$gate_yml")"
-check "gate pair 26.2/java25" "1" \
-      "$(grep -cF '{ mc: "26.2", java: "25" }' "$gate_yml")"
+check "gate pair 1.21.11/java21/fabric" "1" \
+      "$(grep -cF '{ mc: "1.21.11", java: "21", loader: "fabric" }' "$gate_yml")"
+check "gate pair 1.21.11/java21/quilt" "1" \
+      "$(grep -cF '{ mc: "1.21.11", java: "21", loader: "quilt" }' "$gate_yml")"
+check "gate pair 26.2/java25/fabric" "1" \
+      "$(grep -cF '{ mc: "26.2", java: "25", loader: "fabric" }' "$gate_yml")"
+check "gate pair 26.2/java25/quilt" "1" \
+      "$(grep -cF '{ mc: "26.2", java: "25", loader: "quilt" }' "$gate_yml")"
 
 # Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the two
 # `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.

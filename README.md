@@ -82,12 +82,15 @@ bands, lean vs full shapes): [docs/ci.md](docs/ci.md).
 
 ## Compatibility
 
-| Minecraft | Jar | Java | Fabric Loader |
-| --- | --- | --- | --- |
-| 1.14–1.18.2 | mc1.14.x | 8+ | 0.19.3+ |
-| 1.19.1–1.20.2 | mc1.19-1.20.2 | 17+ | 0.16.5+ |
-| 1.20.3–1.21.11 | mc1.21.x | 21+ | 0.16.5+ |
-| 26.1–26.2 | mc26.x | 25+ | 0.19.3+ |
+| Minecraft | Jar | Java | Fabric Loader | Quilt Loader |
+| --- | --- | --- | --- | --- |
+| 1.14–1.18.2 | mc1.14.x | 8+ | 0.19.3+ | 0.30.0+ |
+| 1.19.1–1.20.2 | mc1.19-1.20.2 | 17+ | 0.16.5+ | 0.30.0+ |
+| 1.20.3–1.21.11 | mc1.21.x | 21+ | 0.16.5+ | 0.30.0+ |
+| 26.1–26.2 | mc26.x | 25+ | 0.19.3+ | 0.30.0+ |
 
-1.19.0 is unsupported. Fabric API is not required. Why the boundaries sit
-where they do: [docs/version-matrix.md](docs/version-matrix.md).
+1.19.0 is unsupported. Fabric API is not required. One jar serves both
+loaders (Quilt reads its bundled `quilt.mod.json`; Fabric reads
+`fabric.mod.json`) — every version above is e2e-tested against real server
+boots on both. Why the boundaries sit where they do:
+[docs/version-matrix.md](docs/version-matrix.md).

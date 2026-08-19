@@ -42,6 +42,37 @@ Every intermediary member the mc114 hook touches is identical across
 1.14.4–1.18.2, so the compile-against version (1.16.5) does not change the
 output jar.
 
+## Quilt: the pre-1.18 entrypoint gap
+
+On Quilt Loader, `CommandsSpy.onInitialize()` is **never invoked on dedicated
+servers below Minecraft 1.18** — silently, with no crash and no exception.
+e2e-proven with quilt-loader 0.30.0: 1.14.4, 1.16.5 and 1.17.1 fail; 1.18.2,
+1.19.2, 1.19.4, 1.20.2, 1.21.11 pass. The boundary is a Minecraft version, not
+a jar boundary — 1.17.1 and 1.18.2 are served by the same mc114 jar and the
+same Java 17 floor.
+
+Nothing user-visible is lost. Mixins are applied by SpongePowered Mixin
+independently of the loader's entrypoint invocation, so the mod's entire
+function — console, RCON and player command logging — is asserted and passes
+on all three versions. The only missing artifact is the startup banner.
+
+Upstream, not ours, and not fixable by choosing a different loader version:
+quilt-loader's `EntrypointPatch` bytecode-patches Minecraft's own main class to
+inject the entrypoint call, and its `EnvType.SERVER` path is byte-identical
+across every release from 0.23.0 to 0.30.1-beta.2 (only client/applet/
+pre-classic paths changed), and identical to Fabric Loader 0.19.2's — which
+works on these versions. Every in-patch failure mode throws loudly, so the hook
+is provably injected and `Hooks.startServer` provably reached; the defect lies
+further into quilt's mod-loading pipeline. No upstream issue reports it
+(https://github.com/QuiltMC/quilt-loader/issues, searched for EntrypointPatch /
+entrypoint / legacy / 1.16 / 1.17 / onInitialize), and quilt-loader publishes no
+minimum-supported-Minecraft table.
+
+These versions stay in the Quilt e2e matrix with every functional assertion
+intact. `scripts/e2e-entrypoint.sh` asserts the banner **expected-absent** on
+`LOADER=quilt` below 1.18 (`QUILT_ENTRYPOINT_GAP`), so CI fails and tells us to
+update this section the day upstream fixes it.
+
 ## Java floors
 
 A Minecraft version has a Java **floor**, not a pin: compatibility with newer
@@ -73,6 +104,15 @@ Which floors get the alpine base image vs. jammy, and why:
 - mc26: loader >=0.19.3, the verified line for unobfuscated 26.x.
 - mc114: deliberately a high floor (>=0.19.3), the line verified to serve
   working server launchers all the way down to 1.14.4. Do not lower it.
+
+Quilt Loader natively loads a jar's `fabric.mod.json` — this project also
+ships a `quilt.mod.json` (same jar, both loaders) purely for an accurate
+platform badge, not because Quilt needs it to load the mod. All four eras
+declare the same Quilt Loader floor, `>=0.30.0`, and the same Java floor as
+their Fabric counterpart (Quilt Loader itself imposes no additional JVM
+floor at any era). This is asserted, not assumed: the e2e matrix runs every
+version in this file on both loaders (`LOADER=fabric`/`LOADER=quilt`); see
+[e2e-harness.md](e2e-harness.md) → "Quilt server install".
 
 ## Default e2e version list
 
