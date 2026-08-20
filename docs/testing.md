@@ -52,6 +52,13 @@ when its index is `> 0`. The tests pin the fallout as-is:
 Change the splitter and these tests are supposed to fail — update them
 deliberately.
 
+`CommandsSpyHandleCommandTest` also pins unknown-command handling in the
+shared core: an unrecognized command is logged, is blacklistable like any
+other command name, and has its arguments dropped under the default
+`logArguments: false` just like a known command. Whether each loader's hook
+actually fires for an unknown command is a per-loader question the e2e
+suite answers, not this one.
+
 ## Era-specific wiring
 
 - **`src/test/resources/log4j2.xml` exists for classpath position, not
