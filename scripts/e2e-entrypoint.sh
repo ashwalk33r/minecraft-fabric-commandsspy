@@ -182,6 +182,20 @@ if [ "$BOOTED" -eq 1 ]; then
   echo "list" > console.in
   sleep 3
 
+  # Non-existing command (MOD.md's opening claim). Whether each loader's hook
+  # fires for a name the dispatcher cannot resolve is per-loader behavior; this
+  # send is what measures it. See UNKNOWN_COMMAND_GAP below.
+  echo "[e2e] Sending non-existing console command..."
+  echo "notacommand" > console.in
+  sleep 2
+
+  # logArguments probe: a command WITH arguments, so the default (false) can be
+  # distinguished from true. `list` has no arguments, so every pre-existing
+  # assertion in this file passes identically under either setting.
+  echo "[e2e] Sending console command with arguments..."
+  echo "say e2e-args-probe" > console.in
+  sleep 2
+
   echo "[e2e] Sending RCON command..."
   /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all || echo "[e2e] ⚠ RCON client failed"
 
