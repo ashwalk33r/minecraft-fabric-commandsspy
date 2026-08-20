@@ -4,12 +4,12 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
 files=(
-  "$root/.github/workflows/gradle.yml"
-  "$root/.github/workflows/e2e.yml"
+  "$root/.github/workflows/ci.yml"
   "$root/.github/workflows/e2e-stage.yml"
 )
 actions=(
   "actions/cache"
+  "actions/cache/restore"
   "actions/checkout"
   "actions/upload-artifact"
   "actions/download-artifact"
@@ -18,6 +18,7 @@ actions=(
 
 declare -A expected
 expected["actions/cache"]="6.1.0"
+expected["actions/cache/restore"]="6.1.0"
 expected["actions/checkout"]="7.0.1"
 expected["actions/upload-artifact"]="7.0.1"
 expected["actions/download-artifact"]="8.0.1"
