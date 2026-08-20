@@ -15,7 +15,12 @@ your server's Minecraft version from the Compatibility tables in the
 [README](./README.md#compatibility) — no single Forge jar covers the full
 range.
 
-NeoForge has its own jars, one per supported Minecraft version (1.21.1 and 26.2). Pick the one matching your server's Minecraft version exactly — a NeoForge jar covers a single Minecraft version, not a range, so installing the wrong one gives a clean "wrong version" message instead of logging anything.
+NeoForge has its own single jar, covering Minecraft 1.20.2 through 26.2 — the
+whole range NeoForge publishes for. There is nothing to pick: unlike Forge, one
+NeoForge jar spans every line. On Minecraft 1.20.1 and below there is no
+NeoForge at all (that era is MinecraftForge — use the Forge jars), and the jar
+declares the range, so a server outside it refuses the mod with a clean
+dependency message instead of logging anything.
 
 ## Examples
 Player "Ultra_MC" executing "/gamemode creative" command is logged without arguments in server logs when using config `"logArguments": false` (default):
