@@ -18,29 +18,33 @@ if (modVersion == null || modVersion.isBlank()) {
 // One row per NeoForge line, derived once — same idiom as the root build's
 // -PmcTarget dispatch, so adding a line is a change here and in
 // gradle.properties, not a scavenger hunt.
-def neoTarget = (findProperty('neoTarget') ?: '121') as String
-if (!(neoTarget in ['121', '26'])) {
-	throw new GradleException("Unknown -PneoTarget=${neoTarget}. Supported values: 121 (default), 26")
+def neoTarget = (findProperty('neoTarget') ?: 'all') as String
+if (!(neoTarget in ['all', '121', '26'])) {
+	throw new GradleException("Unknown -PneoTarget=${neoTarget}. Supported values: all (default), 121, 26")
 }
-def is26 = neoTarget == '26'
 
 def neoforgeVersion = project.getProperty("neoforge_version_${neoTarget}")
 def minecraftVersion = project.getProperty("minecraft_version_${neoTarget}")
 
-// Release must MATCH the line's own Java level, unlike the root build's mc26
-// target which compiles 26.x to release 21. `options.release` also sets this
-// project's `org.gradle.jvm.version` consumer attribute, and NeoForge 26.2's
-// net.neoforged.fancymodloader:loader publishes only a Java 25 variant — asking
-// for 21 fails dependency resolution outright ("no matching variant"), it does
-// not silently downgrade.
-def javaRelease = is26 ? 25 : 21
+// Release must MATCH the ANCHOR line's own Java level, unlike the root build's
+// mc26 target which compiles 26.x to release 21. `options.release` also sets
+// this project's `org.gradle.jvm.version` consumer attribute, and a line's
+// net.neoforged.fancymodloader:loader publishes exactly ONE Java variant —
+// asking for a lower one fails dependency resolution outright ("no matching
+// variant"), it does not silently downgrade. Hence a per-band property rather
+// than a guess: band `all` anchors on 20.2.93, whose loader is Java 17, and
+// Java-17 bytecode runs on every newer line's runtime (bytecode binds only
+// downward).
+def javaRelease = (project.getProperty("java_release_${neoTarget}") as String) as Integer
 
-version = "${modVersion}+neoforge-mc${minecraftVersion}"
+// minecraft_version_<band> is the band's SPAN ("1.20.2-26.2"), not one version,
+// so this names the range the jar was measured across.
+version = "${modVersion}+mc${minecraftVersion}-neoforge"
 group = 'm2x.commandsspy'
 
 base {
 	archivesName = 'commandsspy'
-	// All six jars land in ONE directory. This build is standalone, but the
+	// Every jar lands in ONE directory. This build is standalone, but the
 	// Makefile, the e2e fan-out and CI's download-artifact/merge-multiple step
 	// all address jars as build/libs/<name>.jar; keeping the NeoForge output
 	// there too means none of them need a second path to know about.
@@ -60,7 +64,7 @@ sourceSets.main.java.srcDir("${repoRoot}/src/main/java")
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(is26 ? 25 : 21)
+		languageVersion = JavaLanguageVersion.of(javaRelease)
 	}
 }
 
@@ -95,7 +99,7 @@ pmdMain {
 
 processResources {
 	def resolvedVersion = project.version
-	def minecraftRange = project.getProperty("minecraft_range_${neoTarget}")
+	def minecraftRange = project.getProperty("minecraft_range_neo_${neoTarget}")
 	def neoforgeRange = project.getProperty("neoforge_range_${neoTarget}")
 	def fmlRange = project.getProperty("fml_range_${neoTarget}")
 	inputs.property "version", resolvedVersion
@@ -103,7 +107,11 @@ processResources {
 	inputs.property "neoforge_range", neoforgeRange
 	inputs.property "fml_range", fmlRange
 
-	filesMatching("META-INF/neoforge.mods.toml") {
+	// BOTH metadata files, same values. FML 1.x/2.x (Minecraft 1.20.2-1.20.4)
+	// read only META-INF/mods.toml and reject the `type` dependency key; FML 3.x+
+	// read META-INF/neoforge.mods.toml and dropped `mandatory`. Each major reads
+	// only the filename it knows, so one jar can carry both and span the seam.
+	filesMatching(["META-INF/neoforge.mods.toml", "META-INF/mods.toml"]) {
 		expand "version": resolvedVersion, "minecraft_range": minecraftRange,
 				"neoforge_range": neoforgeRange, "fml_range": fmlRange
 	}

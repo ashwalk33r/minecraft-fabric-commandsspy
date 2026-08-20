@@ -1,0 +1,32 @@
+# The LEGACY metadata file, read by FML 1.x/2.x only — Minecraft 1.20.2-1.20.4.
+# Those majors read this filename and no other, and they reject the `type`
+# dependency key that FML 4.x+ requires (they want `mandatory`). FML 3.x and
+# later read neoforge.mods.toml and never look at this file, so one jar carries
+# both and spans the seam. Keep the two in step: same ids, version and ranges.
+#
+# Templated by neoforge/build.gradle's processResources, like its sibling.
+modLoader = "javafml"
+loaderVersion = "${fml_range}"
+license = "MIT"
+issueTrackerURL = "https://github.com/ashwalk33r/minecraft-fabric-commandsspy/issues"
+
+[[mods]]
+modId = "commandsspy"
+version = "${version}"
+displayName = "Commands Spy"
+description = '''Log commands to server console.'''
+authors = "Ultra_MC"
+
+[[dependencies.commandsspy]]
+modId = "neoforge"
+mandatory = true
+versionRange = "${neoforge_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.commandsspy]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${minecraft_range}"
+ordering = "NONE"
+side = "BOTH"
