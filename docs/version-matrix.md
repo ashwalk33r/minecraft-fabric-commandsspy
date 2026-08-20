@@ -421,7 +421,7 @@ range: the fix is a fourth compile target, not a wider range on this one.
 
 ### Gate coverage
 
-`.github/workflows/e2e.yml`'s `e2e-forge-legacy-java17` job reads every
+`.github/workflows/ci.yml`'s `e2e-forge-legacy-java17` job reads every
 measured PASS version above from `tools/gen_matrix.go`'s
 `forge_legacy_java17` output — unlike the modern
 jar's edges-only job, the whole point of this range was
@@ -495,7 +495,7 @@ branch (63/64), which is the axis this band's measurement actually probes.
 
 Same shape as the legacy band, for the same reason: the measurement's point
 was one jar spanning ten EventBus-7 Forge majors, so
-`.github/workflows/e2e.yml` boots **every** measured version, split across
+`.github/workflows/ci.yml` boots **every** measured version, split across
 two generated jobs by era Java floor — `e2e-forge-eventbus7-java21`
 (1.21.6–1.21.11) and `e2e-forge-eventbus7-java25` (26.1–26.2; 26.x servers
 require Java 25) — reading `tools/gen_matrix.go`'s `forge_eventbus7_java21`
@@ -597,7 +597,7 @@ live (`keep_alive` `0x20/0x10` at 736, `0x1F/0x10` at 751/753, `chat`
 
 ### Gate coverage
 
-`.github/workflows/e2e.yml`'s `e2e-forge-mc116-java8` job boots every
+`.github/workflows/ci.yml`'s `e2e-forge-mc116-java8` job boots every
 measured-PASS version (1.14.4, 1.15.2, 1.16.1, 1.16.2, 1.16.3, 1.16.4,
 1.16.5) on java 8 — the era's real deployment JVM and the jar's own
 bytecode floor; 1.16.4 rides via the gate-1 ModLauncher drop-in — reading
