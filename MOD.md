@@ -8,7 +8,12 @@ Pick the matching jar for your server from the Compatibility tables in the [READ
 
 The same jar runs on Fabric Loader and Quilt Loader; when publishing a release, tag both loaders on Modrinth/CurseForge — the jar's `quilt.mod.json` makes the Quilt tag an accurate claim, not just a Fabric-compat assumption.
 
-A separate Forge jar is also available, covering Minecraft 1.20.6-1.21.5 only — not the full Fabric/Quilt range above.
+Four separate Forge jars are also available, together covering Minecraft
+1.14 through 26.2: `mc116` (1.14-1.16.5), `legacy` (1.17.1-1.20.4), `modern`
+(1.20.6-1.21.5) and `eventbus7` (1.21.6-26.2). Pick the matching jar for
+your server's Minecraft version from the Compatibility tables in the
+[README](./README.md#compatibility) — no single Forge jar covers the full
+range.
 
 NeoForge has its own jars, one per supported Minecraft version (1.21.1 and 26.2). Pick the one matching your server's Minecraft version exactly — a NeoForge jar covers a single Minecraft version, not a range, so installing the wrong one gives a clean "wrong version" message instead of logging anything.
 

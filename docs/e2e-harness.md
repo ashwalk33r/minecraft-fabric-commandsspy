@@ -30,6 +30,16 @@ The default version list and its sampling rationale live in
    the entrypoint wraps it in an outer 160s `timeout` as the belt to the
    bot's braces.
 
+The default leg also asserts, on the config as-shipped: a non-existing
+command still produces a `[CommandsSpy]` line; with `logArguments: false`
+(the default) an argument-bearing command is logged with the bare command
+name and not its arguments; and `config/commands-spy.json` matches the
+documented initial schema. The schema check reads the file from disk after
+the run completes, so on `LOADER=quilt` below 1.18 — where the mod's
+initializer entrypoint never fires and `CommandsSpyConfig.load()` runs
+lazily on the first executed command instead — it only proves the file was
+created by the end of the run, not that it existed at server startup.
+
 Verdict line grammar (the final line of container output is authoritative):
 
 - `E2E <version> PASS`
@@ -215,6 +225,36 @@ Two verdict codes are NeoForge-specific: `neoforge-install-failed` (the
 installer exited non-zero; its log tail is printed) and
 `neoforge-unsupported-version` (a Minecraft version with no shipped NeoForge
 line — an explicit failure, never a silent fallback to a jar that cannot load).
+
+## Config-behaviors leg
+
+`CONFIG_VARIANT=1` (Makefile, `scripts/e2e-run-one.sh`,
+`scripts/e2e-entrypoint.sh`) runs an opt-in extra leg that boots its own
+server rather than reusing the default boot. It has to: `CommandsSpy.CONFIG`
+is a `static final` read once at class-init, and the mod has no
+config-reload path, so a non-default config can only be observed by seeding
+`config/commands-spy.json` **before** that boot.
+
+Before the server starts, the leg writes:
+
+```json
+{"blacklist": ["list"], "logArguments": true}
+```
+
+It then asserts: the blacklisted `list` command (sent over RCON) produces no
+`[CommandsSpy]` line at all; a non-blacklisted RCON command (`save-all`)
+still logs as usual; and an argument-bearing command is logged **with** its
+arguments, proving `logArguments: true` is honored end to end.
+
+Run it with:
+
+```bash
+make e2e-ci VERSIONS=1.21.11 JAVA=21 LOADER=fabric CONFIG_VARIANT=1
+```
+
+Its log and result files use the `-cfgvar` key suffix, keeping them
+distinct from the same version's default-config leg in `E2E_JAR_CACHE` and
+in the aggregated CI results.
 
 ## Routing drift protection
 
