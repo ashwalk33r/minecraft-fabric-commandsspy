@@ -50,8 +50,9 @@ Verdict line grammar (the final line of container output is authoritative):
   `player-command-not-logged`, `player-misattributed`, `boot-failed`,
   `neoforge-install-failed`. `scripts/e2e-run-one.sh` adds
   `below-java-floor-<n>` for a JVM below the version's floor,
-  `neoforge-unsupported-version` for a Minecraft version with no shipped
-  NeoForge line, and `mod-jar-missing` when the jar under test does not exist
+  `neoforge-unsupported-version` for a Minecraft version below 1.20.2, which
+  is NeoForge's own floor, and `mod-jar-missing` when the jar under test does
+  not exist
   (`docker run -v <missing path>` silently creates an empty directory and mounts
   that, so without this check a build or path bug arrives disguised as
   `mod-not-loaded` on a perfectly healthy server). The default leg also adds
@@ -181,10 +182,12 @@ before it could write a verdict — hit on Minecraft 1.21, which has no
 
 ## NeoForge server install
 
-`LOADER=neoforge` boots a real NeoForge server. Unlike Quilt this needs **no
-host-side install trick**: Quilt needed one because `quilt-installer` requires
-Java 17+ while the `mc114` band boots Java 8, but NeoForge never targets a
-Minecraft version below 1.20.2 and so never runs below Java 17 anyway. The whole
+`LOADER=neoforge` boots a real NeoForge server, on any Minecraft version from
+1.20.2 up — one band jar serves every leg, so the version axis is the loader
+build and the JVM, not the jar. Unlike Quilt this needs **no host-side install
+trick**: Quilt needed one because `quilt-installer` requires Java 17+ while the
+`mc114` band boots Java 8, but NeoForge never targets a Minecraft version below
+1.20.2 and so never runs below Java 17 anyway. The whole
 install therefore happens inside the same container that runs the server, on the
 shape of the Fabric code path.
 
@@ -208,16 +211,31 @@ bootstrap plus NeoForge's own mod-loading sits on top of vanilla. `JAVA_FLAGS`
 still overrides both wholesale.
 
 Which NeoForge version goes with which Minecraft version is pinned in
-`scripts/e2e-run-one.sh` (mirroring `neoforge/gradle.properties`), not resolved
-at run time. The Maven `latest/version?filter=<mcMinor>.<mcPatch>.` endpoint
-exists and works — note the **trailing dot is load-bearing**, `filter=21.1`
-returns `21.11.45` — but an e2e run that silently retargets itself when upstream
-publishes is not a regression test, so the pins are explicit.
+`scripts/e2e-run-one.sh`, not resolved at run time: a 21-row table, one row per
+Minecraft version NeoForge publishes for, mapping it to the loader build the
+installer fetches and to NeoForge's **own** Java floor (17 up to line 20.4, 21
+through 21.11, 25 on 26.x — which is not the jar's bytecode level, and not the
+Fabric era table's floor either; the era table reports 21 for 1.20.4).
+`--print-neo-routing <mcver>` prints the pair, `scripts/test-jar-routing.sh`
+asserts it offline, and a version outside the table prints `unsupported 0`.
+Rows whose line never published a stable build carry a `-beta` version and are
+marked as such in the boot table in
+[version-matrix.md](version-matrix.md) — 1.20.3, 1.20.5, 1.21.2, 1.21.6,
+1.21.7, 1.21.9, 26.1 and 26.1.1. The band's compile anchor is never one of them.
+
+The pins are explicit on purpose. The Maven
+`latest/version?filter=<mcMinor>.<mcPatch>.` endpoint exists and works — note
+the **trailing dot is load-bearing**, `filter=21.1` returns `21.11.45` — but an
+e2e run that silently retargets itself when upstream publishes is not a
+regression test. Two related traps: 26.x versions are four-component
+(`26.2.0.<n>`), and Maven's `<release>` marker for `net.neoforged:neoforge`
+resolves to `26.1.2.97`, which sorts *above* `26.2.0.64`.
 
 **Deliberately not cached.** The Fabric path caches its launcher and server jar
 under `E2E_JAR_CACHE`; the NeoForge install tree is ~250MB per Minecraft version
-against GitHub's 10GB per-repo cache budget, and with only two shipped lines the
-download costs less than the cache round-trip. Revisit only with a measurement.
+against GitHub's 10GB per-repo cache budget, and the CI legs boot six versions,
+so the download still costs less than the cache round-trip. Revisit only with a
+measurement.
 
 ### Assertion differences
 
@@ -227,15 +245,20 @@ vanilla `CommandSourceStack`, so `[CommandsSpy] [Server] list`,
 are byte-identical to the Fabric path.
 
 The one exception is the mixin assertion, which is reported as `[SKIP]` on
-`LOADER=neoforge`: those jars contain no mixin at all (they listen to NeoForge's
+`LOADER=neoforge`: the jar contains no mixin at all (it listens to NeoForge's
 own `CommandEvent`), so the "no missing-target report" grep could not fail there
 and would prove nothing. What proves the NeoForge hook is the console, RCON and
 player assertions themselves.
 
 Two verdict codes are NeoForge-specific: `neoforge-install-failed` (the
 installer exited non-zero; its log tail is printed) and
-`neoforge-unsupported-version` (a Minecraft version with no shipped NeoForge
-line — an explicit failure, never a silent fallback to a jar that cannot load).
+`neoforge-unsupported-version` — a Minecraft version NeoForge publishes nothing
+for, i.e. below its 1.20.2 floor. The message names that floor
+(`NeoForge publishes no line for it (its floor is Minecraft 1.20.2)`) rather
+than a shipped-jar list, because the jar is not the limit any more: one band jar
+covers 1.20.2-26.2, so the only way to miss is to ask for a version that has no
+NeoForge at all. Explicit failure, never a silent fallback to a jar that cannot
+load.
 
 ## Config-behaviors leg
 
