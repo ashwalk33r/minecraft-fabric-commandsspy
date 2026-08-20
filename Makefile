@@ -213,7 +213,7 @@ _e2e-fanout:
 	  fi; \
 	  echo "  $$line"; \
 	  case "$$line" in \
-	    *" PASS"|*" PASS players-skipped-unsupported-protocol"|*" PASS forge-out-of-range-refused-as-expected") ;; \
+	    *" PASS"|*" PASS players-skipped-unsupported-protocol"|*" PASS forge-out-of-range-refused-as-expected"|*" PASS config-behaviors") ;; \
 	    *) failed=1 ;; \
 	  esac; \
 	done; \

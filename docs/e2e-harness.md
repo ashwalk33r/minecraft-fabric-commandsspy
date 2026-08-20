@@ -54,12 +54,23 @@ Verdict line grammar (the final line of container output is authoritative):
   NeoForge line, and `mod-jar-missing` when the jar under test does not exist
   (`docker run -v <missing path>` silently creates an empty directory and mounts
   that, so without this check a build or path bug arrives disguised as
-  `mod-not-loaded` on a perfectly healthy server).
+  `mod-not-loaded` on a perfectly healthy server). The default leg also adds
+  `unknown-command-not-logged`, `config-not-autocreated`,
+  `logargs-default-bare-name-missing`, and
+  `logargs-default-leaked-arguments` for the config-as-shipped assertions
+  above.
 - `E2E <version> PASS forge-out-of-range-refused-as-expected` — reachable
   only when `FORGE_EXPECT_REFUSED=1` (a Forge leg outside the jar's declared
   Minecraft range): Forge refused the mod (`needs language provider
   javafml`) and no `[CommandsSpy] [` line was ever logged. See "Forge
   server install" below.
+- `E2E <version> PASS config-behaviors` — the config-behaviors leg
+  (`CONFIG_VARIANT=1`): a `config/commands-spy.json` is seeded before boot
+  with a blacklisted command and `logArguments: true`, and the leg asserts
+  the blacklist suppresses logging while `logArguments: true` logs the
+  command's arguments. Its `FAIL <code>,<code>,...` codes are
+  `config-variant-mod-not-loaded`, `blacklist-not-suppressed`, and
+  `logargs-true-not-logged`.
 
 The player assertions are a positive/negative pair: player1's `/list` must be
 attributed to player1, and player2 (who sent nothing) must appear in **zero**

@@ -1,5 +1,5 @@
 # CommandsSpy
-A mod to log commands to the server console. Both existing and non-existing commands are logged. Commands that are permitted or not are added to the server logs as well.
+A mod to log commands to the server console. Both existing and non-existing commands are logged — on every supported loader, verified on booted servers (Fabric, Quilt, Forge and NeoForge each log a command name their dispatcher cannot resolve). Commands that are permitted or not are added to the server logs as well.
 
 ## Installation
 Simply place the mod into the mods directory of your server, and it will start monitoring executed commands.
@@ -9,7 +9,7 @@ Pick the matching jar for your server from the Compatibility tables in the [READ
 The same jar runs on Fabric Loader and Quilt Loader; when publishing a release, tag both loaders on Modrinth/CurseForge — the jar's `quilt.mod.json` makes the Quilt tag an accurate claim, not just a Fabric-compat assumption.
 
 Four separate Forge jars are also available, together covering Minecraft
-1.14 through 26.2: `mc116` (1.14-1.16.5), `legacy` (1.17.1-1.20.4), `modern`
+1.14.4 through 26.2: `mc116` (1.14-1.16.5), `legacy` (1.17.1-1.20.4), `modern`
 (1.20.6-1.21.5) and `eventbus7` (1.21.6-26.2). Pick the matching jar for
 your server's Minecraft version from the Compatibility tables in the
 [README](./README.md#compatibility) — no single Forge jar covers the full

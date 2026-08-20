@@ -198,6 +198,11 @@ IMAGE="commandsspy-e2e:java${JAVA_VERSION}"
 
 # Player phase: two fake players join and one sends /list.
 PLAYER_PHASE=1
+if [ "$CONFIG_VARIANT" = "1" ]; then
+  # The config-behaviors leg's verdict block returns before any player
+  # assertion runs, so the Go bot phase would be pure wasted boot time.
+  PLAYER_PHASE=0
+fi
 
 LOG_FILE="${REPO_ROOT}/${E2E_LOG_DIR}/${KEY}.log"
 RESULT_FILE="${REPO_ROOT}/${E2E_RESULT_DIR}/${KEY}.result"
