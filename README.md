@@ -121,9 +121,16 @@ bands, lean vs full shapes): [docs/ci.md](docs/ci.md).
 
 1.19.0 is unsupported. Fabric API is not required. One jar serves both
 loaders (Quilt reads its bundled `quilt.mod.json`; Fabric reads
-`fabric.mod.json`) — every version above is e2e-tested against real server
-boots on both. Why the boundaries sit where they do:
-[docs/version-matrix.md](docs/version-matrix.md).
+`fabric.mod.json`) — and every version CI boots, it boots on **both**, with
+the identical assertion set. CI samples each range rather than enumerating it
+(27 versions per loader); run any other in-range version yourself with
+`make e2e VERSIONS=...`.
+
+On Quilt below Minecraft 1.18 the startup banner never prints — Quilt Loader
+does not invoke the mod's entrypoint on dedicated servers there. Logging is
+unaffected: the mixin still applies, so console, RCON and player commands are
+captured exactly as on Fabric. Why the boundaries sit where they do, and the
+detail on that gap: [docs/version-matrix.md](docs/version-matrix.md).
 
 ### Forge
 
