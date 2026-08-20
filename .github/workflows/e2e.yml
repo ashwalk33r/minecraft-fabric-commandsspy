@@ -55,7 +55,7 @@ jobs:
       mc114_java21: ${{ steps.grid.outputs.mc114_java21 }}
       forge_java21: ${{ steps.grid.outputs.forge_java21 }}
       forge_legacy_java17: ${{ steps.grid.outputs.forge_legacy_java17 }}
-      forge_legacy_guard_java8: ${{ steps.grid.outputs.forge_legacy_guard_java8 }}
+      forge_mc116_java8: ${{ steps.grid.outputs.forge_mc116_java8 }}
       forge_eventbus7_java21: ${{ steps.grid.outputs.forge_eventbus7_java21 }}
       forge_eventbus7_java25: ${{ steps.grid.outputs.forge_eventbus7_java25 }}
     steps:
@@ -134,6 +134,20 @@ jobs:
         with:
           name: commandsspy-jar-forge-legacy-${{ github.sha }}
           path: forge/build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar
+          if-no-files-found: error
+          retention-days: 1
+      # mc116 Forge target: issue #30, SRG-reobfuscated jar with its own
+      # entrypoint source for the pre-1.17 era. Same forge/ Gradle build,
+      # -PforgeTarget=mc116;
+      # decompiles Minecraft against its own 1.16.5 compile target, so it is
+      # its own slow-on-cache-miss step too.
+      - name: "Build: mod compilation (Forge target, Minecraft 1.14-1.16.5, mc116 SRG)"
+        run: make build-forge-mc116
+      - name: "Build: upload the mod artifact (Forge mc116 target)"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-mc116-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.16.x-forge.jar
           if-no-files-found: error
           retention-days: 1
       # EventBus-7 Forge target: issue #32 task 2, for Forge 56+ (Minecraft
@@ -319,8 +333,8 @@ jobs:
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
-  # Forge: five generated jobs (modern band, legacy band, sub-floor guard,
-  # and the EventBus-7 band split across its two era Java floors).
+  # Forge: five generated jobs (modern band, legacy band, mc116 band, and
+  # the EventBus-7 band split across its two era Java floors).
   # Version lists and the full per-leg rationale live in tools/gen_matrix.go's
   # Forge stage — floor rows only, no coverage rows, by design.
   e2e-forge-java21:
@@ -357,19 +371,19 @@ jobs:
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
-  e2e-forge-legacy-guard-java8:
-    name: "e2e 1.16.5 java 8 (forge legacy guard)"
+  e2e-forge-mc116-java8:
+    name: "e2e 1.14.4-1.16.5 java 8 (forge mc116)"
     needs: [build-jars, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.forge_legacy_guard_java8 != '[]' }}
+          && needs.build-jars.outputs.forge_mc116_java8 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.forge_legacy_guard_java8 }}
+      versions: ${{ needs.build-jars.outputs.forge_mc116_java8 }}
       java: "8"
       loader: "forge"
       jar-sha: ${{ github.sha }}

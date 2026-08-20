@@ -15,6 +15,11 @@
 //     uncompilable. Official mappings at runtime like modern; only the
 //     entrypoint source differs (src/eventbus7/java replaces src/main/java,
 //     shared core unchanged).
+//   mc116 - issue #30: SRG-reobfuscated jar for the pre-1.17 era, Minecraft
+//     1.14-1.16.5 (measured). Like legacy it needs the renamer, but ALSO its
+//     own entrypoint source (src/mc116/java): pre-1.17 dev-time class names
+//     are the MCP ones (CommandSource, not CommandSourceStack), and the jar
+//     compiles --release 8 for the era's Java-8 servers.
 plugins {
 	id 'java'
 	id 'net.minecraftforge.gradle' version '[7.0.29,8.0)'
@@ -33,12 +38,13 @@ if (modVersion == null || modVersion.isBlank()) {
 }
 
 def forgeTarget = (findProperty('forgeTarget') ?: 'modern') as String
-if (!(forgeTarget in ['modern', 'legacy', 'eventbus7'])) {
-	throw new GradleException("Unknown -PforgeTarget=${forgeTarget}. Supported values: modern (default), legacy, eventbus7")
+if (!(forgeTarget in ['modern', 'legacy', 'eventbus7', 'mc116'])) {
+	throw new GradleException("Unknown -PforgeTarget=${forgeTarget}. Supported values: modern (default), legacy, eventbus7, mc116")
 }
 def isLegacy = forgeTarget == 'legacy'
 def isEventBus7 = forgeTarget == 'eventbus7'
-if (isLegacy) {
+def isMc116 = forgeTarget == 'mc116'
+if (isLegacy || isMc116) {
 	apply plugin: 'net.minecraftforge.renamer'
 }
 
@@ -57,15 +63,16 @@ def targetLoaderRange = project.getProperty("loader_range_${forgeTarget}")
 // produces the actual shipped legacy artifact with its own name/classifier.
 version = isLegacy ? "${modVersion}+mc1.17-1.20.4"
 	: isEventBus7 ? "${modVersion}+mc1.21.6-26.2-forge"
+	: isMc116 ? "${modVersion}+mc1.16.x"
 	: "${modVersion}+mc1.21.x-forge"
 group = 'm2x.commandsspy'
 base.archivesName = 'commandsspy'
 
 // Minecraft 1.20.6+ ships Java 21 to end users; the legacy 1.17.1-1.20.4 era
-// ships Java 17. No Java-8 complexity here: the only sub-range that needs
-// Java 8 (1.14-1.16.x) is OUT of the measured legacy range -- see
-// docs/version-matrix.md for why.
-java.toolchain.languageVersion = JavaLanguageVersion.of(isLegacy ? 17 : 21)
+// ships Java 17; the mc116 pre-1.17 era ships Java 8. mc116 keeps the
+// 17 toolchain and cross-compiles via --release 8 below -- the CI image
+// carries no JDK 8 and must not need one.
+java.toolchain.languageVersion = JavaLanguageVersion.of((isLegacy || isMc116) ? 17 : 21)
 
 minecraft {
 	mappings channel: 'official', version: targetMappingVersion
@@ -89,12 +96,25 @@ dependencies {
 // and legacy keep compiling the default src/main/java entrypoint.
 if (isEventBus7) {
 	sourceSets.main.java.setSrcDirs(['src/eventbus7/java', '../src/main/java'])
+} else if (isMc116) {
+	// mc116 swaps the entrypoint the same way eventbus7 does: the default
+	// src/main/java entrypoint uses a Java-16+ pattern-matching instanceof,
+	// which cannot compile under --release 8. The extra resources dir adds
+	// pack.mcmeta: Forge 32.x (1.16.1) NPEs in ResourcePackLoader on any mod
+	// jar without one (measured, #30); later Forges only warn.
+	sourceSets.main.java.setSrcDirs(['src/mc116/java', '../src/main/java'])
+	sourceSets.main.resources.srcDir 'src/mc116/resources'
 } else {
 	sourceSets.main.java.srcDir '../src/main/java'
 }
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
+	if (isMc116) {
+		// Era-correct bytecode: 1.16.x servers run Java 8. Same idiom as the
+		// root build's per-target `options.release`.
+		options.release = 8
+	}
 }
 
 tasks.named('processResources', ProcessResources) {
@@ -108,14 +128,18 @@ tasks.named('processResources', ProcessResources) {
 	filesMatching('META-INF/mods.toml') { expand props }
 }
 
-if (isLegacy) {
+if (isLegacy || isMc116) {
 	// Renames the compiled official-mapped jar down to SRG names for the
-	// 1.17.1-1.20.4 legacy runtime, where Forge does not ship Mojang official
-	// mappings. Creates task 'renameJar'; classifier 'forge' -> final name
-	// commandsspy-<version>+mc1.17-1.20.4-forge.jar. This SRG-renamed jar is
-	// the one the e2e harness boots and the one Makefile's
-	// MOD_JAR_FORGE_LEGACY points at -- not the plain `jar` task's
-	// official-name output, which stays an unshipped intermediate.
+	// pre-1.20.5 runtimes, where Forge does not ship Mojang official
+	// mappings (legacy: 1.17.1-1.20.4, m_xxxxx_ ids; mc116: pre-1.17,
+	// func_xxxxx_ ids — its dev-time CLASS names are already the runtime
+	// MCP ones, so members are the only thing left to map; the class-name
+	// gap is what the src/mc116 source variant covers). Creates task
+	// 'renameJar';
+	// classifier 'forge' -> final name commandsspy-<version>-forge.jar.
+	// This SRG-renamed jar is the one the e2e harness boots and the one the
+	// Makefile's MOD_JAR_FORGE_LEGACY/_MC116 point at -- not the plain `jar`
+	// task's official-name output, which stays an unshipped intermediate.
 	renamer.classes(tasks.named('jar', Jar)) {
 		map.from minecraft.dependency.toSrgFile
 		archiveClassifier = 'forge'

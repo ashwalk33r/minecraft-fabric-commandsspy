@@ -110,7 +110,11 @@ online-mode=false
 # --- minimal footprint: smallest world and least work to reach "Done (...)" ---
 level-type=flat
 # Void world: nothing to generate. Tuning rationale in docs/e2e-harness.md.
-generator-settings={"layers":[],"biome":"minecraft:the_void"}
+# The empty "structures" object is REQUIRED by 1.16/1.16.1 (their flat codec
+# has no default for it and the server dies at boot without it); 1.16.2+ made
+# it optional and 1.19+ (which renamed it structure_overrides) ignores the
+# unknown key, so one literal serves every version.
+generator-settings={"layers":[],"biome":"minecraft:the_void","structures":{"structures":{}}}
 level-seed=e2e
 spawn-protection=0
 # 3 is the vanilla floor; lower values are clamped up.
