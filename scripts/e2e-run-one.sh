@@ -171,6 +171,11 @@ fi
 
 : "${E2E_JAR_CACHE:=}"
 
+# 1 = run the config-behaviors leg (pre-seeded blacklist + logArguments:true)
+# instead of the default assertions. Its own KEY suffix keeps its logs, results
+# and container name from colliding with the default leg for the same version.
+: "${CONFIG_VARIANT:=0}"
+
 # fabric contributes no suffix, so its keys -- and therefore its log files,
 # result files and container names -- are byte-for-byte what they were before
 # the loader axis existed. Mirrored by the Makefile's _loader_suffix.
@@ -184,6 +189,9 @@ if [ -n "$JAVA_OVERRIDE" ]; then
 else
   JAVA_VERSION="$FLOOR_JAVA"
   KEY="$BASE_KEY"
+fi
+if [ "$CONFIG_VARIANT" = "1" ]; then
+  KEY="${KEY}-cfgvar"
 fi
 
 IMAGE="commandsspy-e2e:java${JAVA_VERSION}"
@@ -404,6 +412,7 @@ if docker run --rm \
     -e PLAYER_PHASE="$PLAYER_PHASE" \
     -e LOADER="$LOADER" \
     -e FORGE_EXPECT_REFUSED="$FORGE_EXPECT_REFUSED" \
+    -e E2E_CONFIG_VARIANT="$CONFIG_VARIANT" \
     -e NEOFORGE_VERSION="$NEOFORGE_VERSION" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
     "$@" \
