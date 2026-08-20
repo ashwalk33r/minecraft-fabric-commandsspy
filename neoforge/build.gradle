@@ -62,9 +62,16 @@ neoForge {
 // the two directories are separate.
 sourceSets.main.java.srcDir("${repoRoot}/src/main/java")
 
+// The toolchain is not the same axis as `release`. Dockerfile.ci bakes JDK 21
+// and 25 only, with toolchain auto-download disabled, and Checkstyle 13.10
+// refuses to run on a JVM below 21 — so a band whose release is 17 still
+// compiles ON 21 and merely TARGETS 17. Bands at or above 21 use their own
+// level, because that is also what their fancymodloader variant demands.
+def javaToolchain = Math.max(javaRelease, 21)
+
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(javaRelease)
+		languageVersion = JavaLanguageVersion.of(javaToolchain)
 	}
 }
 
