@@ -10,10 +10,12 @@ package main
 //     band. A missing output evaluates to '' in GitHub expressions and
 //     fromJSON('') hard-errors a matrix.
 //   - The two gate canaries (1.21.11/java21, 26.2/java25) are moved to the
-//     gate, never duplicated here.
-//   - Forge bands emit floor rows only (see the Forge stage below). A new
-//     Forge band is one range-key case in bandPresent, one emit here, and one
-//     uses: block in e2e.yml.
+//     gate, never duplicated here — that is a FABRIC-loader rule; the gate
+//     runs those two versions on fabric/quilt only, so the forge and neoforge
+//     rows below list them without duplicating anything.
+//   - Forge and NeoForge bands emit floor rows only (see those stages below).
+//     A new such band is one range-key case in bandPresent, one emit here, and
+//     one uses: block in e2e.yml.
 //
 import (
 	"encoding/json"
@@ -35,6 +37,11 @@ var forgeRangeRe = map[string]*regexp.Regexp{
 	"forge_eventbus7": regexp.MustCompile(`(?m)^minecraft_range_eventbus7=`),
 	"forge_mc116":     regexp.MustCompile(`(?m)^minecraft_range_mc116=`),
 }
+
+// The NeoForge band jar is keyed off its declared range line in
+// neoforge/gradle.properties, same idiom as the Forge bands above. One band
+// row only: a single jar covers 1.20.2-26.2.
+var neoRangeRe = regexp.MustCompile(`(?m)^minecraft_range_neo_all=`)
 
 // bandPresent reports whether a band's build target exists in the tree.
 // forced (FORCE_BANDS) overrides detection for offline testing.
@@ -60,6 +67,9 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 	case "forge", "forge_legacy", "forge_eventbus7", "forge_mc116":
 		data, err := os.ReadFile(filepath.Join(repoRoot, "forge", "gradle.properties"))
 		return err == nil && forgeRangeRe[name].Match(data)
+	case "neo":
+		data, err := os.ReadFile(filepath.Join(repoRoot, "neoforge", "gradle.properties"))
+		return err == nil && neoRangeRe.Match(data)
 	}
 	return false
 }
@@ -255,24 +265,41 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	emit("forge_eventbus7_java25", band("forge_eventbus7",
 		"26.1", "26.1.1", "26.1.2", "26.2"))
 
+	// NEOFORGE — floor rows only, like Forge, but for a different reason: ONE
+	// band jar covers 1.20.2-26.2 (measured; the metadata seam — FML 1.x/2.x
+	// mods.toml+mandatory vs FML 3.x+ neoforge.mods.toml+type — is handled by
+	// shipping both files in the one jar). So these legs are NOT the
+	// cross-major stability proof the Forge legs are; there is no second jar
+	// whose overlap could drift. They are the band EDGES (1.20.2, 26.2) plus
+	// the three Java floors NEOFORGE ITSELF changes at (17 up to line 20.4, 21
+	// through 21.11, 25 on 26.x — e2e-run-one.sh's neo routing table, NOT the
+	// Fabric era table, which reports 21 for 1.20.4), plus 1.21.1, the
+	// modpack-dominant interior line. Single-loader rows: LOADER=neoforge has
+	// no quilt twin, which the job count at the bottom depends on.
+	emit("neo_java17", band("neo", "1.20.2", "1.20.4"))
+	emit("neo_java21", band("neo", "1.20.6", "1.21.1", "1.21.11"))
+	emit("neo_java25", band("neo", "26.2"))
+
 	if emitErr != nil {
 		return emitErr
 	}
 
 	// GATED_PAIRS counts submatrix legs (versions x rows) once each.
 	// TOTAL_JOBS counts what the workflow actually spawns: every fabric band
-	// key feeds TWO caller jobs in ci.yml (-fabric and -quilt), Forge keys
-	// feed ONE (LOADER=forge has no quilt twin), plus the 25 fixed jobs:
-	// contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
-	// Build aggregator, the 4 e2e-gate canaries (2 versions x fabric/quilt),
-	// the 2 literal NeoForge jobs (deliberately not generated — see
-	// docs/ci.md "The NeoForge stages"), plus the 4 config-behaviors legs
-	// (#34, one per loader). On push the gate canaries, NeoForge legs and
-	// config-behaviors legs are event-skipped, leaving 15.
+	// key feeds TWO caller jobs in ci.yml (-fabric and -quilt), forge_* and
+	// neo_* keys feed ONE (LOADER=forge/neoforge have no quilt twin), plus the
+	// 23 fixed jobs: contracts, go-quality, lint-java, unit-tests, the 10
+	// build jobs, the Build aggregator, the 4 e2e-gate canaries (2 versions x
+	// fabric/quilt), plus the 4 config-behaviors legs (#34, one per loader).
+	// On push the gate canaries and config-behaviors legs are event-skipped,
+	// leaving 15.
 	total, jobs := 0, 0
 	for _, r := range rows {
 		total += r.n
-		if strings.HasPrefix(r.name, "forge") {
+		// Prefix test, never strings.Contains(name, "forge"): that matches
+		// "neoforge" too, and a neo_* row named that way would be counted as
+		// a quilt pair the workflow never spawns.
+		if strings.HasPrefix(r.name, "forge") || strings.HasPrefix(r.name, "neo") {
 			jobs += r.n
 		} else {
 			jobs += 2 * r.n
@@ -281,7 +308,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	}
 	_, _ = fmt.Fprintf(stdout, "EVENT_NAME=%s\n", eventName)
 	_, _ = fmt.Fprintf(stdout, "GATED_PAIRS=%d\n", total)
-	fixedJobs := 25
+	fixedJobs := 23
 	if push {
 		fixedJobs = 15
 	}
