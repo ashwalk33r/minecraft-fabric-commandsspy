@@ -1,4 +1,4 @@
-# Single CI pipeline: cheap gates -> five parallel jar builds -> e2e fleet.
+# Single CI pipeline: cheap gates -> nine parallel jar builds -> e2e fleet.
 # Replaces the old gradle.yml (Build) + e2e.yml pair, which duplicated
 # `make test` and `make build` on every PR. See docs/ci.md.
 name: CI
@@ -47,6 +47,9 @@ jobs:
       forge_mc116_java8: ${{ steps.grid.outputs.forge_mc116_java8 }}
       forge_eventbus7_java21: ${{ steps.grid.outputs.forge_eventbus7_java21 }}
       forge_eventbus7_java25: ${{ steps.grid.outputs.forge_eventbus7_java25 }}
+      neo_java17: ${{ steps.grid.outputs.neo_java17 }}
+      neo_java21: ${{ steps.grid.outputs.neo_java21 }}
+      neo_java25: ${{ steps.grid.outputs.neo_java25 }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: "Verify action pins"
@@ -127,8 +130,8 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - name: "Log in to GHCR"
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      # Own key on purpose: five build jobs + this one restoring/saving a
-      # single shared key would race the save and lose four of the caches.
+      # Own key on purpose: nine build jobs + this one restoring/saving a
+      # single shared key would race the save and lose all but one cache.
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-gradle
@@ -147,15 +150,15 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------- Tier 1
-  # Ten parallel build jobs, one jar each. Per-target gradle cache keys on
+  # Nine parallel build jobs, one jar each. Per-target gradle cache keys on
   # purpose: a single shared key is saved by whichever job finishes first,
   # so the other targets' (ForgeGradle decompile) caches would never persist
   # and every run would rebuild cold. One multi-path upload step per job; the
   # follow-up step prints a grouped log with the artifact link.
 
-  # `gradle build` = assemble + check per invocation, so the NeoForge jars
-  # get their checkstyle/pmd pass in their own jobs (neoforge/build.gradle
-  # applies both); they have no unit tests — the suite lives in the root,
+  # `gradle build` = assemble + check per invocation, so the NeoForge band
+  # jar gets its checkstyle/pmd pass in its own job (neoforge/build.gradle
+  # applies both); it has no unit tests — the suite lives in the root,
   # Fabric-bound project. One Gradle invocation per job: Makefile
   # .NOTPARALLEL only serializes inside a single make process.
   build-mc121x:
@@ -294,8 +297,8 @@ jobs:
           ls -l build/libs/commandsspy-*.jar
           echo "::endgroup::"
 
-  build-neo121:
-    name: "Build: NeoForge 21.1 jar (MC 1.21.1)"
+  build-neo:
+    name: "Build: NeoForge band jar (MC 1.20.2-26.2)"
     runs-on: ubuntu-latest
     needs: [contracts]
     permissions:
@@ -311,49 +314,15 @@ jobs:
       - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-neo121-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
-      - name: "Build: mod compilation (neoforge-mc1.21.1 target, make build-neo121)"
-        run: make build-neo121
-      - name: "Upload: the neoforge-mc1.21.1 jar"
+          key: ci-gradle-neo-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      - name: "Build: mod compilation (neoforge band target, make build-neo)"
+        run: make build-neo
+      - name: "Upload: the neoforge band jar"
         id: upload
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: commandsspy-jar-neoforge-mc1.21.1-${{ github.sha }}
-          path: build/libs/commandsspy-*+neoforge-mc1.21.1.jar
-          if-no-files-found: error
-          retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
-      - name: "Artifact links"
-        run: |
-          echo "::group::Uploaded jar -> ${{ steps.upload.outputs.artifact-url }}"
-          ls -l build/libs/commandsspy-*.jar
-          echo "::endgroup::"
-
-  build-neo26:
-    name: "Build: NeoForge 26.2 jar (MC 26.2)"
-    runs-on: ubuntu-latest
-    needs: [contracts]
-    permissions:
-      contents: read
-      packages: write
-    timeout-minutes: 40
-    outputs:
-      artifact-url: ${{ steps.upload.outputs.artifact-url }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - name: "Log in to GHCR"
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-neo26-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
-      - name: "Build: mod compilation (neoforge-mc26.2 target, make build-neo26)"
-        run: make build-neo26
-      - name: "Upload: the neoforge-mc26.2 jar"
-        id: upload
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-neoforge-mc26.2-${{ github.sha }}
-          path: build/libs/commandsspy-*+neoforge-mc26.2.jar
+          name: commandsspy-jar-neoforge-${{ github.sha }}
+          path: build/libs/commandsspy-*+mc1.20.2-26.2-neoforge.jar
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
       - name: "Artifact links"
@@ -363,7 +332,7 @@ jobs:
           echo "::endgroup::"
 
   # Separate job and separate Gradle build (forge/), on purpose: ForgeGradle
-  # never touches the six jars above. First build decompiles Minecraft, so
+  # never touches the five jars above. First build decompiles Minecraft, so
   # it is slow when its per-target ci-gradle cache misses.
   build-forge-modern:
     name: "Build: Forge modern (MC 1.20.6-1.21.5)"
@@ -518,7 +487,7 @@ jobs:
     name: "Build"
     runs-on: ubuntu-latest
     needs: [contracts, go-quality, lint-java, unit-tests,
-            build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy,
+            build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy,
             build-forge-mc116, build-forge-eventbus7]
     if: ${{ always() }}
     timeout-minutes: 5
@@ -530,8 +499,7 @@ jobs:
           echo "mc1.19-1.20.2:     ${{ needs.build-mc1192.outputs.artifact-url }}"
           echo "mc1.14.x:          ${{ needs.build-mc114x.outputs.artifact-url }}"
           echo "mc26.x:            ${{ needs.build-mc26x.outputs.artifact-url }}"
-          echo "neoforge-mc1.21.1: ${{ needs.build-neo121.outputs.artifact-url }}"
-          echo "neoforge-mc26.2:   ${{ needs.build-neo26.outputs.artifact-url }}"
+          echo "neoforge-band:     ${{ needs.build-neo.outputs.artifact-url }}"
           echo "forge-modern:      ${{ needs.build-forge-modern.outputs.artifact-url }}"
           echo "forge-legacy:      ${{ needs.build-forge-legacy.outputs.artifact-url }}"
           echo "forge-mc116:       ${{ needs.build-forge-mc116.outputs.artifact-url }}"
@@ -551,7 +519,7 @@ jobs:
   e2e-gate:
     name: "e2e-gate (${{ matrix.mc }}, java ${{ matrix.java }}, ${{ matrix.loader }})"
     needs: [contracts, go-quality, lint-java, unit-tests,
-            build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy,
+            build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy,
             build-forge-mc116, build-forge-eventbus7]
     # No status function here, so GitHub prepends the implicit success()
     # check — push-to-main builds jars but runs no e2e.
@@ -587,8 +555,7 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.19-1.20.2.jar
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
-          test -f build/libs/commandsspy-*+neoforge-mc1.21.1.jar
-          test -f build/libs/commandsspy-*+neoforge-mc26.2.jar
+          test -f build/libs/commandsspy-*+mc1.20.2-26.2-neoforge.jar
       # Keyed by MC version + loader: see the matching step in e2e-stage.yml.
       - name: "Restore the server launcher jar cache"
         uses: actions/cache@v6.1.0
@@ -611,46 +578,61 @@ jobs:
   # NeoForge — deliberately NOT part of e2e-gate. The gate exists to stop a
   # broken build before the ~40-job Fabric/Quilt fan-out; a NeoForge break is
   # not a reason to withhold that coverage, so NeoForge runs alongside the gate
-  # instead of in front of it. Each of the two runs is its own job group for
-  # the same Actions-UI reason the Quilt variants are (see the stage comment
-  # below): separate, independently-collapsible groups.
+  # instead of in front of it.
   #
-  # `versions:` is a literal list, not a contracts output: NeoForge has no
-  # Intermediary-equivalent stable mapping, so one jar covers exactly one
-  # Minecraft version and the whole loader is two versions wide. Generating
-  # a two-element list would buy nothing — tools/gen_matrix.go stays untouched.
-  # The `if:` therefore also drops the `!= '[]'` clause the generated bands
-  # need: a literal list is never empty.
-  e2e-neoforge-mc1211-java21:
-    name: "e2e 1.21.1 java 21 (neoforge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+  # One band jar spans 1.20.2-26.2, so these three legs split on NeoForge's own
+  # Java floor (17 up to 1.20.4, 21 through 1.21.11, 25 on 26.x) — not on jars.
+  # Version lists come from tools/gen_matrix.go, hence the `!= '[]'` clause and
+  # no `github.event_name != 'push'` guard: a generated band is already [] on
+  # push, and each leg is its own job group for the Actions-UI reason the Quilt
+  # variants are (see the stage comment below).
+  e2e-neoforge-java17:
+    name: "e2e 1.20.2-1.20.4 java 17 (neoforge)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && github.event_name != 'push' }}
+          && needs.contracts.outputs.neo_java17 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: '["1.21.1"]'
+      versions: ${{ needs.contracts.outputs.neo_java17 }}
+      java: "17"
+      loader: "neoforge"
+      jar-sha: ${{ github.sha }}
+
+  e2e-neoforge-java21:
+    name: "e2e 1.20.6-1.21.11 java 21 (neoforge)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.contracts.outputs.neo_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.contracts.outputs.neo_java21 }}
       java: "21"
       loader: "neoforge"
       jar-sha: ${{ github.sha }}
 
-  e2e-neoforge-mc262-java25:
+  e2e-neoforge-java25:
     name: "e2e 26.2 java 25 (neoforge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && github.event_name != 'push' }}
+          && needs.contracts.outputs.neo_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: '["26.2"]'
+      versions: ${{ needs.contracts.outputs.neo_java25 }}
       java: "25"
       loader: "neoforge"
       jar-sha: ${{ github.sha }}
@@ -662,7 +644,7 @@ jobs:
   # CommandsSpy.handleCommand, so per-version repetition would buy nothing.
   e2e-config-behaviors-fabric:
     name: "e2e config-behaviors (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -683,7 +665,7 @@ jobs:
   # entrypoint banner it greps for never fires on quilt below 1.18.
   e2e-config-behaviors-quilt:
     name: "e2e config-behaviors (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -701,7 +683,7 @@ jobs:
 
   e2e-config-behaviors-forge:
     name: "e2e config-behaviors (forge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -719,7 +701,7 @@ jobs:
 
   e2e-config-behaviors-neoforge:
     name: "e2e config-behaviors (neoforge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -748,7 +730,7 @@ jobs:
   # band's `needs:` lists both loader variants of every prior band.
   e2e-mc121-java21-fabric:
     name: "e2e 1.21.x java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -765,7 +747,7 @@ jobs:
 
   e2e-mc121-java21-quilt:
     name: "e2e 1.21.x java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -786,7 +768,7 @@ jobs:
   # Forge stage — floor rows only, no coverage rows, by design.
   e2e-forge-java21:
     name: "e2e 1.20.6-1.21.5 java 21 (forge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -803,7 +785,7 @@ jobs:
 
   e2e-forge-legacy-java17:
     name: "e2e 1.17.1-1.20.4 java 17 (forge legacy)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -820,7 +802,7 @@ jobs:
 
   e2e-forge-mc116-java8:
     name: "e2e 1.14.4-1.16.5 java 8 (forge mc116)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -840,7 +822,7 @@ jobs:
   # version, like the legacy band — rationale in tools/gen_matrix.go.
   e2e-forge-eventbus7-java21:
     name: "e2e 1.21.6-1.21.11 java 21 (forge eventbus7)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -857,7 +839,7 @@ jobs:
 
   e2e-forge-eventbus7-java25:
     name: "e2e 26.1-26.2 java 25 (forge eventbus7)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -874,7 +856,7 @@ jobs:
 
   e2e-mc121-java25-fabric:
     name: "e2e 1.21.x java 25 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -891,7 +873,7 @@ jobs:
 
   e2e-mc121-java25-quilt:
     name: "e2e 1.21.x java 25 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -908,7 +890,7 @@ jobs:
 
   e2e-mc121-java26-fabric:
     name: "e2e 1.21.x java 26 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -925,7 +907,7 @@ jobs:
 
   e2e-mc121-java26-quilt:
     name: "e2e 1.21.x java 26 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -942,7 +924,7 @@ jobs:
 
   e2e-mc26-java25-fabric:
     name: "e2e 26.x java 25 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -959,7 +941,7 @@ jobs:
 
   e2e-mc26-java25-quilt:
     name: "e2e 26.x java 25 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -976,7 +958,7 @@ jobs:
 
   e2e-mc26-java26-fabric:
     name: "e2e 26.x java 26 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -993,7 +975,7 @@ jobs:
 
   e2e-mc26-java26-quilt:
     name: "e2e 26.x java 26 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1010,7 +992,7 @@ jobs:
 
   e2e-t0-java21-fabric:
     name: "e2e 1.20.3-1.20.6 java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1032,7 +1014,7 @@ jobs:
 
   e2e-t0-java21-quilt:
     name: "e2e 1.20.3-1.20.6 java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1054,7 +1036,7 @@ jobs:
 
   e2e-t0-java25-fabric:
     name: "e2e 1.20.3-1.20.6 java 25 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1076,7 +1058,7 @@ jobs:
 
   e2e-t0-java25-quilt:
     name: "e2e 1.20.3-1.20.6 java 25 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1098,7 +1080,7 @@ jobs:
 
   e2e-t0-java26-fabric:
     name: "e2e 1.20.3-1.20.6 java 26 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1120,7 +1102,7 @@ jobs:
 
   e2e-t0-java26-quilt:
     name: "e2e 1.20.3-1.20.6 java 26 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1142,7 +1124,7 @@ jobs:
 
   e2e-mc1192-java17-fabric:
     name: "e2e 1.19-1.20.2 java 17 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1167,7 +1149,7 @@ jobs:
 
   e2e-mc1192-java17-quilt:
     name: "e2e 1.19-1.20.2 java 17 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1192,7 +1174,7 @@ jobs:
 
   e2e-mc1192-java21-fabric:
     name: "e2e 1.19-1.20.2 java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1217,7 +1199,7 @@ jobs:
 
   e2e-mc1192-java21-quilt:
     name: "e2e 1.19-1.20.2 java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1243,7 +1225,7 @@ jobs:
   # Stage 5 — mc114 band: 1.14-1.18, split floors (1.14-1.16.x java 8, 1.17-1.18 java 17).
   e2e-mc114-java8-fabric:
     name: "e2e 1.14-1.16 java 8 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1270,7 +1252,7 @@ jobs:
 
   e2e-mc114-java8-quilt:
     name: "e2e 1.14-1.16 java 8 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1297,7 +1279,7 @@ jobs:
 
   e2e-mc114-java17-fabric:
     name: "e2e 1.17-1.18 java 17 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1324,7 +1306,7 @@ jobs:
 
   e2e-mc114-java17-quilt:
     name: "e2e 1.17-1.18 java 17 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1351,7 +1333,7 @@ jobs:
 
   e2e-mc114-java21-fabric:
     name: "e2e 1.14-1.18 java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1378,7 +1360,7 @@ jobs:
 
   e2e-mc114-java21-quilt:
     name: "e2e 1.14-1.18 java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,

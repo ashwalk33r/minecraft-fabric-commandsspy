@@ -262,6 +262,37 @@ else
   echo "  [SKIP] band jar not built (run: make build-neo)"
 fi
 
+# Probe 3c — the three generated NeoForge e2e legs in ci.yml. Every field is
+# read out of the SAME job block as the job name, so a crossed-over pair (the
+# java 25 leg wired to the java 17 band) fails here instead of booting a 26.2
+# server on a JVM that cannot start it. The lists themselves are gen_matrix's
+# job; what this pins is the wiring between a leg and the band it runs.
+echo "== NeoForge e2e legs in ci.yml"
+ci_job_block() {
+  awk -v job="  $1:" '$0 == job { inb = 1; next } inb && /^  [^ ]/ { exit } inb' "$gate_yml"
+}
+ci_job_field() { ci_job_block "$1" | sed -n "s/^      $2: //p"; }
+for spec in "e2e-neoforge-java17 neo_java17 17" \
+            "e2e-neoforge-java21 neo_java21 21" \
+            "e2e-neoforge-java25 neo_java25 25"; do
+  read -r job key java <<< "$spec"
+  check "$job versions" "\${{ needs.contracts.outputs.$key }}" "$(ci_job_field "$job" versions)"
+  check "$job java"     "\"$java\""  "$(ci_job_field "$job" java)"
+  check "$job loader"   '"neoforge"' "$(ci_job_field "$job" loader)"
+  check "$job skips an empty band" "1" \
+        "$(ci_job_block "$job" | grep -cF "needs.contracts.outputs.$key != '[]'")"
+  check "$job needs build-neo" "1" \
+        "$(ci_job_block "$job" | grep -cF 'build-neo,')"
+done
+# The band jar replaced two single-version jars: the old legs, the old build
+# jobs and the old artifact names must all be gone, or a stale needs: entry
+# fails the whole workflow parse and a stale download pattern fetches nothing.
+check "no literal NeoForge e2e legs left" "0" "$(grep -cE '^  e2e-neoforge-mc' "$gate_yml")"
+check "no split NeoForge build jobs left" "0" "$(grep -c 'build-neo121\|build-neo26' "$gate_yml")"
+check "one NeoForge build job" "1" "$(grep -cE '^  build-neo:$' "$gate_yml")"
+check "band jar uploaded under one artifact name" "1" \
+      "$(grep -cF 'name: commandsspy-jar-neoforge-${{ github.sha }}' "$gate_yml")"
+
 echo "== config-behaviors legs in ci.yml (#34)"
 for loader in fabric quilt forge neoforge; do
   check "config-behaviors leg present ($loader)" "1" \
