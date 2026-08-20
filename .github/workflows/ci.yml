@@ -655,6 +655,83 @@ jobs:
       loader: "neoforge"
       jar-sha: ${{ github.sha }}
 
+  # Config behaviors (#34): blacklist suppression + logArguments:true need the
+  # config seeded BEFORE boot (CommandsSpy.CONFIG is a static final with no
+  # reload path), so they cannot share the default legs' boots. One
+  # representative version per loader — the assertions live in shared
+  # CommandsSpy.handleCommand, so per-version repetition would buy nothing.
+  e2e-config-behaviors-fabric:
+    name: "e2e config-behaviors (fabric)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.21.11"]'
+      java: "21"
+      loader: "fabric"
+      config-variant: "1"
+      jar-sha: ${{ github.sha }}
+
+  e2e-config-behaviors-quilt:
+    name: "e2e config-behaviors (quilt)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.21.11"]'
+      java: "21"
+      loader: "quilt"
+      config-variant: "1"
+      jar-sha: ${{ github.sha }}
+
+  e2e-config-behaviors-forge:
+    name: "e2e config-behaviors (forge)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.21.1"]'
+      java: "21"
+      loader: "forge"
+      config-variant: "1"
+      jar-sha: ${{ github.sha }}
+
+  e2e-config-behaviors-neoforge:
+    name: "e2e config-behaviors (neoforge)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.21.1"]'
+      java: "21"
+      loader: "neoforge"
+      config-variant: "1"
+      jar-sha: ${{ github.sha }}
+
   # Stage 2 — current mainstream (1.21.x, 26.x). The `if:` used on every stage job:
   # !cancelled() lets an upstream SKIP pass through, !contains(...'failure') still
   # stops on a real failure, and != '[]' skips an empty band (GitHub errors on a

@@ -70,6 +70,12 @@ LOADER ?= fabric
 # the loader axis existed.
 _loader_suffix := $(if $(filter fabric,$(LOADER)),,-$(LOADER))
 
+# 1 = run the config-behaviors e2e leg (pre-seeded blacklist + logArguments:true)
+# instead of the default assertions. Mirrors scripts/e2e-run-one.sh's own
+# CONFIG_VARIANT and its "-cfgvar" KEY suffix. See docs/e2e-harness.md.
+CONFIG_VARIANT ?= 0
+_cfgvar_suffix := $(if $(filter 1,$(CONFIG_VARIANT)),-cfgvar,)
+
 # Only LOADER=forge needs the Forge jars built; a Fabric/Quilt/NeoForge run
 # must not pay for ForgeGradle's decompile pipeline. All four Forge jars are
 # built for any forge e2e run -- scripts/e2e-run-one.sh routes per version
@@ -80,7 +86,7 @@ _forge_jar_dep := $(if $(filter forge,$(LOADER)),$(MOD_JAR_FORGE) $(MOD_JAR_FORG
 # Only LOADER=neoforge needs the NeoForge jars built; a Fabric, Quilt or Forge
 # run must not pay for ModDevGradle's NeoForm pipeline.
 _neo_jars := $(if $(filter neoforge,$(LOADER)),$(MOD_JAR_NEO121) $(MOD_JAR_NEO26),)
-E2E_KEYS := $(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS)))
+E2E_KEYS := $(addsuffix $(_cfgvar_suffix),$(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS))))
 
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
 # writing the same tag race, so the parallel phase only ever runs containers.
@@ -192,6 +198,7 @@ _e2e-fanout:
 	  BOOT_TIMEOUT="$(BOOT_TIMEOUT)" \
 	  JAVA_OVERRIDE="$(JAVA)" \
 	  LOADER="$(LOADER)" \
+	  CONFIG_VARIANT="$(CONFIG_VARIANT)" \
 	  E2E_JAR_CACHE="$(E2E_JAR_CACHE)" \
 	  xargs -P $(PARALLEL) -n 1 ./scripts/e2e-run-one.sh || true
 	@echo ""
