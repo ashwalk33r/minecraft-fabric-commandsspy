@@ -127,9 +127,10 @@ EventBus 7). Built on demand: `make build-forge`,
 `build-forge-legacy`, `build-forge-mc116`, `build-forge-eventbus7`. Details,
 measured boot tables, and why each boundary sits where it does:
 [docs/version-matrix.md](docs/version-matrix.md) -> the Forge sections.
-Known hole: Minecraft 1.16.4 is in the mc116 jar's range but its Forge 35.x
-line cannot boot any current JDK 8 (upstream ModLauncher/JDK issue — the mod
-passed there on a pre-8u321 JDK).
+Note for 1.16.4 admins: stock Forge 35.x cannot boot a current JDK 8
+(upstream ModLauncher/JDK 8u321+ issue) — swap the install's ModLauncher
+8.0.x jar for 8.1.3, as CI does; the mod then passes the full e2e suite
+(docs/version-matrix.md, mc116 gate 1).
 
 ### NeoForge
 

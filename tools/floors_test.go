@@ -133,22 +133,13 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 			t.Errorf("forge_java21 contains %s, routing = %q, want %q", v, got, want)
 		}
 	}
-	// mc116 band: every emitted version must route to the mc116 jar in-range.
-	// 1.16.4 is in the jar's declared range but deliberately NOT known-good
-	// (its Forge 35.x line cannot boot any current JDK 8 — see
-	// docs/version-matrix.md), so it must come back expect-refused and must
-	// not be emitted.
+	// mc116 band: every emitted version must route to the mc116 jar in-range —
+	// 1.16.4 included, now known-good via e2e-run-one.sh's install-time
+	// ModLauncher 8.1.3 drop-in (see docs/version-matrix.md).
 	for _, v := range rows["forge_mc116_java8"] {
-		if v == "1.16.4" {
-			t.Errorf("forge_mc116_java8 must not emit 1.16.4 (Forge 35.x cannot boot a current JDK 8)")
-			continue
-		}
 		if got := printForgeRouting(v); got != "mc116 0" {
 			t.Errorf("forge_mc116_java8 contains %s, routing = %q, want \"mc116 0\"", v, got)
 		}
-	}
-	if got := printForgeRouting("1.16.4"); got != "mc116 1" {
-		t.Errorf("--print-forge-routing 1.16.4 = %q, want \"mc116 1\" (in-band, deliberately not known-good)", got)
 	}
 	for _, key := range []string{"forge_eventbus7_java21", "forge_eventbus7_java25"} {
 		for _, v := range rows[key] {

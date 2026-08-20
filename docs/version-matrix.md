@@ -533,27 +533,37 @@ build-forge-mc116` builds it; `MOD_JAR_FORGE_MC116` in the Makefile names it
 
 ### Gate 1: the 1.16.4 crash is the JDK's `ManifestEntryVerifier` change
 
-Reproduced, root-caused, and bounded — it is not fixable from this repo:
+Reproduced, root-caused, and bounded — not fixable from this repo's jars,
+but curable at server-install time (now supported in CI via the install-time
+ModLauncher 8.1.3 drop-in — last row and verdict below):
 
 | Forge build | JDK | Result |
 |---|---|---|
 | 35.1.4 (1.16.4 recommended) | Temurin 8 current (8u492) | crash: `java.lang.NoSuchMethodError: sun.security.util.ManifestEntryVerifier.<init>(Ljava/util/jar/Manifest;)V` at `cpw.mods.modlauncher.SecureJarHandler.createCodeSource(SecureJarHandler.java:66)`, before any mod is scanned |
 | 35.1.37 (1.16.4 latest — newest build that will ever exist) | Temurin 8 current | same crash, byte-identical signature |
 | 35.1.4 | Temurin **8u312** (pre-change) | **full e2e PASS** — mod loaded, console + RCON + player asserts all green |
+| 35.1.4 / 35.1.37 + **ModLauncher 8.1.3 drop-in** | Temurin 8 current (8u492) | **full e2e PASS** — both builds, all asserts green (`ModLauncher 8.1.3+8.1.3+main-8.1.x.c94d18ec starting: java version 1.8.0_492`) |
 
 JDK 8u321+ added a `Manifest` parameter to the internal
 `sun.security.util.ManifestEntryVerifier` constructor; 2020-era ModLauncher
 calls the old one reflectively-not-at-all — it just links against it
 (upstream: McModLauncher/modlauncher#91). Forge shipped the fixed
 ModLauncher only on the 1.16.5 branch (36.2.26+); every 1.16.1–1.16.4
-branch is frozen before the fix, so **1.16.4 cannot boot any current JDK 8
-regardless of mods**. Empirically the older branches (32/33/34, 1.16.1–
-1.16.3) do not link the affected path and boot fine on current JDK 8 — only
-35.x dies. Verdict: 1.16.4 stays inside the jar's declared range (a 1.16.4
-server admin is already running a pre-8u321 JDK, or no Forge at all, and
-the mod passed the full assertion set there on 8u312), but it is excluded
-from CI (`FORGE_KNOWN_GOOD_MC116` and the generated leg) because CI runs a
-current JDK on principle — no permanently pinned old-JDK image.
+branch is frozen before the fix, so **1.16.4 cannot boot a stock current
+JDK 8 regardless of mods**. Empirically the older branches (32/33/34,
+1.16.1–1.16.3) do not link the affected path and boot fine on current JDK
+8 — only 35.x dies. Verdict: 1.16.4 stays inside the jar's declared range
+AND in CI, on a current JDK: `scripts/e2e-run-one.sh` cures the install
+the way a real 1.16.4 admin does — after `--installServer` it overwrites
+the cached `libraries/cpw/mods/modlauncher/8.0.*/modlauncher-8.0.*.jar`
+(8.0.6 on 35.1.4, 8.0.9 on 35.1.37; the filename is kept because the forge
+jar manifest's `Class-Path` pins it) with ModLauncher **8.1.3** fetched
+from Forge's own maven, sha256-pinned
+(`4e0d846f75ffd0dd5042c9b1aa86b8fcc758acd27a004c259d26aebc100ffdf2` —
+byte-identical to the jar every Forge 36.2.26+ install ships). With the
+drop-in, both 35.1.4 and 35.1.37 pass the full assertion set on Temurin
+8u492 (table above). The CI-side install cache is all that is patched; the
+shipped mod jars are untouched.
 
 ### Gate 2 / measured range
 
@@ -570,7 +580,7 @@ tightening):
 | 1.16.1 | 32.0.108 | 8 (current) | PASS — needed two era fixes, neither SRG-related: the jar's `pack.mcmeta` (Forge 32.x NPE, above) and the harness's flat-world `generator-settings` gaining the `structures` key its 1.16/1.16.1 codec requires (optional from 1.16.2, ignored-unknown from 1.19) |
 | 1.16.2 | 33.0.61 | 8 (current) | PASS |
 | 1.16.3 | 34.1.0 | 8 (current) | PASS |
-| 1.16.4 | 35.1.4 / 35.1.37 | 8 current / **8u312** | crash before mod code / **PASS** — gate 1 above; in range, out of CI |
+| 1.16.4 | 35.1.4 / 35.1.37 | 8 (current) | PASS — via the install-time ModLauncher 8.1.3 drop-in (gate 1 above); stock 35.x still crashes pre-mod-code on 8u321+ |
 | 1.16.5 | 36.2.34 | 8 (current) | PASS (36.2.26+ carries the ModLauncher fix) |
 
 Answer to the gate-2 question: **pre-1.17 SRG member ids are frozen across
@@ -588,14 +598,14 @@ live (`keep_alive` `0x20/0x10` at 736, `0x1F/0x10` at 751/753, `chat`
 ### Gate coverage
 
 `.github/workflows/e2e.yml`'s `e2e-forge-mc116-java8` job boots every
-measured-PASS version (1.14.4, 1.15.2, 1.16.1, 1.16.2, 1.16.3, 1.16.5) on
-java 8 — the era's real deployment JVM and the jar's own bytecode floor —
-reading `tools/gen_matrix.go`'s `forge_mc116_java8` output, keyed on the
+measured-PASS version (1.14.4, 1.15.2, 1.16.1, 1.16.2, 1.16.3, 1.16.4,
+1.16.5) on java 8 — the era's real deployment JVM and the jar's own
+bytecode floor; 1.16.4 rides via the gate-1 ModLauncher drop-in — reading
+`tools/gen_matrix.go`'s `forge_mc116_java8` output, keyed on the
 `minecraft_range_mc116` line in `forge/gradle.properties`. This replaces
 the old `e2e-forge-legacy-guard-java8` leg: its 1.16.5 expected-REFUSED
 probe flipped to an in-range PASS the moment a jar covered 1.16.5, and no
 refusal guard below the new floor is possible — Forge's next line down
 (1.13.2) is below the e2e harness's own 1.14 floor. The below-floor
 metadata gate is still asserted offline: `scripts/test-jar-routing.sh`
-checks the refusal flag for out-of-range versions and pins 1.16.4's
-in-range-but-not-known-good routing (`mc116 1`).
+checks the refusal flag for out-of-range versions.

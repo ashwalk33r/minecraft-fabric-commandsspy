@@ -86,8 +86,9 @@ before runner minutes are spent on the long tail.
    are what matter, and the forward-JVM coverage-row pattern is a Fabric-jar
    concept that must not be reused with `loader: forge`. Per-leg rationale
    (why the modern band is edges-only, why the legacy/mc116/eventbus7 bands
-   list every measured version, why 1.16.4 is absent from the mc116 leg)
-   lives in the generator's Forge stage comment.
+   list every measured version, how 1.16.4 rides the mc116 leg via the
+   install-time ModLauncher drop-in) lives in the generator's Forge stage
+   comment.
 4. **NeoForge stages** — two jobs, one per shipped NeoForge line
    (1.21.1/java21 and 26.2/java25), each a normal `e2e-stage.yml` call with a
    **literal** one-element version list. See "The NeoForge stages" below.

@@ -216,11 +216,12 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// one SRG-renamed java-8 jar resolves and fires across five consecutive
 	// pre-1.17 Forge major branches (28/31/32/33/34/36), so a floor+ceiling
 	// pair would not exercise the thing being proven. All on java 8, the
-	// era's real deployment JVM and the jar's own bytecode floor. One
-	// in-range version is deliberately ABSENT: 1.16.4 — its whole Forge
-	// 35.x line predates the ModLauncher fix for the JDK 8u321+
-	// ManifestEntryVerifier change and cannot boot ANY current JDK; the
-	// mod itself passed on a pre-8u321 JDK 8 (see docs/version-matrix.md).
+	// era's real deployment JVM and the jar's own bytecode floor. 1.16.4
+	// rides too, via a harness-side cure: its whole Forge 35.x line
+	// predates the ModLauncher fix for the JDK 8u321+ ManifestEntryVerifier
+	// change and cannot boot a STOCK current JDK 8, so e2e-run-one.sh drops
+	// the fixed ModLauncher 8.1.3 (sha256-pinned) into the server install
+	// at install time (see docs/version-matrix.md).
 	// No sub-floor refusal guard leg exists either: Forge's next line down
 	// (1.13.2) is below the harness's own 1.14 floor. The old
 	// forge_legacy_guard_java8 leg (1.16.5 expected REFUSED) flipped to an
@@ -242,7 +243,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
 		"1.20.1", "1.20.2", "1.20.3", "1.20.4"))
 	emit("forge_mc116_java8", band("forge_mc116",
-		"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.5"))
+		"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"))
 	emit("forge_eventbus7_java21", band("forge_eventbus7",
 		"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"))
 	emit("forge_eventbus7_java25", band("forge_eventbus7",
