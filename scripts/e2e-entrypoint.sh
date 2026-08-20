@@ -299,6 +299,9 @@ echo "[e2e] Minecraft $MC_VERSION: expecting RCON command source named '$RCON_SO
 if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
   echo "[e2e] Assertion results (config-behaviors leg: blacklist + logArguments:true):"
   CFG_FAILURES=""
+  # No QUILT_ENTRYPOINT_GAP guard here (unlike the default leg below): this
+  # check assumes an era where the entrypoint banner fires. Only safe while
+  # every config-behaviors CI leg is pinned >=1.18 (see ci.yml).
   if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
     echo "  [PASS] mod loaded (Loading CommandsSpy)"
   else

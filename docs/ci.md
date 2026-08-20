@@ -147,6 +147,17 @@ before runner minutes are spent on the long tail.
    run, since the two Gradle builds place their output in different
    directories.
 
+6. **config-behaviors stages** — four caller jobs
+   (`e2e-config-behaviors-fabric`, `e2e-config-behaviors-quilt`,
+   `e2e-config-behaviors-forge`, `e2e-config-behaviors-neoforge`), one per
+   loader, each a normal `e2e-stage.yml` call with `CONFIG_VARIANT=1` and a
+   pinned single-version list. These legs seed `config/commands-spy.json`
+   before boot and assert config-driven behaviors (blacklist suppression,
+   `logArgs` handling, autocreation of a missing config) rather than the
+   default leg's command-logging path; they report their own verdict line
+   (`E2E <version> PASS config-behaviors`, see [e2e-harness.md](e2e-harness.md))
+   and skip the player-bot phase since no player assertion runs on this leg.
+
 Lean grid on `pull_request` (floor rows exhaustive, newest-Java coverage rows
 only at each band's ends), full cross-product on `workflow_dispatch`.
 Rationale: Minecraft breaks are per-patch, JVM breaks are per-JVM, so a
@@ -259,14 +270,16 @@ Job counts per band and trigger are pinned in `tools/gen_matrix_test.go`;
 `tools/floors_test.go` pins the Java floors against
 `scripts/e2e-run-one.sh` (and the Forge rows against
 `--print-forge-routing`). Change the grid → those tests name the new numbers.
-`TOTAL_JOBS = 2 x fabric pairs + forge pairs + 21`: every fabric band key
+`TOTAL_JOBS = 2 x fabric pairs + forge pairs + 25`: every fabric band key
 feeds two caller jobs (`-fabric` and `-quilt`), Forge keys feed one
-(single-loader), and the 21 fixed jobs are contracts, go-quality,
+(single-loader), and the 25 fixed jobs are contracts, go-quality,
 lint-java, unit-tests, the 10 build jobs, the `Build` aggregator, the 4
-e2e-gate canaries (2 versions x fabric/quilt), and the 2 literal NeoForge
-jobs. On `pull_request` that is 2x39 + 30 + 21 = 129 jobs; on push only 15
-of the fixed jobs run (the gate and NeoForge jobs are event-skipped) and
-every band is empty.
+e2e-gate canaries (2 versions x fabric/quilt), the 2 literal NeoForge
+jobs, and the 4 config-behaviors legs (#34, one per loader: fabric,
+quilt, forge, neoforge). On `pull_request` that is 2x39 + 30 + 25 = 133
+jobs; on `workflow_dispatch` that is 2x68 + 30 + 25 = 191 jobs; on push
+only 15 of the fixed jobs run (the gate, NeoForge and config-behaviors
+jobs are event-skipped) and every band is empty.
 
 Grid policy: every version runs on its own floor JVM. Newest-Java coverage
 rows sample only the band's ends on `pull_request` (lean) and the whole band

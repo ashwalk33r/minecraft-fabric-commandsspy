@@ -169,7 +169,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 // 3. every option combination, both triggers
 // Totals are GATED PAIRS; TOTAL_JOBS is what the workflow spawns: 2 caller
 // jobs per fabric pair (-fabric/-quilt), 1 per forge pair (single-loader),
-// plus 25 fixed jobs (contracts, go-quality, lint-java, unit-tests, the 5
+// plus 25 fixed jobs (contracts, go-quality, lint-java, unit-tests, the 10
 // build jobs, the Build aggregator, the 4 e2e-gate canaries, the 2
 // literal NeoForge jobs, and the 4 config-behaviors legs (#34, one per
 // loader); on push only 15 of these run — gate, NeoForge and
