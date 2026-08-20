@@ -57,11 +57,11 @@ here.
 - To stdout: aligned summary of each row, then `EVENT_NAME`, `GATED_PAIRS`
   (sum of all list lengths), and `TOTAL_JOBS` (what the workflow spawns:
   2 caller jobs per fabric pair — `-fabric` and `-quilt` — 1 per
-  single-loader `forge_*` or `neo_*` pair, plus 23 fixed jobs: contracts,
-  go-quality, lint-java, unit-tests, the 10 build jobs, the Build aggregator,
+  single-loader `forge_*` or `neo_*` pair, plus 22 fixed jobs: contracts,
+  go-quality, lint-java, unit-tests, the 9 build jobs, the Build aggregator,
   the 4 gate canaries and the 4 config-behaviors legs; on push only 15 of
   those run — gate and config-behaviors are event-skipped). Against the real
-  tree today: 75 gated pairs / 137 jobs on a PR, 104 / 195 on dispatch.
+  tree today: 75 gated pairs / 136 jobs on a PR, 104 / 194 on dispatch.
 
 ## Place in the tools/ package
 

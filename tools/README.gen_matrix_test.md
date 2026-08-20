@@ -8,7 +8,7 @@ Every number in the file is a deliberate contract. If you change the matrix in `
 
 - Which output keys exist (all 21 `<band>_java<N>` keys, always emitted).
 - Exact version lists per band, and exact job counts per event type (`pull_request` = lean, `workflow_dispatch` = full). Forge and NeoForge rows have no lean/full split.
-- Totals: 75 gated pairs on PR, 104 on dispatch. `TOTAL_JOBS = 2 x fabric pairs + forge pairs + neo pairs + 23` (fabric keys feed a `-fabric` and a `-quilt` caller job each, `forge_*`/`neo_*` keys one; the 23 fixed jobs are contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the Build aggregator, 4 gate canaries and 4 config-behaviors legs): 137 on PR, 195 on dispatch. On push only the 15 fixed jobs that are not event-skipped remain.
+- Totals: 75 gated pairs on PR, 104 on dispatch. `TOTAL_JOBS = 2 x fabric pairs + forge pairs + neo pairs + 22` (fabric keys feed a `-fabric` and a `-quilt` caller job each, `forge_*`/`neo_*` keys one; the 22 fixed jobs are contracts, go-quality, lint-java, unit-tests, the 9 build jobs, the Build aggregator, 4 gate canaries and 4 config-behaviors legs): 136 on PR, 194 on dispatch. On push only the 14 fixed jobs that are not event-skipped remain.
 - Output format: every value is a valid JSON string array; absent bands emit the literal `[]`, never a missing key.
 
 ## Main test functions

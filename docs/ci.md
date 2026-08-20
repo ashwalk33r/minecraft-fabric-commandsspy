@@ -275,23 +275,22 @@ Job counts per band and trigger are pinned in `tools/gen_matrix_test.go`;
 `tools/floors_test.go` pins the Java floors against
 `scripts/e2e-run-one.sh` (and the Forge rows against
 `--print-forge-routing`). Change the grid → those tests name the new numbers.
-`TOTAL_JOBS = 2 x fabric pairs + forge pairs + neo pairs + 23`: every fabric
+`TOTAL_JOBS = 2 x fabric pairs + forge pairs + neo pairs + 22`: every fabric
 band key feeds two caller jobs (`-fabric` and `-quilt`), Forge and NeoForge
-keys feed one (single-loader — neither has a Quilt twin), and the 23 fixed
+keys feed one (single-loader — neither has a Quilt twin), and the 22 fixed
 jobs are contracts, go-quality, lint-java, unit-tests, the nine build jobs,
 the `Build` aggregator, the 4 e2e-gate canaries (2 versions x fabric/quilt)
 and the 4 config-behaviors legs (#34, one per loader: fabric, quilt, forge,
 neoforge). The NeoForge legs are no longer among them — they are generated
-pairs now. On `pull_request` that is 2x39 + 30 + 6 + 23 = 137 jobs; on
-`workflow_dispatch` that is 2x68 + 30 + 6 + 23 = 195 jobs; on push only 15
+pairs now. On `pull_request` that is 2x39 + 30 + 6 + 22 = 136 jobs; on
+`workflow_dispatch` that is 2x68 + 30 + 6 + 22 = 194 jobs; on push only 14
 of the fixed jobs run (the gate and config-behaviors legs are event-skipped)
 and every band, NeoForge included, is empty.
 
-That enumeration sums to 22, not 23, and 14 on push, not 15: `fixedJobs` in
-`tools/gen_matrix.go` still carries the extra unit from when NeoForge shipped
-two build jobs (`build-neo121`/`build-neo26`) instead of one `build-neo`.
-`tools/gen_matrix_test.go` pins the constant, so `TOTAL_JOBS` currently
-overcounts the workflow by exactly one until both are corrected together.
+The fixed count moved 25 -> 22 with this change and is worth spelling out,
+because two separate things shrank it: the two per-version NeoForge build
+jobs collapsed into the one `build-neo` band job (-1), and the two literal
+NeoForge e2e jobs became generated pairs counted in the grid instead (-2).
 
 Grid policy: every version runs on its own floor JVM. Newest-Java coverage
 rows sample only the band's ends on `pull_request` (lean) and the whole band

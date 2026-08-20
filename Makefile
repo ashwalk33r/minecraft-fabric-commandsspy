@@ -299,7 +299,7 @@ build-forge-mc116: $(MOD_JAR_FORGE_MC116) ## build the mc116 Forge jar, MC 1.16.
 # NeoForge build's own inputs, not MOD_SOURCES: a Fabric-only source change must
 # not trigger the NeoForm pipeline.
 $(MOD_JAR_NEO): $(shell git ls-files neoforge src/main/java .env.version) | ci-image
-	@echo "[build] Building NeoForge band jar (MC 1.20.2-26.2, anchor 20.2.93)..."
+	@echo "[build] Building NeoForge band jar (MC 1.20.2-26.2, anchor 20.4.251)..."
 	@$(call in_ci_image_gradle,gradle -p neoforge build -PneoTarget=all --no-daemon --quiet)
 
 .PHONY: build

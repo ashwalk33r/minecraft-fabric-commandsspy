@@ -147,14 +147,14 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 func TestSubmatrixCountsAndTotals(t *testing.T) {
 	totals := map[string]int{"pull_request": 75, "workflow_dispatch": 104}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
-	// caller job) + forge and neo pairs (single-loader) plus 23 fixed jobs
+	// caller job) + forge and neo pairs (single-loader) plus 22 fixed jobs
 	// (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
 	// Build aggregator, the 4 e2e-gate canaries and the 4 config-behaviors
 	// legs (#34, one per loader); on push only 15 of these run — gate and
 	// config-behaviors are event-skipped). The NeoForge legs are generated
 	// now, not fixed jobs.
-	// PR: 2*39 + 30 + 6 + 23 = 137. Dispatch: 2*68 + 30 + 6 + 23 = 195.
-	jobTotals := map[string]int{"pull_request": 137, "workflow_dispatch": 195}
+	// PR: 2*39 + 30 + 6 + 22 = 136. Dispatch: 2*68 + 30 + 6 + 22 = 194.
+	jobTotals := map[string]int{"pull_request": 136, "workflow_dispatch": 194}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -183,7 +183,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 // 3. every option combination, both triggers
 // Totals are GATED PAIRS; TOTAL_JOBS is what the workflow spawns: 2 caller
 // jobs per fabric pair (-fabric/-quilt), 1 per forge or neo pair
-// (single-loader), plus 23 fixed jobs (contracts, go-quality, lint-java,
+// (single-loader), plus 22 fixed jobs (contracts, go-quality, lint-java,
 // unit-tests, the 10 build jobs, the Build aggregator, the 4 e2e-gate
 // canaries and the 4 config-behaviors legs (#34, one per loader); on push
 // only 15 of these run — gate and config-behaviors are event-skipped). Run
@@ -199,15 +199,15 @@ func TestOptionCombinationTotals(t *testing.T) {
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 38, 59, 99},
-		{"t0", 26, 50, 75, 123},
-		{"t0 mc1192", 32, 58, 87, 139},
-		{"t0 mc1192 mc114", 39, 68, 101, 159},
-		{"t0 mc1192 mc114 forge", 41, 70, 103, 161},
-		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 114, 172},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 124, 182},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 131, 189},
-		{allBands, 75, 104, 137, 195},
+		{"", 18, 38, 58, 98},
+		{"t0", 26, 50, 74, 122},
+		{"t0 mc1192", 32, 58, 86, 138},
+		{"t0 mc1192 mc114", 39, 68, 100, 158},
+		{"t0 mc1192 mc114 forge", 41, 70, 102, 160},
+		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 113, 171},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 123, 181},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 130, 188},
+		{allBands, 75, 104, 136, 194},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -413,7 +413,7 @@ func TestPushEmitsEmptyBands(t *testing.T) {
 			t.Errorf("[push] %s = %q, want the literal []", name, got)
 		}
 	}
-	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=15\n", "EVENT_NAME=push\n"} {
+	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=14\n", "EVENT_NAME=push\n"} {
 		if !strings.Contains(stdout, line) {
 			t.Errorf("[push] summary missing %q", line)
 		}
