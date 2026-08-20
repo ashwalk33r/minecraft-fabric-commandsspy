@@ -134,12 +134,13 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 func TestSubmatrixCountsAndTotals(t *testing.T) {
 	totals := map[string]int{"pull_request": 69, "workflow_dispatch": 98}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
-	// caller job) + forge pairs (single-loader) plus 21 fixed jobs (contracts,
+	// caller job) + forge pairs (single-loader) plus 25 fixed jobs (contracts,
 	// go-quality, lint-java, unit-tests, the 10 build jobs, the Build
-	// aggregator, the 4 e2e-gate canaries, and the 2 literal NeoForge jobs;
-	// on push only 15 of these run — gate and NeoForge are event-skipped).
-	// PR: 2*39 + 30 + 21 = 129. Dispatch: 2*68 + 30 + 21 = 187.
-	jobTotals := map[string]int{"pull_request": 129, "workflow_dispatch": 187}
+	// aggregator, the 4 e2e-gate canaries, the 2 literal NeoForge jobs, and
+	// the 4 config-behaviors legs (#34, one per loader); on push only 15 of
+	// these run — gate, NeoForge and config-behaviors are event-skipped).
+	// PR: 2*39 + 30 + 25 = 133. Dispatch: 2*68 + 30 + 25 = 191.
+	jobTotals := map[string]int{"pull_request": 133, "workflow_dispatch": 191}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -168,10 +169,11 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 // 3. every option combination, both triggers
 // Totals are GATED PAIRS; TOTAL_JOBS is what the workflow spawns: 2 caller
 // jobs per fabric pair (-fabric/-quilt), 1 per forge pair (single-loader),
-// plus 21 fixed jobs (contracts, go-quality, lint-java, unit-tests, the 5
-// build jobs, the Build aggregator, the 4 e2e-gate canaries, and the 2
-// literal NeoForge jobs; on push only 15 of these run — gate and NeoForge
-// are event-skipped). Run against an empty fixture root so
+// plus 25 fixed jobs (contracts, go-quality, lint-java, unit-tests, the 5
+// build jobs, the Build aggregator, the 4 e2e-gate canaries, the 2
+// literal NeoForge jobs, and the 4 config-behaviors legs (#34, one per
+// loader); on push only 15 of these run — gate, NeoForge and
+// config-behaviors are event-skipped). Run against an empty fixture root so
 // FORCE_BANDS alone decides. The forge-less cases double as proof that
 // absent Forge bands emit [] and add zero pairs. Note the forge-without-
 // forge_legacy case: forge_java21 drops to 2 pairs because 1.20.4 is keyed
@@ -182,14 +184,14 @@ func TestOptionCombinationTotals(t *testing.T) {
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 38, 57, 97},
-		{"t0", 26, 50, 73, 121},
-		{"t0 mc1192", 32, 58, 85, 137},
-		{"t0 mc1192 mc114", 39, 68, 99, 157},
-		{"t0 mc1192 mc114 forge", 41, 70, 101, 159},
-		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 112, 170},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 122, 180},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 129, 187},
+		{"", 18, 38, 61, 101},
+		{"t0", 26, 50, 77, 125},
+		{"t0 mc1192", 32, 58, 89, 141},
+		{"t0 mc1192 mc114", 39, 68, 103, 161},
+		{"t0 mc1192 mc114 forge", 41, 70, 105, 163},
+		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 116, 174},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 126, 184},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 133, 191},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
