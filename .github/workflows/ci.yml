@@ -678,6 +678,9 @@ jobs:
       config-variant: "1"
       jar-sha: ${{ github.sha }}
 
+  # versions must stay at or above 1.18: the config-behaviors mod-loaded
+  # check in e2e-entrypoint.sh has no QUILT_ENTRYPOINT_GAP guard, and the
+  # entrypoint banner it greps for never fires on quilt below 1.18.
   e2e-config-behaviors-quilt:
     name: "e2e config-behaviors (quilt)"
     needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo121, build-neo26, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
