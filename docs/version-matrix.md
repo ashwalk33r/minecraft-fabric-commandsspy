@@ -2,11 +2,11 @@
 
 One shared implementation (`src/main`), nine jars: four era-correct
 Fabric/Quilt jars, which differ only in their `CommandManagerMixin` source
-set and build settings; two NeoForge jars built from the same core against a
-different loader (see
-[NeoForge](#neoforge-two-more-jars-on-a-different-contract) below); and three
-Forge jars — legacy, modern and eventbus7 — built from the same core against
-a third loader (see [Forge](#forge-a-fifth-jar-narrower-by-construction)
+set and build settings; one NeoForge band jar covering Minecraft 1.20.2-26.2,
+built from the same core against a different loader (see
+[NeoForge](#neoforge-one-band-jar-on-a-different-contract) below); and four
+Forge jars — mc116, legacy, modern and eventbus7 — built from the same core
+against a third loader (see [Forge](#forge-a-fifth-jar-narrower-by-construction)
 below).
 
 ## The four Fabric/Quilt jars
@@ -106,43 +106,93 @@ intact. `scripts/e2e-entrypoint.sh` asserts the banner **expected-absent** on
 `LOADER=quilt` below 1.18 (`QUILT_ENTRYPOINT_GAP`), so CI fails and tells us to
 update this section the day upstream fixes it.
 
-## NeoForge: two more jars, on a different contract
+## NeoForge: one band jar on a different contract
 
 NeoForge is structurally unlike Quilt. Quilt rides the existing four jars for
-free — one jar, both loaders, no new code. NeoForge needs its own jars, its own
-build, and a **recurring** obligation this project did not have before.
+free — one jar, both loaders, no new code. NeoForge needs its own entrypoint
+class, its own metadata and its own standalone Gradle build. What it does *not*
+need is a jar per Minecraft version: **one** jar,
+`commandsspy-<ver>+mc1.20.2-26.2-neoforge.jar`, covers every Minecraft version
+NeoForge has ever published for. `make build-neo` builds it
+(`gradle -p neoforge build -PneoTarget=all`).
 
-### The two jars
+### Why one jar spans the whole NeoForge history
 
-| Jar | NeoForge line | Minecraft | Toolchain / bytecode | Hook |
+Verified twice over, independently: `javap` over 13 published
+`neoforge-<v>-universal.jar` artifacts spanning `20.2.93` to `26.2.0.64`, and
+reading the NeoForge / FancyModLoader / EventBus sources across their branches.
+
+- **There is no SRG era for NeoForge at all.** NeoForge has shipped Mojang
+  official names since `20.2`, its first release. The mapping wall that forces
+  the Forge jars apart — SRG member ids, SRG class identities, a reobfuscating
+  renamer — has no analogue here, so nothing in the jar's bytecode is pinned to
+  one Minecraft version.
+- **`net.neoforged.neoforge.event.CommandEvent` is identical on every line**:
+  same package, same class, `public ParseResults<CommandSourceStack>
+  getParseResults()`, `extends Event implements ICancellableEvent`, fired from
+  `Commands.performCommand`.
+- **`NeoForge.EVENT_BUS` is `public static final IEventBus` on every line.**
+  NeoForge never adopted Forge's per-event `CommandEvent.BUS` — the exact seam
+  that forced the Forge eventbus7 jar into existence. The EventBus library bump
+  from 7.2.0 to 8.0.x at Minecraft 1.20.6 leaves the `addListener` overload set
+  byte-identical.
+- **The no-arg `@Mod` constructor is accepted by FML 1.x through 11.x.**
+- **Every Minecraft symbol this mod touches is unchanged 1.20.2 to 26.2**:
+  `CommandSourceStack.getTextName`/`getEntity`, `ServerPlayer.getName`, and
+  brigadier's `ParseResults.getReader().getString()` /
+  `getContext().getSource()`. That holds through the 26.x rename wave, which
+  renamed plenty of other things (`ResourceLocation` -> `Identifier`) but not
+  these.
+
+Fabric needs four jars because the *Fabric toolchain* axis moves (intermediary
+mappings, mixin compat levels, bytecode floors). Forge needs four because its
+*mapping* and *EventBus* axes move. NeoForge moves neither, so the only thing
+that can split a NeoForge jar is metadata this repo writes itself.
+
+### The two metadata seams, and why one jar still crosses them
+
+FML's mod-metadata contract changed twice, and both changes are pure file
+format — no code, no mappings:
+
+1. **Filename.** FML 1.x/2.x (Minecraft 1.20.2-1.20.4) read only
+   `META-INF/mods.toml`; FML 3.x and later read `META-INF/neoforge.mods.toml`.
+2. **Dependency key.** FML 1.x/2.x require `mandatory = true` and reject
+   `type`; FML 4.x and later dropped `mandatory` and require `type =
+   "required"`.
+
+The jar ships **both files**, templated from the same values by
+`neoforge/build.gradle`'s `processResources`. Each FML major reads only the
+filename it knows and never looks at the other, so the incompatible dependency
+keys never meet. That is the whole trick, and it is why one jar spans the seam
+instead of two jars straddling it.
+
+### Measured boot table
+
+Real NeoForge dedicated servers, full e2e assertion set (mod banner, console
+`list`, RCON `save-all`, player `list`), one row per Minecraft version NeoForge
+publishes for. Rows marked `(beta)` run a beta loader build because that line
+never published a stable one — the compile anchor is never one of them (see
+"Build" below). The 21-row version -> loader-build -> Java-floor mapping this
+table is measured against lives in `scripts/e2e-run-one.sh`, queryable with
+`--print-neo-routing <mcver>`; `scripts/test-jar-routing.sh` pins it.
+
+Beta-only Minecraft versions: 1.20.3, 1.20.5, 1.21.2, 1.21.6, 1.21.7, 1.21.9,
+26.1, 26.1.1.
+
+| Minecraft | NeoForge | FML | Java | Result |
 |---|---|---|---|---|
-| `+neoforge-mc1.21.1` | `21.1.248` | **1.21.1 only** | Java 21 | `CommandEvent` |
-| `+neoforge-mc26.2` | `26.2.0.64` | **26.2 only** | Java 25 | `CommandEvent` |
-
-The Minecraft part of the classifier is exact, not a range, and that is the
-whole point of this section.
-
-### Why one jar cannot span a range
-
-Fabric's Intermediary mappings are stable across Minecraft versions, which is
-why four jars cover 24 tested versions. NeoForge has no equivalent: it publishes
-**one version line per Minecraft version**, each built against that version's
-Mojang mappings. So a NeoForge jar covers exactly one Minecraft version, its
-`neoforge.mods.toml` says so (`versionRange = "[1.21.1]"`), and every new
-Minecraft release means a new NeoForge line, a new jar and a new e2e row —
-forever. That cost is real and is the reason the shipped scope is two lines, not
-sixteen.
-
-Note the 26.2 line numbers as `26.2.0.<n>`, four components, not `26.2.<n>`.
+<!-- BOOT-TABLE-PENDING -->
 
 ### Hard floors
 
 - **Minecraft 1.20.2 is the floor, permanently.** `net.neoforged:neoforge`
-  starts at `20.2.12-beta`; there is no NeoForge for 1.14–1.20.1. The entire
+  starts at `20.2.12-beta`; there is no NeoForge for 1.14-1.20.1. The entire
   `src/mc114` era and most of `src/mc1192` are out of reach by construction.
+  A version below the floor under `LOADER=neoforge` is an explicit
+  `neoforge-unsupported-version` failure, not a jar that quietly fails to load.
 - **1.20.1 is not NeoForge.** It is MinecraftForge `47.1.x` — `net.minecraftforge.*`
-  packages, `META-INF/mods.toml` (not `neoforge.mods.toml`), manifest-declared
-  mixin configs. A third metadata variant, deliberately out of scope here.
+  packages, manifest-declared mixin configs. Covered by the Forge legacy jar,
+  not by this one.
 - **A Loom-built jar can never load on NeoForge**, at any version. The barrier is
   the loader contract (`fabric.mod.json` + `ModInitializer` vs
   `neoforge.mods.toml` + `@Mod`), not the mappings — it holds even on 26.x where
@@ -150,7 +200,7 @@ Note the 26.2 line numbers as `26.2.0.<n>`, four components, not `26.2.<n>`.
 
 ### `CommandEvent`, not a mixin
 
-The NeoForge jars contain no mixin. NeoForge fires
+The NeoForge jar contains no mixin. NeoForge fires
 `net.neoforged.neoforge.event.CommandEvent` from `Commands.performCommand` —
 the exact instruction `src/mc26`'s mixin injects at `@At("HEAD")` of. Same hook
 point, so **coverage is identical** (player, console, RCON, command block) and
@@ -159,9 +209,9 @@ gone through `Commands.executeCommandInContext` since 1.20.2 and are seen by
 neither mechanism. That is a pre-existing gap in the Fabric behaviour, not a
 NeoForge regression.
 
-A mixin would buy nothing here and cost more: a second metadata format to
-template, mixin compatibility levels, and a per-Minecraft-version descriptor
-dependency — the thing that already forced four source sets on the Fabric side.
+A mixin would buy nothing here and cost more: mixin compatibility levels and a
+per-Minecraft-version descriptor dependency — the thing that already forced four
+source sets on the Fabric side, and the thing that would have re-split this jar.
 The event's signature is NeoForge API, so it does not move when Minecraft's
 does. The Fabric mixins stay exactly as they are; this is a per-loader choice of
 the cheapest hook reaching the same instruction, not a migration.
@@ -169,36 +219,64 @@ the cheapest hook reaching the same instruction, not a migration.
 The event carries no raw command string; `getParseResults().getReader().getString()`
 is the equivalent of the mixins' `fullCommand` parameter.
 
+`@EventBusSubscriber` is deliberately not used: the annotation *infers* which bus
+to dispatch on and that inference has moved across these lines, and a wrong guess
+fails silently — no listener, no error, no log line. An explicit
+`NeoForge.EVENT_BUS.addListener` is unambiguous and compiled.
+
 ### Build
 
 `neoforge/` is a **standalone Gradle build**, not a subproject:
-`gradle -p neoforge build -PneoTarget=<121|26>`, wired into `make build`.
+`gradle -p neoforge build -PneoTarget=all`, wired into `make build`.
 ModDevGradle and Fabric Loom are not supported in one Gradle project
 ([ModDevGradle#234](https://github.com/neoforged/ModDevGradle/issues/234)) and
 the root build applies Loom unconditionally, so keeping them in separate builds
 means the two plugins never meet — and the root build's four invocations, its
 `org.gradle.jvmargs`, and the Fabric jars' output all stay untouched.
 
-Two things that are not obvious and are both e2e-proven:
+**The compile anchor is `20.4.251`, not the band's floor line `20.2.93`.**
+ModDevGradle 2.x resolves `net.neoforged:neoforge` through the
+`neoforge-moddev-bundle` capability, and the 20.2/20.3 lines predate it —
+asking for them fails resolution outright with "Unable to find a variant ...
+with the requested capability". `20.4.251` is the oldest line that publishes the
+capability and is still a Java-17 line, which is what the band floor needs.
+`CommandEvent` and `NeoForge.EVENT_BUS` are byte-identical on `20.2.93` and
+`20.4.251`, so the anchor choice costs no API; the floor of the shipped range is
+still 1.20.2, established by the boot table, not by the anchor.
 
-- **`modLoader` and `loaderVersion` in `neoforge.mods.toml` are mandatory**,
-  despite being widely documented as optional. Omitting `modLoader` makes FML
-  reject the jar with `InvalidModFileException: Missing ModLoader in file` and
-  crash the server during pre-load. `loaderVersion` is the **FML** version — a
-  third version axis, distinct from both the NeoForge and Minecraft versions
-  (FML 4.x ships with NeoForge 21.1.x, FML 11.x with 26.2.x), hence the
-  per-line `fml_range_*` properties.
-- **`options.release` must match the line's own Java level**, unlike the root
-  build's mc26 target which compiles 26.x to release 21. `release` also sets the
-  project's `org.gradle.jvm.version` consumer attribute, and 26.2's
-  `net.neoforged.fancymodloader:loader` publishes only a Java 25 variant —
-  asking for 21 fails dependency resolution outright with "no matching variant",
-  it does not silently downgrade.
+Anchors must be **stable** builds. An e2e leg may run a beta build where the
+line never published a stable one — those rows are flagged in the boot table —
+but nothing this repo compiles against is a beta.
 
-The first build of each line runs ModDevGradle's NeoForm pipeline (decompile +
+**Toolchain and `--release` are separate axes.** `Dockerfile.ci` bakes JDK 21
+and JDK 25 only, with toolchain auto-download disabled, and Checkstyle 13.10
+refuses to run on a JVM below 21 — so the band compiles **on** JDK 21 and
+**targets** release 17 (`java_release_all=17`). Bytecode binds only downward:
+Java-17 bytecode runs unchanged on the Java-21 and Java-25 runtimes the upper
+half of the band uses. `options.release` is not cosmetic here — it also sets the
+project's `org.gradle.jvm.version` consumer attribute, and a line's
+`net.neoforged.fancymodloader:loader` publishes exactly one Java variant, so a
+mismatch fails dependency resolution with "no matching variant" rather than
+silently downgrading.
+
+**`modLoader` and `loaderVersion` in both toml files are mandatory**, despite
+being widely documented as optional. Omitting `modLoader` makes FML reject the
+jar with `InvalidModFileException: Missing ModLoader in file` and crash the
+server during pre-load. `loaderVersion` is the **FML** version — a third version
+axis, distinct from both the NeoForge and Minecraft versions (FML 1.x ships with
+NeoForge 20.2.x, 4.x with 21.1.x, 11.x with 26.2.x), hence `fml_range_all=[1,)`.
+
+Two pinning traps, both easy to walk into:
+
+- **26.x NeoForge versions have four components** (`26.2.0.<n>`), not three.
+- **Maven's `<release>` marker for `net.neoforged:neoforge` resolves to
+  `26.1.2.97`**, which sorts *above* `26.2.0.64` under NeoForge's own scheme.
+  Never auto-pin from it.
+
+The first build of the band runs ModDevGradle's NeoForm pipeline (decompile +
 recompile Minecraft, ~8-9 minutes measured); it is cached in `GRADLE_USER_HOME`
 afterwards and subsequent builds take seconds. Only `LOADER=neoforge` e2e runs
-depend on these jars, so a Fabric or Quilt run never pays for it.
+depend on this jar, so a Fabric or Quilt run never pays for it.
 
 ## Java floors
 
@@ -241,13 +319,15 @@ floor at any era). This is asserted, not assumed: the e2e matrix runs every
 version in this file on both loaders (`LOADER=fabric`/`LOADER=quilt`); see
 [e2e-harness.md](e2e-harness.md) → "Quilt server install".
 
-NeoForge is the third value of that same axis (`LOADER=neoforge`), but it is
-**not** orthogonal to the version list the way Quilt is: it runs only the two
-Minecraft versions its two jars target. The pins live in
-`neoforge/gradle.properties` and are mirrored in `scripts/e2e-run-one.sh` —
-change both together; `scripts/test-jar-routing.sh` fails if they drift, and any
-other version under `LOADER=neoforge` is an explicit
-`neoforge-unsupported-version` failure rather than a jar that cannot load.
+NeoForge is another value of that same axis (`LOADER=neoforge`), and since the
+band jar covers 1.20.2-26.2 it is orthogonal to the version list from 1.20.2
+up — but no further: NeoForge publishes nothing below 1.20.2, so every earlier
+version under `LOADER=neoforge` is an explicit `neoforge-unsupported-version`
+failure rather than a jar that cannot load. Which loader build each Minecraft
+version installs, and NeoForge's own Java floor for it, come from the routing
+table in `scripts/e2e-run-one.sh` (`--print-neo-routing <mcver>`), not from
+`neoforge/gradle.properties`, which pins only the band's compile anchor and
+metadata ranges; `scripts/test-jar-routing.sh` fails if the table drifts.
 
 ## Default e2e version list
 
