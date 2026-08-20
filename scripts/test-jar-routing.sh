@@ -245,7 +245,8 @@ check "neoforge 1.16.5 refused by name" \
 # META-INF/neoforge.mods.toml and require `type`. One jar spans that seam only
 # because each major reads the filename it knows and ignores the other.
 echo "== neoforge band jar metadata"
-neo_jar="$(ls build/libs/commandsspy-*+mc1.20.2-26.2-neoforge.jar 2>/dev/null | head -1 || true)"
+# find, not ls: shellcheck SC2012, and the glob may legitimately match nothing.
+neo_jar="$(find build/libs -maxdepth 1 -name 'commandsspy-*+mc1.20.2-26.2-neoforge.jar' 2>/dev/null | head -1)"
 if [ -n "$neo_jar" ]; then
   check "band jar has META-INF/mods.toml" "present" \
         "$(unzip -l "$neo_jar" | grep -q 'META-INF/mods.toml' && echo present || echo absent)"
@@ -290,6 +291,9 @@ done
 check "no literal NeoForge e2e legs left" "0" "$(grep -cE '^  e2e-neoforge-mc' "$gate_yml")"
 check "no split NeoForge build jobs left" "0" "$(grep -c 'build-neo121\|build-neo26' "$gate_yml")"
 check "one NeoForge build job" "1" "$(grep -cE '^  build-neo:$' "$gate_yml")"
+# The ${{ }} is workflow syntax being matched literally, not a shell
+# expansion, so single quotes are deliberate (shellcheck SC2016).
+# shellcheck disable=SC2016
 check "band jar uploaded under one artifact name" "1" \
       "$(grep -cF 'name: commandsspy-jar-neoforge-${{ github.sha }}' "$gate_yml")"
 
