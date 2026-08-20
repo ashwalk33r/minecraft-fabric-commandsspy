@@ -6,7 +6,7 @@ set and build settings; one NeoForge band jar covering Minecraft 1.20.2-26.2,
 built from the same core against a different loader (see
 [NeoForge](#neoforge-one-band-jar-on-a-different-contract) below); and four
 Forge jars — mc116, legacy, modern and eventbus7 — built from the same core
-against a third loader (see [Forge](#forge-a-fifth-jar-narrower-by-construction)
+against a third loader (see [Forge](#forge-four-jars-narrower-by-construction)
 below).
 
 ## The four Fabric/Quilt jars
@@ -188,7 +188,7 @@ Beta-only Minecraft versions: 1.20.3, 1.20.5, 1.21.2, 1.21.6, 1.21.7, 1.21.9,
 | 1.21.11 | `21.11.45` | 10.0.36 | 21 | PASS |
 | 26.2 | `26.2.0.64` | 11.0.16 | 25 | PASS |
 
-**One jar, six measured rows, four FML majors apart at the ends.** 1.20.2 runs
+**One jar, six measured rows, six FML majors — 1 through 11.** 1.20.2 runs
 FML 1.0.16, which reads `META-INF/mods.toml` and demands `mandatory`; 26.2 runs
 FML 11.0.16, which reads `META-INF/neoforge.mods.toml` and demands `type`. The
 same jar file satisfies both, which is the dual-metadata trick working exactly
@@ -338,8 +338,13 @@ ships a `quilt.mod.json` (same jar, both loaders) purely for an accurate
 platform badge, not because Quilt needs it to load the mod. All four eras
 declare the same Quilt Loader floor, `>=0.30.0`, and the same Java floor as
 their Fabric counterpart (Quilt Loader itself imposes no additional JVM
-floor at any era). This is asserted, not assumed: the e2e matrix runs every
-version in this file on both loaders (`LOADER=fabric`/`LOADER=quilt`); see
+floor at any era). This is asserted, not assumed: every version the e2e matrix
+runs, it runs on **both** loaders — each Fabric leg has a `-quilt` twin with an
+identical version list and the identical assertion set (`LOADER=fabric`/
+`LOADER=quilt`). That matrix is a per-band sample of the declared ranges, not
+every version in them — see
+[Default e2e version list](#default-e2e-version-list) below for which versions
+are sampled and which you must run by hand. See also
 [e2e-harness.md](e2e-harness.md) → "Quilt server install".
 
 NeoForge is another value of that same axis (`LOADER=neoforge`), and since the
@@ -369,13 +374,20 @@ The default `VERSIONS` in the Makefile samples the matrix:
   (see [e2e-harness.md](e2e-harness.md)). Suspect the bottom of the range?
   `make e2e VERSIONS="1.14.4 1.15.2"`.
 
-## Forge: a fifth jar, narrower by construction
+## Forge: four jars, narrower by construction
 
-Issue #23 phase 1 adds ONE Forge jar, `commandsspy-<ver>+mc1.21.x-forge.jar`,
-built by a separate Gradle project in `forge/` (ForgeGradle 7, its own
-`settings.gradle`/`build.gradle`/`gradle.properties`) that is not part of the
-root build — `make build` still produces exactly the four jars above; the
-Forge jar is `make build-forge`, on demand. It compiles the same shared core
+Forge ships **four** jars — mc116, legacy, modern and eventbus7 — one per
+mapping/EventBus era; together they cover Minecraft 1.14 through 26.2. This
+section covers the `modern` jar, `commandsspy-<ver>+mc1.21.x-forge.jar`, which
+landed first (issue #23 phase 1); the legacy, eventbus7 and mc116 sections
+below cover the other three.
+
+All four are built by a separate Gradle project in `forge/` (ForgeGradle 7, its
+own `settings.gradle`/`build.gradle`/`gradle.properties`) that is not part of
+the root build — `make build` still produces exactly the four jars above; the
+Forge jars are `make build-forge`, `build-forge-legacy`, `build-forge-mc116`
+and `build-forge-eventbus7`, on demand. The modern jar compiles the same
+shared core
 from one copy (`sourceSets.main.java.srcDir '../src/main/java'`), against
 Minecraft 1.21.1 / Forge 52.1.16, Java 21 toolchain.
 
@@ -488,8 +500,8 @@ measurement so mods.toml metadata was never the limiting factor:
 | 1.20.4 | 49.2.0 | PASS |
 | 1.20.5 | — | Forge publishes no build at all — same gap the modern jar hits at its floor. |
 
-One jar spans Minecraft **1.17.1–1.20.4**: nine Minecraft versions across
-seven consecutive Forge branches (37, 39, 40, 42, 43, 47, 48, 49) — directly
+One jar spans Minecraft **1.17.1–1.20.4**: ten Minecraft versions across
+nine Forge branches (37, 38, 39, 40, 42, 43, 47, 48, 49) — directly
 adjacent to the modern jar's own 1.20.6 floor, with only the
 Forge-publishes-nothing 1.20.5 gap between them. Shipped
 `forge/gradle.properties` (`_legacy` suffix): `minecraft_range =

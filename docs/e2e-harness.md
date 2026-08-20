@@ -138,7 +138,7 @@ own `LOADER_VERSION`/`INSTALLER_VERSION` defaults live in
 
 ## Forge server install
 
-`LOADER` accepts `fabric|quilt|forge` (Makefile, `scripts/e2e-run-one.sh`,
+`LOADER` accepts `fabric|quilt|forge|neoforge` (Makefile, `scripts/e2e-run-one.sh`,
 `scripts/e2e-entrypoint.sh`). Forge build resolution reads
 `promotions_slim.json` and prefers `<mc>-recommended`, falling back to
 `<mc>-latest` when no recommended build exists for that Minecraft version
@@ -171,9 +171,12 @@ An out-of-range GUARD leg exercises the boundary directly:
 version outside the jar's declared range, and `scripts/e2e-entrypoint.sh`
 then asserts (a) Forge refused the mod (`needs language provider javafml`)
 and (b) no `[CommandsSpy] [` line was ever logged — verdict `PASS
-forge-out-of-range-refused-as-expected`. A metadata string is the only
-thing standing between a user on Forge <=1.20.4 and a server that dies
-mid-command, and an unasserted guard is not a guard.
+forge-out-of-range-refused-as-expected`. With all four Forge jars shipped the
+only version this still fires on is **1.20.5**, the one release Forge itself
+publishes no build for; every other version 1.14–26.2 routes to a jar that
+declares it. A metadata string is the only thing standing between a user on an
+uncovered version and a server that dies mid-command, and an unasserted guard
+is not a guard.
 
 Also fixed while adding this leg: a `set -e` trap where a failing `grep`
 inside a command substitution silently killed `scripts/e2e-run-one.sh`
