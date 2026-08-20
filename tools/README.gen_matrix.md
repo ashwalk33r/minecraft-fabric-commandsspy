@@ -27,16 +27,18 @@ here.
   `main.go`. Reads env vars, opens `$GITHUB_OUTPUT`, calls `genMatrix`.
 - `genMatrix(repoRoot, eventName, forceBands, stdout, ghOut)` — the real work.
   Defines the stages (mc121, mc26, t0, mc1192, mc114, forge, forge_legacy,
-  forge_mc116, forge_eventbus7) and emits every row. Forge rows are
-  floor-only: no coverage rows, no lean/full split (the Forge jars' own
-  bytecode floors govern, not the Fabric era table). Testable: writers are
-  injected.
+  forge_mc116, forge_eventbus7, neo) and emits every row. Forge and NeoForge
+  rows are floor-only: no coverage rows, no lean/full split (those jars' own
+  bytecode floors and, for NeoForge, its own per-line Java floors govern — not
+  the Fabric era table). Testable: writers are injected.
 - `bandPresent(repoRoot, name, forced)` — is a band buildable in this tree?
   `t0` checks a range line in `gradle.properties`; `mc1192`/`mc114` check that
   `src/<band>/java` exists; `forge`/`forge_legacy`/`forge_mc116`/
   `forge_eventbus7` check the
   `minecraft_range_modern`/`_legacy`/`_mc116`/`_eventbus7` lines in
-  `forge/gradle.properties`. `FORCE_BANDS` overrides for offline tests.
+  `forge/gradle.properties`; `neo` checks `minecraft_range_neo_all` in
+  `neoforge/gradle.properties` (one band jar, so one range key).
+  `FORCE_BANDS` overrides for offline tests.
 - `ends(list)` — first and last element; the "lean" shrink.
 
 ## Inputs (env vars)
@@ -55,8 +57,11 @@ here.
 - To stdout: aligned summary of each row, then `EVENT_NAME`, `GATED_PAIRS`
   (sum of all list lengths), and `TOTAL_JOBS` (what the workflow spawns:
   2 caller jobs per fabric pair — `-fabric` and `-quilt` — 1 per
-  single-loader Forge pair, plus 8 fixed jobs: build-jars, unit tests,
-  4 gate canaries, 2 literal NeoForge jobs).
+  single-loader `forge_*` or `neo_*` pair, plus 23 fixed jobs: contracts,
+  go-quality, lint-java, unit-tests, the 10 build jobs, the Build aggregator,
+  the 4 gate canaries and the 4 config-behaviors legs; on push only 15 of
+  those run — gate and config-behaviors are event-skipped). Against the real
+  tree today: 75 gated pairs / 137 jobs on a PR, 104 / 195 on dispatch.
 
 ## Place in the tools/ package
 
