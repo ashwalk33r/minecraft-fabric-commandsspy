@@ -192,21 +192,33 @@ for v in $FORGE_OUT_OF_RANGE_VERSIONS; do
   check "forge-routing $v refused" "1" "${got##* }"
 done
 
-# Probe 3b — LOADER=neoforge. NeoForge publishes one version line per Minecraft
-# version (no Intermediary-equivalent stable mapping to ride), so exactly two
-# versions are supported and every other one must be REFUSED by name, never
-# handed a jar that cannot load it.
+# Probe 3b — LOADER=neoforge. ONE band jar spans every Minecraft version
+# NeoForge publishes for (1.20.2 up); what still varies per version is the
+# loader BUILD the installer fetches and NeoForge's own Java floor, both of
+# which live in e2e-run-one.sh's routing table. Below NeoForge's own floor a
+# version must be REFUSED by name, never handed a jar that cannot load it.
 #
-# Driven through the real e2e-run-one.sh, which dies on a named verdict long
-# before Docker — so this stays offline and needs no built jars. Two knobs make
-# the probe unambiguous, because the jar-exists check runs BEFORE the
-# neoforge-version check:
-#   the four family jars point at a real (empty) file, so an unsupported
-#   version sails past that check and reaches neoforge-unsupported-version;
-#   the two NeoForge jars point at paths that do not exist, so a SUPPORTED
-#   version stops at mod-jar-missing — proving it routed to the NeoForge jar
-#   rather than being rejected as unsupported.
-echo "== LOADER=neoforge supported versions (via e2e-run-one.sh)"
+# Queried through the probe flag, so this stays offline and needs no built jars.
+echo "== LOADER=neoforge routing (via --print-neo-routing)"
+neo_route() { "$script_dir/e2e-run-one.sh" --print-neo-routing "$1"; }
+check "neoforge 1.20.2 routes"  "20.2.93 17"       "$(neo_route 1.20.2)"
+check "neoforge 1.20.4 routes"  "20.4.251 17"      "$(neo_route 1.20.4)"
+check "neoforge 1.20.6 routes"  "20.6.139 21"      "$(neo_route 1.20.6)"
+check "neoforge 1.21.1 routes"  "21.1.248 21"      "$(neo_route 1.21.1)"
+check "neoforge 1.21.11 routes" "21.11.45 21"      "$(neo_route 1.21.11)"
+check "neoforge 26.1 routes"    "26.1.0.19-beta 25" "$(neo_route 26.1)"
+check "neoforge 26.2 routes"    "26.2.0.64 25"     "$(neo_route 26.2)"
+check "neoforge 1.20.1 refused" "unsupported 0"    "$(neo_route 1.20.1)"
+check "neoforge 1.16.5 refused" "unsupported 0"    "$(neo_route 1.16.5)"
+check "neoforge 1.14.4 refused" "unsupported 0"    "$(neo_route 1.14.4)"
+
+# The refusal has to survive a REAL run too, not just the probe: e2e-run-one.sh
+# must die on a named verdict before Docker. The four family jars point at a
+# real (empty) file so an unsupported version sails past the jar-exists check
+# and reaches the neoforge verdict; the band jar points at a path that does not
+# exist, so a SUPPORTED version stops at mod-jar-missing instead — proving it
+# routed to the band jar rather than being rejected.
+echo "== LOADER=neoforge refusal verdict (via e2e-run-one.sh)"
 neo_root="$(mktemp -d)"
 trap 'rm -rf "$neo_root"' EXIT
 : > "$neo_root/family.jar"
@@ -216,35 +228,39 @@ neo_verdict() {
   E2E_RESULT_DIR=results E2E_LOG_DIR=logs \
   MOD_JAR_121=family.jar MOD_JAR_1192=family.jar \
   MOD_JAR_114=family.jar MOD_JAR_26=family.jar \
-  MOD_JAR_NEO121=absent-neoforge.jar MOD_JAR_NEO26=absent-neoforge.jar \
+  MOD_JAR_NEO=absent-neoforge.jar \
     "$script_dir/e2e-run-one.sh" "$1" > /dev/null 2>&1
   awk '{print $NF}' "$neo_root/results/$1-neoforge.result" 2>/dev/null \
     || echo "no-result-file"
 }
-for v in $ALL_VERSIONS; do
-  case "$v" in
-    1.21.1|26.2) check "neoforge $v routes to its NeoForge jar" \
-                       "mod-jar-missing" "$(neo_verdict "$v")" ;;
-    *)           check "neoforge $v refused" \
-                       "neoforge-unsupported-version" "$(neo_verdict "$v")" ;;
-  esac
-done
+check "neoforge 1.21.1 reaches the band jar" \
+      "mod-jar-missing" "$(neo_verdict 1.21.1)"
+check "neoforge 1.20.2 reaches the band jar" \
+      "mod-jar-missing" "$(neo_verdict 1.20.2)"
+check "neoforge 1.16.5 refused by name" \
+      "neoforge-unsupported-version" "$(neo_verdict 1.16.5)"
 
-# The two NeoForge stage jobs in e2e.yml carry a LITERAL versions list (two
-# versions is not worth generating; tools/gen_matrix.go stays untouched), so
-# they are asserted here rather than against the grid. Version, Java and loader
-# are read from the SAME job block on purpose: a grep -cF per line would still
-# pass with the two pairs crossed over.
-echo "== neoforge stage jobs in e2e.yml"
-neo_job_with() {
-  sed -n "/^  $1:\$/,/jar-sha:/p" "$gate_yml" \
-    | sed -nE 's/^ *(versions|java|loader): *//p' \
-    | tr -d "\"'" | tr '\n' ' ' | sed 's/ $//'
-}
-check "e2e.yml e2e-neoforge-mc1211-java21 with:" "[1.21.1] 21 neoforge" \
-      "$(neo_job_with e2e-neoforge-mc1211-java21)"
-check "e2e.yml e2e-neoforge-mc262-java25 with:" "[26.2] 25 neoforge" \
-      "$(neo_job_with e2e-neoforge-mc262-java25)"
+# The band jar must carry BOTH metadata files: FML 1.x/2.x read
+# META-INF/mods.toml and require `mandatory`, FML 3.x+ read
+# META-INF/neoforge.mods.toml and require `type`. One jar spans that seam only
+# because each major reads the filename it knows and ignores the other.
+echo "== neoforge band jar metadata"
+neo_jar="$(ls build/libs/commandsspy-*+mc1.20.2-26.2-neoforge.jar 2>/dev/null | head -1 || true)"
+if [ -n "$neo_jar" ]; then
+  check "band jar has META-INF/mods.toml" "present" \
+        "$(unzip -l "$neo_jar" | grep -q 'META-INF/mods.toml' && echo present || echo absent)"
+  check "band jar has META-INF/neoforge.mods.toml" "present" \
+        "$(unzip -l "$neo_jar" | grep -q 'META-INF/neoforge.mods.toml' && echo present || echo absent)"
+  check "legacy toml uses mandatory=true" "present" \
+        "$(unzip -p "$neo_jar" META-INF/mods.toml | grep -q 'mandatory = true' && echo present || echo absent)"
+  check "modern toml uses type=required" "present" \
+        "$(unzip -p "$neo_jar" META-INF/neoforge.mods.toml | grep -q 'type = "required"' && echo present || echo absent)"
+  check "both tomls declare the same range" "same" \
+        "$([ "$(unzip -p "$neo_jar" META-INF/mods.toml | grep -c 'versionRange')" = \
+             "$(unzip -p "$neo_jar" META-INF/neoforge.mods.toml | grep -c 'versionRange')" ] && echo same || echo differ)"
+else
+  echo "  [SKIP] band jar not built (run: make build-neo)"
+fi
 
 echo "== config-behaviors legs in ci.yml (#34)"
 for loader in fabric quilt forge neoforge; do

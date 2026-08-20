@@ -32,7 +32,7 @@ def minecraftVersion = project.getProperty("minecraft_version_${neoTarget}")
 // net.neoforged.fancymodloader:loader publishes exactly ONE Java variant —
 // asking for a lower one fails dependency resolution outright ("no matching
 // variant"), it does not silently downgrade. Hence a per-band property rather
-// than a guess: band `all` anchors on 20.2.93, whose loader is Java 17, and
+// than a guess: band `all` anchors on 20.4.251, whose loader is Java 17, and
 // Java-17 bytecode runs on every newer line's runtime (bytecode binds only
 // downward).
 def javaRelease = (project.getProperty("java_release_${neoTarget}") as String) as Integer

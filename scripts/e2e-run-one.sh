@@ -6,15 +6,16 @@
 # missing file is treated as a failure. No failure can be lost.
 set -euo pipefail
 
-VERSION="${1:?usage: e2e-run-one.sh <minecraft-version> | --print-java|--print-routing|--print-forge-routing <minecraft-version>}"
+VERSION="${1:?usage: e2e-run-one.sh <minecraft-version> | --print-java|--print-routing|--print-forge-routing|--print-neo-routing <minecraft-version>}"
 
 # Probe modes: query the routing table and exit, before any env validation.
 #   --print-java           -> the era-correct Java floor            ("17")
 #   --print-routing        -> jar family and Java floor             ("1192 17")
 #   --print-forge-routing  -> Forge jar band and expect-refused flag ("legacy 0")
+#   --print-neo-routing    -> NeoForge build and its Java floor  ("21.1.248 21")
 PROBE=""
 case "$VERSION" in
-  --print-java|--print-routing|--print-forge-routing)
+  --print-java|--print-routing|--print-forge-routing|--print-neo-routing)
     PROBE="$VERSION"
     VERSION="${2:?usage: e2e-run-one.sh $VERSION <minecraft-version>}"
     ;;
@@ -75,10 +76,55 @@ case " $FORGE_KNOWN_GOOD " in
   *) FORGE_EXPECT_REFUSED=1 ;;
 esac
 
+# NeoForge routing -- version-only, computed unconditionally like the Forge
+# table above so the probe and the LOADER=neoforge runtime path read the same
+# values. Two things come from here, and neither can be derived from the era
+# table: WHICH loader build the installer fetches (NeoForge publishes one line
+# per Minecraft version -- that part of the old two-jar story was always true,
+# it just never constrained the JAR), and NeoForge's OWN Java floor (17 up to
+# line 20.4, 21 through 21.11, 25 on 26.x), which is not the Fabric jar's
+# bytecode level. One band jar serves every row; see docs/version-matrix.md.
+#
+# Rows marked (beta) are lines that never published a stable build; the band's
+# compile anchor is never one of them. Keep this table in step with the boot
+# table in docs/version-matrix.md.
+NEOFORGE_VERSION=""
+NEO_FLOOR_JAVA=0
+case "$VERSION" in
+  1.20.2)  NEOFORGE_VERSION="20.2.93";        NEO_FLOOR_JAVA=17 ;;
+  1.20.3)  NEOFORGE_VERSION="20.3.8-beta";    NEO_FLOOR_JAVA=17 ;;
+  1.20.4)  NEOFORGE_VERSION="20.4.251";       NEO_FLOOR_JAVA=17 ;;
+  1.20.5)  NEOFORGE_VERSION="20.5.21-beta";   NEO_FLOOR_JAVA=21 ;;
+  1.20.6)  NEOFORGE_VERSION="20.6.139";       NEO_FLOOR_JAVA=21 ;;
+  1.21)    NEOFORGE_VERSION="21.0.167";       NEO_FLOOR_JAVA=21 ;;
+  1.21.1)  NEOFORGE_VERSION="21.1.248";       NEO_FLOOR_JAVA=21 ;;
+  1.21.2)  NEOFORGE_VERSION="21.2.1-beta";    NEO_FLOOR_JAVA=21 ;;
+  1.21.3)  NEOFORGE_VERSION="21.3.97";        NEO_FLOOR_JAVA=21 ;;
+  1.21.4)  NEOFORGE_VERSION="21.4.157";       NEO_FLOOR_JAVA=21 ;;
+  1.21.5)  NEOFORGE_VERSION="21.5.98";        NEO_FLOOR_JAVA=21 ;;
+  1.21.6)  NEOFORGE_VERSION="21.6.20-beta";   NEO_FLOOR_JAVA=21 ;;
+  1.21.7)  NEOFORGE_VERSION="21.7.25-beta";   NEO_FLOOR_JAVA=21 ;;
+  1.21.8)  NEOFORGE_VERSION="21.8.54";        NEO_FLOOR_JAVA=21 ;;
+  1.21.9)  NEOFORGE_VERSION="21.9.16-beta";   NEO_FLOOR_JAVA=21 ;;
+  1.21.10) NEOFORGE_VERSION="21.10.64";       NEO_FLOOR_JAVA=21 ;;
+  1.21.11) NEOFORGE_VERSION="21.11.45";       NEO_FLOOR_JAVA=21 ;;
+  26.1)    NEOFORGE_VERSION="26.1.0.19-beta"; NEO_FLOOR_JAVA=25 ;;
+  26.1.1)  NEOFORGE_VERSION="26.1.1.15-beta"; NEO_FLOOR_JAVA=25 ;;
+  26.1.2)  NEOFORGE_VERSION="26.1.2.97";      NEO_FLOOR_JAVA=25 ;;
+  26.2)    NEOFORGE_VERSION="26.2.0.64";      NEO_FLOOR_JAVA=25 ;;
+esac
+
 case "$PROBE" in
   --print-java)          echo "$FLOOR_JAVA"; exit 0 ;;
   --print-routing)       echo "$JAR_FAMILY $FLOOR_JAVA"; exit 0 ;;
   --print-forge-routing) echo "$FORGE_JAR_BAND $FORGE_EXPECT_REFUSED"; exit 0 ;;
+  --print-neo-routing)
+    if [ -n "$NEOFORGE_VERSION" ]; then
+      echo "$NEOFORGE_VERSION $NEO_FLOOR_JAVA"
+    else
+      echo "unsupported 0"
+    fi
+    exit 0 ;;
 esac
 
 LOADER="${LOADER:-fabric}"
@@ -126,8 +172,7 @@ FORGE_INSTALL_JDK="${FORGE_INSTALL_JDK:-21}"
 : "${MOD_JAR_114:?MOD_JAR_114 must be set}"
 : "${MOD_JAR_26:?MOD_JAR_26 must be set}"
 if [ "$LOADER" = "neoforge" ]; then
-  : "${MOD_JAR_NEO121:?MOD_JAR_NEO121 must be set for LOADER=neoforge}"
-  : "${MOD_JAR_NEO26:?MOD_JAR_NEO26 must be set for LOADER=neoforge}"
+  : "${MOD_JAR_NEO:?MOD_JAR_NEO must be set for LOADER=neoforge}"
 fi
 
 if [ "$LOADER" = "forge" ]; then
@@ -147,20 +192,18 @@ else
   MOD_JAR="${!_mod_jar_var}"
 fi
 
-# NeoForge OVERRIDES the era table above. Fabric's Intermediary mappings are
-# stable across Minecraft versions, which is why four jars cover 24 of them;
-# NeoForge has no equivalent and publishes one version line per Minecraft
-# version, so a NeoForge jar covers exactly one. A version with no shipped line
-# is an explicit failure below, never a jar that cannot load it. These pins
-# mirror neoforge/gradle.properties -- change both together. Always defined
-# (never just inside the neoforge branch): referenced later under `set -u`
-# regardless of LOADER.
-NEOFORGE_VERSION=""
-if [ "$LOADER" = "neoforge" ]; then
-  case "$VERSION" in
-    1.21.1) NEOFORGE_VERSION="21.1.248"; MOD_JAR="$MOD_JAR_NEO121" ;;
-    26.2)   NEOFORGE_VERSION="26.2.0.64"; MOD_JAR="$MOD_JAR_NEO26" ;;
-  esac
+# NeoForge OVERRIDES the era table above on both axes it owns: the band jar
+# instead of the era jar, and NeoForge's own Java floor instead of the Fabric
+# jar's bytecode level. Both come from the routing table near the top of this
+# script. A Minecraft version with no NeoForge line at all keeps an empty
+# NEOFORGE_VERSION and fails explicitly below, never with a jar that cannot
+# load it.
+# FLOOR_JAVA only decides the JVM when no JAVA override is given (see the KEY
+# block below), so overriding it unconditionally here is safe and needs no
+# ordering dance with JAVA_OVERRIDE's own default.
+if [ "$LOADER" = "neoforge" ] && [ -n "$NEOFORGE_VERSION" ]; then
+  MOD_JAR="$MOD_JAR_NEO"
+  FLOOR_JAVA="$NEO_FLOOR_JAVA"
 fi
 : "${E2E_LOG_DIR:=build/e2e-logs}"
 : "${E2E_RESULT_DIR:=build/e2e-results}"
@@ -241,7 +284,7 @@ fi
 
 if [ "$LOADER" = "neoforge" ] && [ -z "$NEOFORGE_VERSION" ]; then
   printf 'E2E %s java%s FAIL neoforge-unsupported-version\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
-  echo "[e2e] <- FAIL Minecraft $VERSION on neoforge: no NeoForge line ships for it (supported: 1.21.1, 26.2)"
+  echo "[e2e] <- FAIL Minecraft $VERSION on neoforge: NeoForge publishes no line for it (its floor is Minecraft 1.20.2)"
   exit 1
 fi
 
