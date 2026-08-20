@@ -319,6 +319,14 @@ if ! grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then
   FAILURES="${FAILURES}console-command-not-logged,"
 fi
 
+# MOD.md's opening claim. Loader-specific: Fabric/Quilt hook
+# CommandManager.execute, Forge/NeoForge their platform's CommandEvent, and
+# whether either fires for a name the dispatcher cannot resolve is exactly what
+# this asserts.
+if ! grep -q '\[CommandsSpy\] \[Server\] notacommand' "$LOG_FILE"; then
+  FAILURES="${FAILURES}unknown-command-not-logged,"
+fi
+
 if ! grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then
   FAILURES="${FAILURES}rcon-command-not-logged,"
 fi
@@ -368,6 +376,7 @@ if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandE
 elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoForge jar has no mixin (it hooks CommandEvent)";
 elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
 if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
+if grep -q '\[CommandsSpy\] \[Server\] notacommand' "$LOG_FILE"; then echo "  [PASS] non-existing command logged"; else echo "  [FAIL] non-existing command not logged"; fi
 if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
 if [ -f "$CONFIG_FILE" ] && grep -q '"blacklist": \[\]' "$CONFIG_FILE" && grep -q '"logArguments": false' "$CONFIG_FILE"; then echo "  [PASS] config/commands-spy.json auto-created with the documented initial schema"; else echo "  [FAIL] config/commands-spy.json missing or not the documented initial schema"; cat "$CONFIG_FILE" 2>/dev/null || true; fi
 if grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE" && ! grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then echo "  [PASS] logArguments=false (default): 'say e2e-args-probe' logged as bare 'say'"; else echo "  [FAIL] logArguments=false (default) not honoured for 'say e2e-args-probe'"; fi
