@@ -1,5 +1,5 @@
 # CommandsSpy
-A mod to log commands to the server console. Both existing and non-existing commands are logged. Commands that are permitted or not are added to the server logs as well.
+A mod to log commands to the server console. Both existing and non-existing commands are logged — on every supported loader, verified on booted servers (Fabric, Quilt, Forge and NeoForge each log a command name their dispatcher cannot resolve). Commands that are permitted or not are added to the server logs as well.
 
 ## Installation
 Simply place the mod into the mods directory of your server, and it will start monitoring executed commands.
