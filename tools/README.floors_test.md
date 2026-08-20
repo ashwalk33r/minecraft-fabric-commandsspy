@@ -45,8 +45,9 @@ The Forge analogue, against `--print-forge-routing` instead of
 must route "legacy 0"; `forge_java21` versions route "modern 0" except
 1.20.4 ("legacy 0" — the legacy jar's ceiling riding in the modern job);
 `forge_eventbus7_java21`/`forge_eventbus7_java25` versions route
-"eventbus7 0"; the 1.16.5 guard routes "modern 1" (outside every jar's
-range, expect refused).
+"eventbus7 0"; `forge_mc116_java8` versions route "mc116 0" — 1.16.4
+included, made known-good by `e2e-run-one.sh`'s install-time ModLauncher
+8.1.3 drop-in (see docs/version-matrix.md).
 
 ## How to run
 

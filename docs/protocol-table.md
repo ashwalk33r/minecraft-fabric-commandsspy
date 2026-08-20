@@ -42,6 +42,9 @@ trigger.
 |---|---|---|---|---|---|---|---|---|---|
 | 1.14.4 | 498 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14.4` |
 | 1.15.2 | 578 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.15.2` |
+| 1.16, 1.16.1 | 736 | no | none | — | chat | 0x03 | 0x20 / 0x10 | 0x25 | md `pc/1.16.1` |
+| 1.16.2 | 751 | no | none | — | chat | 0x03 | 0x1F / 0x10 | 0x24 | md `pc/1.16.2` |
+| 1.16.3 | 753 | no | none | — | chat | 0x03 | 0x1F / 0x10 | 0x24 | md `pc/1.16.2` (alias; no packet-id change 751→753) |
 | 1.16.5 | 754 | no | none | — | chat | 0x03 | 0x1F / 0x10 | 0x24 | md `pc/1.16.2` (alias) |
 | 1.17.1 | 756 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.17.1` |
 | 1.18, 1.18.1 | 757 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.18` |
