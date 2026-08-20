@@ -1,4 +1,4 @@
-[![Build](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/actions/workflows/gradle.yml/badge.svg)](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/actions/workflows/gradle.yml)
+[![CI](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/actions/workflows/ci.yml/badge.svg)](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/actions/workflows/ci.yml)
 
 # CommandsSpy
 
