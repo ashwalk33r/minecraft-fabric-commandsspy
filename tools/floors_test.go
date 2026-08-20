@@ -155,3 +155,57 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 		}
 	}
 }
+
+// NeoForge rows are out of floorRows for the same reason the Forge rows are,
+// but with its own table: --print-java is the FABRIC floor table (1.20.4
+// reports 21 there, while NeoForge's 20.4 line is a Java-17 line, and
+// e2e-run-one.sh overrides FLOOR_JAVA for LOADER=neoforge). The drift check is
+// --print-neo-routing's SECOND field — the Java floor of the loader build that
+// version actually fetches. One band jar serves every row, so nothing here
+// checks a jar band; only the floors, which are what the row names promise.
+func TestGenMatrixNeoRowsAgreeWithNeoRouting(t *testing.T) {
+	script := filepath.Join("..", "scripts", "e2e-run-one.sh")
+	printNeoFloor := func(version string) string {
+		out, err := exec.Command("bash", script, "--print-neo-routing", version).Output()
+		if err != nil {
+			t.Fatalf("--print-neo-routing %s: %v", version, err)
+		}
+		fields := strings.Fields(string(out))
+		if len(fields) != 2 {
+			t.Fatalf("--print-neo-routing %s = %q, want \"<build> <floor>\"", version, out)
+		}
+		if fields[0] == "unsupported" {
+			t.Fatalf("--print-neo-routing %s = unsupported: no NeoForge line, the row cannot run", version)
+		}
+		return fields[1]
+	}
+
+	var gh bytes.Buffer
+	if err := genMatrix("..", "workflow_dispatch", "", io.Discard, &gh); err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, line := range strings.Split(gh.String(), "\n") {
+		name, j, ok := strings.Cut(line, "=")
+		if !ok || !strings.HasPrefix(name, "neo_java") {
+			continue
+		}
+		seen++
+		want := strings.TrimPrefix(name, "neo_java")
+		var versions []string
+		if err := json.Unmarshal([]byte(j), &versions); err != nil {
+			t.Fatalf("%s: bad JSON %q: %v", name, j, err)
+		}
+		if len(versions) == 0 {
+			t.Errorf("%s: no versions emitted (neoforge/gradle.properties missing its band range?)", name)
+		}
+		for _, v := range versions {
+			if got := printNeoFloor(v); got != want {
+				t.Errorf("%s contains %s, but its NeoForge floor is %q, want %q", name, v, got, want)
+			}
+		}
+	}
+	if seen != 3 {
+		t.Errorf("saw %d neo_java rows in gen-matrix output, want 3", seen)
+	}
+}

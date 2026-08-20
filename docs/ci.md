@@ -29,15 +29,15 @@ runs, on top of the general Go build/module cache.
 ## `make build` / `make test` / `make lint-java`
 
 These also run inside the pinned `Dockerfile.ci` image — it carries JDK 21
-and JDK 25 (for the 26.x and NeoForge 26.2 toolchains) alongside Go and
+and JDK 25 (for the 26.x toolchain) alongside Go and
 shellcheck, so
 `make build`, `make test`, `make lint-java`, and `make ci` together need only
 `make` and `docker` on the host, locally and in CI. There is no
 Docker-unavailable escape hatch for these three (unlike `ci-host`): run
 `./gradlew` directly against a local JDK instead.
 
-`make build` builds all six jars (four Fabric/Quilt eras + two NeoForge
-lines); the Forge jars (a separate Gradle build in `forge/`) are
+`make build` builds all five jars (four Fabric/Quilt eras + the single
+NeoForge band jar, Minecraft 1.20.2-26.2); the Forge jars (a separate Gradle build in `forge/`) are
 `make build-forge`/`make build-forge-legacy`/`make build-forge-mc116`/
 `make build-forge-eventbus7`, on demand — not part of the default
 `make build`/`make ci` path.
@@ -74,26 +74,27 @@ required check).
 
 On push to `main` the jars are built and published (30-day retention) with
 zero e2e: `tools/gen_matrix.go` emits `[]` for every band on
-`EVENT_NAME=push`, and `e2e-gate` plus the two literal NeoForge jobs carry
-an explicit `github.event_name != 'push'` guard.
+`EVENT_NAME=push` (the NeoForge legs included, since they are generated like
+every other band), and `e2e-gate` plus the four config-behaviors legs, whose
+version lists are literal and so never go empty, carry an explicit
+`github.event_name != 'push'` guard.
 
 ## The staged e2e matrix
 
 Stage order is popularity order: a failure in a widely-run version surfaces
 before runner minutes are spent on the long tail.
 
-1. **Tier 1: ten parallel build jobs, one jar each** (`needs: [contracts]`),
+1. **Tier 1: nine parallel build jobs, one jar each** (`needs: [contracts]`),
    replacing the old sequential ~25-minute `build-jars` job:
    `build-mc121x`/`build-mc1192`/`build-mc114x`/`build-mc26x` (per-era
-   `make build-121`/`-1192`/`-114`/`-26`), `build-neo121`/`build-neo26`
-   (the two NeoForge lines), and `build-forge-modern`, `build-forge-legacy`,
+   `make build-121`/`-1192`/`-114`/`-26`), `build-neo`
+   (the one NeoForge band jar), and `build-forge-modern`, `build-forge-legacy`,
    `build-forge-mc116`, `build-forge-eventbus7` — each Forge target a
    separate Gradle build (`forge/`), all in the same pinned CI image. One
    artifact per job:
    `commandsspy-jar-mc1.21.x-<sha>`, `commandsspy-jar-mc1.19-1.20.2-<sha>`,
    `commandsspy-jar-mc1.14.x-<sha>`, `commandsspy-jar-mc26.x-<sha>`,
-   `commandsspy-jar-neoforge-mc1.21.1-<sha>`,
-   `commandsspy-jar-neoforge-mc26.2-<sha>`,
+   `commandsspy-jar-neoforge-<sha>`,
    `commandsspy-jar-forge-modern-<sha>`,
    `commandsspy-jar-forge-legacy-<sha>`,
    `commandsspy-jar-forge-mc116-<sha>`,
@@ -107,7 +108,7 @@ before runner minutes are spent on the long tail.
    `forge/build.gradle` and `forge/gradle.properties` are in every key
    alongside the root build files, because the first Forge build of each
    target decompiles Minecraft and is slow on a cold cache.
-2. **e2e-gate** — `needs` all four Tier 0 gates and all five build jobs:
+2. **e2e-gate** — `needs` all four Tier 0 gates and all nine build jobs:
    two canary pairs (1.21.11/java21, 26.2/java25), each
    crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
    four canary jobs run. `fail-fast` is off so all four always report.
@@ -126,9 +127,13 @@ before runner minutes are spent on the long tail.
    list every measured version, how 1.16.4 rides the mc116 leg via the
    install-time ModLauncher drop-in) lives in the generator's Forge stage
    comment.
-4. **NeoForge stages** — two jobs, one per shipped NeoForge line
-   (1.21.1/java21 and 26.2/java25), each a normal `e2e-stage.yml` call with a
-   **literal** one-element version list. See "The NeoForge stages" below.
+4. **NeoForge stages** — three jobs (`e2e-neoforge-java17`,
+   `e2e-neoforge-java21`, `e2e-neoforge-java25`), each a normal
+   `e2e-stage.yml` call with `loader: neoforge` reading its version list from
+   the `tools/gen_matrix.go` output of the same name. One band jar serves all
+   three; they split on NeoForge's **own** Java floor (17 up to line 20.4, 21
+   through 21.11, 25 on 26.x — `scripts/e2e-run-one.sh --print-neo-routing`,
+   not the Fabric era table). See "The NeoForge stages" below.
 5. **Band stages** — one reusable submatrix call (`e2e-stage.yml`) per
    {band, Java, loader} triple: mc121, mc26, T0 (1.20.3-1.20.6), mc1192,
    mc114. Loader is a `uses:`-time input, not a dimension inside
@@ -169,34 +174,32 @@ differs, sourced from `tools/gen_matrix.go`.
 
 ## The NeoForge stages
 
-Two things about them are deliberate and worth not "fixing":
+The legs are **generated**, exactly like the Forge bands: `neo_java17`,
+`neo_java21` and `neo_java25` come out of `tools/gen_matrix.go`, keyed on the
+`minecraft_range_neo_all` line in `neoforge/gradle.properties`, and each leg is
+an ordinary `e2e-stage.yml` call reading `needs.contracts.outputs.*`. They are
+floor rows, not a cross-jar stability proof: one band jar covers 1.20.2-26.2, so
+there is no second jar whose overlap could drift. What the three lists sample is
+the band's edges (1.20.2, 26.2), the three Java floors NeoForge itself changes
+at, and 1.21.1 as the modpack-dominant interior line. Per-row rationale lives in
+the generator's NeoForge stage comment. They carry the standard band `if:`
+guard including the `!= '[]'` clause and need no `github.event_name != 'push'`
+guard — a generated list is already `[]` on push.
 
-- **`tools/gen_matrix.go` is not involved.** Every other stage reads its version
-  list from a generator output; the NeoForge jobs carry a literal
-  `'["1.21.1"]'` / `'["26.2"]'`. NeoForge covers exactly two Minecraft versions
-  because one NeoForge jar covers exactly one Minecraft version (see
-  [version-matrix.md](version-matrix.md) → "NeoForge"), so this is the first
-  thing in the project that makes the loader axis *non*-orthogonal to version
-  generation. Teaching the generator a filtered, loader-dependent list to emit
-  two constants is more machinery than the constants. Revisit if the list grows.
-- **NeoForge is not in `e2e-gate`.** The gate exists so a broken build costs a
-  handful of jobs instead of the whole fan-out; putting NeoForge there would let
-  a NeoForge-only break block ~40 Fabric/Quilt jobs that have nothing to do with
-  it. Its own job group also matches the reason Quilt got one: two clearly
-  separate, independently-collapsible groups in the Actions UI.
-
-Both jobs `need` `contracts`, `unit-tests`, all five build jobs, and
-`e2e-gate`, and use the same `if:` guard as every other stage minus the
-`!= '[]'` clause, which cannot fire on a literal list — plus the
-`github.event_name != 'push'` guard, since their literal lists never go
-empty on push the way the generated bands do. They are not in any other
-job's `needs:`, so the popularity-first band ordering is untouched and they
-run in parallel with it.
+**NeoForge is still not in `e2e-gate`,** and that part is deliberate. The gate
+exists so a broken build costs a handful of jobs instead of the whole fan-out;
+putting NeoForge there would let a NeoForge-only break block ~40 Fabric/Quilt
+jobs that have nothing to do with it. Its own job groups also match the reason
+Quilt got one: separate, independently-collapsible groups in the Actions UI.
+The three legs `need` `contracts`, `unit-tests`, all nine build jobs and
+`e2e-gate`, and are in no other job's `needs:`, so the popularity-first band
+ordering is untouched and they run in parallel with it.
 
 Each build job uploads its one jar as its own artifact, and the `Build`
 aggregator prints one grouped log with every artifact link;
 `e2e-stage.yml`'s "Verify prebuilt jars"
-step checks for all six, so a jar that silently failed to build fails the stage
+step checks for all five (the four Fabric/Quilt eras plus the NeoForge band),
+so a jar that silently failed to build fails the stage
 before a server boots rather than surfacing as `mod-not-loaded` later.
 
 ## e2e server images
@@ -253,11 +256,13 @@ Two non-obvious rules it must keep:
   hard-error the run. The `[]` literal keeps the `!= '[]'` skip guard honest.
 - **The gate canaries are moved to the gate, never duplicated** in the band
   lists.
-- **Forge bands emit floor rows only** (`forge_java21`, `forge_legacy_java17`,
-  `forge_mc116_java8`, `forge_eventbus7_java21`,
-  `forge_eventbus7_java25`) — no coverage rows, no lean/full split. Presence
-  is keyed off the `minecraft_range_modern`/`_legacy`/`_mc116`/`_eventbus7`
-  lines in `forge/gradle.properties`; another Forge band is one more
+- **Forge and NeoForge bands emit floor rows only** (`forge_java21`,
+  `forge_legacy_java17`, `forge_mc116_java8`, `forge_eventbus7_java21`,
+  `forge_eventbus7_java25`, `neo_java17`, `neo_java21`, `neo_java25`) — no
+  coverage rows, no lean/full split. Presence is keyed off the
+  `minecraft_range_modern`/`_legacy`/`_mc116`/`_eventbus7` lines in
+  `forge/gradle.properties` and `minecraft_range_neo_all` in
+  `neoforge/gradle.properties`; another band is one more
   range-key case, one emit, and one `uses:` block. Within `forge_java21`,
   1.20.4 is keyed on the *legacy* band — it boots the legacy jar (see the
   rationale comment in `tools/gen_matrix.go`).
@@ -270,16 +275,22 @@ Job counts per band and trigger are pinned in `tools/gen_matrix_test.go`;
 `tools/floors_test.go` pins the Java floors against
 `scripts/e2e-run-one.sh` (and the Forge rows against
 `--print-forge-routing`). Change the grid → those tests name the new numbers.
-`TOTAL_JOBS = 2 x fabric pairs + forge pairs + 25`: every fabric band key
-feeds two caller jobs (`-fabric` and `-quilt`), Forge keys feed one
-(single-loader), and the 25 fixed jobs are contracts, go-quality,
-lint-java, unit-tests, the 10 build jobs, the `Build` aggregator, the 4
-e2e-gate canaries (2 versions x fabric/quilt), the 2 literal NeoForge
-jobs, and the 4 config-behaviors legs (#34, one per loader: fabric,
-quilt, forge, neoforge). On `pull_request` that is 2x39 + 30 + 25 = 133
-jobs; on `workflow_dispatch` that is 2x68 + 30 + 25 = 191 jobs; on push
-only 15 of the fixed jobs run (the gate, NeoForge and config-behaviors
-jobs are event-skipped) and every band is empty.
+`TOTAL_JOBS = 2 x fabric pairs + forge pairs + neo pairs + 22`: every fabric
+band key feeds two caller jobs (`-fabric` and `-quilt`), Forge and NeoForge
+keys feed one (single-loader — neither has a Quilt twin), and the 22 fixed
+jobs are contracts, go-quality, lint-java, unit-tests, the nine build jobs,
+the `Build` aggregator, the 4 e2e-gate canaries (2 versions x fabric/quilt)
+and the 4 config-behaviors legs (#34, one per loader: fabric, quilt, forge,
+neoforge). The NeoForge legs are no longer among them — they are generated
+pairs now. On `pull_request` that is 2x39 + 30 + 6 + 22 = 136 jobs; on
+`workflow_dispatch` that is 2x68 + 30 + 6 + 22 = 194 jobs; on push only 14
+of the fixed jobs run (the gate and config-behaviors legs are event-skipped)
+and every band, NeoForge included, is empty.
+
+The fixed count moved 25 -> 22 with this change and is worth spelling out,
+because two separate things shrank it: the two per-version NeoForge build
+jobs collapsed into the one `build-neo` band job (-1), and the two literal
+NeoForge e2e jobs became generated pairs counted in the grid instead (-2).
 
 Grid policy: every version runs on its own floor JVM. Newest-Java coverage
 rows sample only the band's ends on `pull_request` (lean) and the whole band

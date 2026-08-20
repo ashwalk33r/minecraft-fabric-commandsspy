@@ -87,8 +87,7 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.19-1.20.2.jar
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
-          test -f build/libs/commandsspy-*+neoforge-mc1.21.1.jar
-          test -f build/libs/commandsspy-*+neoforge-mc26.2.jar
+          test -f build/libs/commandsspy-*+mc1.20.2-26.2-neoforge.jar
 
       # Keyed by MC version + loader (not Java): scripts/e2e-run-one.sh's
       # cache key is version+loader+installer, and the loader/installer

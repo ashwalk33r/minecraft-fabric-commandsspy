@@ -44,11 +44,10 @@ MOD_JAR_FORGE := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x-forge.jar
 MOD_JAR_FORGE_LEGACY := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.17-1.20.4-forge.jar
 MOD_JAR_FORGE_EB7 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.6-26.2-forge.jar
 MOD_JAR_FORGE_MC116 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.16.x-forge.jar
-# NeoForge jars: one per NeoForge line, each covering exactly one Minecraft
-# version (NeoForge has no Intermediary-equivalent stable mapping to ride).
-# Built by the standalone neoforge/ Gradle build; see docs/version-matrix.md.
-MOD_JAR_NEO121 := build/libs/commandsspy-$(MOD_VERSION)+neoforge-mc1.21.1.jar
-MOD_JAR_NEO26 := build/libs/commandsspy-$(MOD_VERSION)+neoforge-mc26.2.jar
+# NeoForge band jar: ONE jar spanning the measured range, built by the
+# standalone neoforge/ Gradle build. NeoForge has no SRG era, so the range is
+# bounded by what booted, not by mappings; see docs/version-matrix.md.
+MOD_JAR_NEO := build/libs/commandsspy-$(MOD_VERSION)+mc1.20.2-26.2-neoforge.jar
 
 # Optional Java override applied to EVERY version in this run:
 #   make e2e VERSIONS="1.21.11" JAVA=25
@@ -83,9 +82,9 @@ _cfgvar_suffix := $(if $(filter 1,$(CONFIG_VARIANT)),-cfgvar,)
 # mc116, legacy, modern and eventbus7 versions.
 _forge_jar_dep := $(if $(filter forge,$(LOADER)),$(MOD_JAR_FORGE) $(MOD_JAR_FORGE_LEGACY) $(MOD_JAR_FORGE_EB7) $(MOD_JAR_FORGE_MC116),)
 
-# Only LOADER=neoforge needs the NeoForge jars built; a Fabric, Quilt or Forge
+# Only LOADER=neoforge needs the NeoForge jar built; a Fabric, Quilt or Forge
 # run must not pay for ModDevGradle's NeoForm pipeline.
-_neo_jars := $(if $(filter neoforge,$(LOADER)),$(MOD_JAR_NEO121) $(MOD_JAR_NEO26),)
+_neo_jars := $(if $(filter neoforge,$(LOADER)),$(MOD_JAR_NEO),)
 E2E_KEYS := $(addsuffix $(_cfgvar_suffix),$(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS))))
 
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
@@ -190,8 +189,7 @@ _e2e-fanout:
 	  MOD_JAR_FORGE_LEGACY="$(MOD_JAR_FORGE_LEGACY)" \
 	  MOD_JAR_FORGE_EB7="$(MOD_JAR_FORGE_EB7)" \
 	  MOD_JAR_FORGE_MC116="$(MOD_JAR_FORGE_MC116)" \
-	  MOD_JAR_NEO121="$(MOD_JAR_NEO121)" \
-	  MOD_JAR_NEO26="$(MOD_JAR_NEO26)" \
+	  MOD_JAR_NEO="$(MOD_JAR_NEO)" \
 	  E2E_LOG_DIR="$(E2E_LOG_DIR)" \
 	  E2E_RESULT_DIR="$(E2E_RESULT_DIR)" \
 	  E2E_RUN_ID="$(E2E_RUN_ID)" \
@@ -295,29 +293,26 @@ build-forge-mc116: $(MOD_JAR_FORGE_MC116) ## build the mc116 Forge jar, MC 1.16.
 
 # neoforge/ is a standalone Gradle build (`gradle -p neoforge`), not a subproject
 # -- ModDevGradle and Fabric Loom are not supported in one project, and this way
-# the four invocations above stay exactly as they were. First build of each line
+# the four invocations above stay exactly as they were. First build of a band
 # runs ModDevGradle's NeoForm pipeline (decompile + recompile Minecraft, several
-# minutes); it is cached in GRADLE_USER_HOME afterwards.
-$(MOD_JAR_NEO121): $(MOD_SOURCES) | ci-image
-	@echo "[build] Building NeoForge 21.1 jar (Minecraft 1.21.1)..."
-	@$(call in_ci_image_gradle,gradle -p neoforge build -PneoTarget=121 --no-daemon --quiet)
-
-$(MOD_JAR_NEO26): $(MOD_SOURCES) | ci-image
-	@echo "[build] Building NeoForge 26.2 jar..."
-	@$(call in_ci_image_gradle,gradle -p neoforge build -PneoTarget=26 --no-daemon --quiet)
+# minutes); it is cached in GRADLE_USER_HOME afterwards. Prerequisites are the
+# NeoForge build's own inputs, not MOD_SOURCES: a Fabric-only source change must
+# not trigger the NeoForm pipeline.
+$(MOD_JAR_NEO): $(shell git ls-files neoforge src/main/java .env.version) | ci-image
+	@echo "[build] Building NeoForge band jar (MC 1.20.2-26.2, anchor 20.4.251)..."
+	@$(call in_ci_image_gradle,gradle -p neoforge build -PneoTarget=all --no-daemon --quiet)
 
 .PHONY: build
-build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(MOD_JAR_NEO121) $(MOD_JAR_NEO26) ## build all six jars: four Fabric/Quilt eras + two NeoForge lines (dockerized)
+build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(MOD_JAR_NEO) ## build all five jars: four Fabric/Quilt eras + the NeoForge band (dockerized)
 
-# Per-jar aliases of `build`'s six file targets, so CI can build each jar in
+# Per-jar aliases of `build`'s five file targets, so CI can build each jar in
 # its own parallel job (.NOTPARALLEL only serializes one make process).
-.PHONY: build-121 build-1192 build-114 build-26 build-neo121 build-neo26
+.PHONY: build-121 build-1192 build-114 build-26 build-neo
 build-121: $(MOD_JAR_121) ## build only the 1.21.x jar (dockerized)
 build-1192: $(MOD_JAR_1192) ## build only the 1.19-1.20.2 jar (dockerized)
 build-114: $(MOD_JAR_114) ## build only the 1.14.x jar, MC 1.14-1.18 (dockerized)
 build-26: $(MOD_JAR_26) ## build only the 26.x jar (dockerized)
-build-neo121: $(MOD_JAR_NEO121) ## build only the NeoForge 21.1 jar, MC 1.21.1 (dockerized)
-build-neo26: $(MOD_JAR_NEO26) ## build only the NeoForge 26.2 jar, MC 26.2 (dockerized)
+build-neo: $(MOD_JAR_NEO) ## build only the NeoForge band jar, MC 1.20.2-26.2 (dockerized)
 
 .PHONY: test
 test: ci-image ## offline suite: routing contract + 41 unit tests on all four targets (dockerized)

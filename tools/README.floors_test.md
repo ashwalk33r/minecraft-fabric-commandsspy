@@ -17,7 +17,7 @@ silent change into a test failure a human has to look at.
 ### TestPrintJavaFloors
 
 Runs `bash scripts/e2e-run-one.sh --print-java <version>` for every version
-in the Makefile's default VERSIONS list (24 versions, in
+in the Makefile's default VERSIONS list (25 versions, in
 `defaultVersionFloors`). Fails if the script prints a Java version that
 differs from the hardcoded expectation.
 
@@ -35,8 +35,9 @@ row's name. It also fails if any expected floor row is missing from the
 generator's output.
 
 Coverage rows (runs on newer Java than the floor) are intentionally not
-checked. Forge rows are also not in `floorRows`: `--print-java` is the
-Fabric floor table, and the Forge jars carry their own bytecode floors.
+checked. Forge and NeoForge rows are also not in `floorRows`: `--print-java`
+is the Fabric floor table, the Forge jars carry their own bytecode floors,
+and NeoForge carries its own per-line floors.
 
 ### TestGenMatrixForgeRowsAgreeWithForgeRouting
 
@@ -49,11 +50,22 @@ must route "legacy 0"; `forge_java21` versions route "modern 0" except
 included, made known-good by `e2e-run-one.sh`'s install-time ModLauncher
 8.1.3 drop-in (see docs/version-matrix.md).
 
+### TestGenMatrixNeoRowsAgreeWithNeoRouting
+
+The NeoForge analogue, against `--print-neo-routing` (which prints
+`<neoforge-build> <java-floor>`, or `unsupported 0` for a Minecraft version
+with no NeoForge line). Every version in `neo_java17` / `neo_java21` /
+`neo_java25` must report the floor its row name promises — NeoForge's own
+floors, which differ from the Fabric table (1.20.4 is `--print-java` 21 but a
+NeoForge Java-17 line). All three rows must be non-empty, and there must be
+exactly three; only floors are checked, since the one band jar serves them
+all.
+
 ## How to run
 
 ```sh
 make go-test                 # full suite: go test -race -count=1 -cover ./...
-cd tools && go test -run Floor -v   # just these two tests
+cd tools && go test -run 'Floor|Routing' -v   # just these four tests
 ```
 
 Requires `bash` and a POSIX environment, because the tests shell out to

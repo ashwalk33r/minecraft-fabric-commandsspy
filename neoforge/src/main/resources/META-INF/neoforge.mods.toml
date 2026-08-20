@@ -1,3 +1,7 @@
+# The MODERN metadata file, read by FML 3.x and later — Minecraft 1.20.5 up.
+# Its sibling META-INF/mods.toml carries the same values for FML 1.x/2.x, which
+# read that filename instead and reject the `type` key below. Keep both in step.
+#
 # Templated by neoforge/build.gradle's processResources, the same way
 # fabric.mod.json and quilt.mod.json are by the root build.
 #
@@ -7,8 +11,8 @@
 # pre-load. e2e-proven on NeoForge 21.1.248 — do not "simplify" them away.
 #
 # loaderVersion is the FML version, a THIRD version axis distinct from both the
-# NeoForge and Minecraft versions: FML 4.x ships with NeoForge 21.1.x, FML 11.x
-# with 26.2.x. Hence the per-line fml_range_* properties.
+# NeoForge and Minecraft versions: FML 1.x ships with NeoForge 20.2.x, 4.x with
+# 21.1.x, 11.x with 26.2.x. Hence the per-band fml_range_* properties.
 modLoader = "javafml"
 loaderVersion = "${fml_range}"
 license = "MIT"
@@ -21,9 +25,10 @@ displayName = "Commands Spy"
 description = '''Log commands to server console.'''
 authors = "Ultra_MC"
 
-# Narrow on purpose. NeoForge has no Intermediary-equivalent stable mapping, so
-# one jar covers one Minecraft version; a wider range would only turn a clean
-# "wrong version" message into a runtime crash. See docs/version-matrix.md.
+# The band's measured span. NeoForge has shipped Mojang official names since
+# 20.2 and has no SRG era, so the range is bounded by what booted, not by the
+# mappings. Every edge in it has a row in the boot table; see
+# docs/version-matrix.md.
 [[dependencies.commandsspy]]
 modId = "neoforge"
 type = "required"

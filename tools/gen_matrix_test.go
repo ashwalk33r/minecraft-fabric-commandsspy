@@ -19,6 +19,7 @@ var allKeys = []string{
 	"mc114_java8", "mc114_java17", "mc114_java21",
 	"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
 	"forge_eventbus7_java21", "forge_eventbus7_java25",
+	"neo_java17", "neo_java21", "neo_java25",
 }
 
 func runGrid(t *testing.T, repoRoot, event, bands string) (string, map[string]string) {
@@ -84,9 +85,14 @@ var expected = map[string]map[string]int{
 	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 7},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
 	"forge_eventbus7_java25": {"pull_request": 4, "workflow_dispatch": 4},
+	// NeoForge: one band jar, so floor rows only — band edges plus NeoForge's
+	// own three Java floors plus the 1.21.1 interior. No lean/full split.
+	"neo_java17": {"pull_request": 2, "workflow_dispatch": 2},
+	"neo_java21": {"pull_request": 3, "workflow_dispatch": 3},
+	"neo_java25": {"pull_request": 1, "workflow_dispatch": 1},
 }
 
-const allBands = "t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116"
+const allBands = "t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116 neo"
 
 func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 	_, out := runGrid(t, emptyRoot(t), "pull_request", allBands)
@@ -107,6 +113,12 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		"forge_mc116_java8":      `["1.14.4","1.15.2","1.16.1","1.16.2","1.16.3","1.16.4","1.16.5"]`,
 		"forge_eventbus7_java21": `["1.21.6","1.21.7","1.21.8","1.21.9","1.21.10","1.21.11"]`,
 		"forge_eventbus7_java25": `["26.1","26.1.1","26.1.2","26.2"]`,
+		// NeoForge band-jar legs: edges + the three NeoForge Java floors +
+		// 1.21.1. 1.21.11 and 26.2 are gate canaries on FABRIC only, so they
+		// belong here without duplicating the gate.
+		"neo_java17": `["1.20.2","1.20.4"]`,
+		"neo_java21": `["1.20.6","1.21.1","1.21.11"]`,
+		"neo_java25": `["26.2"]`,
 	} {
 		if out[name] != want {
 			t.Errorf("%s = %s, want %s", name, out[name], want)
@@ -123,7 +135,8 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 			"mc1192_java17", "mc1192_java21",
 			"mc114_java8", "mc114_java17", "mc114_java21",
 			"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
-			"forge_eventbus7_java21", "forge_eventbus7_java25"} {
+			"forge_eventbus7_java21", "forge_eventbus7_java25",
+			"neo_java17", "neo_java21", "neo_java25"} {
 			if got, ok := out[name]; !ok || got != "[]" {
 				t.Errorf("[%s] %s = %q, want the literal []", event, name, got)
 			}
@@ -132,15 +145,16 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 69, "workflow_dispatch": 98}
+	totals := map[string]int{"pull_request": 75, "workflow_dispatch": 104}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
-	// caller job) + forge pairs (single-loader) plus 25 fixed jobs (contracts,
-	// go-quality, lint-java, unit-tests, the 10 build jobs, the Build
-	// aggregator, the 4 e2e-gate canaries, the 2 literal NeoForge jobs, and
-	// the 4 config-behaviors legs (#34, one per loader); on push only 15 of
-	// these run — gate, NeoForge and config-behaviors are event-skipped).
-	// PR: 2*39 + 30 + 25 = 133. Dispatch: 2*68 + 30 + 25 = 191.
-	jobTotals := map[string]int{"pull_request": 133, "workflow_dispatch": 191}
+	// caller job) + forge and neo pairs (single-loader) plus 22 fixed jobs
+	// (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
+	// Build aggregator, the 4 e2e-gate canaries and the 4 config-behaviors
+	// legs (#34, one per loader); on push only 15 of these run — gate and
+	// config-behaviors are event-skipped). The NeoForge legs are generated
+	// now, not fixed jobs.
+	// PR: 2*39 + 30 + 6 + 22 = 136. Dispatch: 2*68 + 30 + 6 + 22 = 194.
+	jobTotals := map[string]int{"pull_request": 136, "workflow_dispatch": 194}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -168,30 +182,32 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 
 // 3. every option combination, both triggers
 // Totals are GATED PAIRS; TOTAL_JOBS is what the workflow spawns: 2 caller
-// jobs per fabric pair (-fabric/-quilt), 1 per forge pair (single-loader),
-// plus 25 fixed jobs (contracts, go-quality, lint-java, unit-tests, the 10
-// build jobs, the Build aggregator, the 4 e2e-gate canaries, the 2
-// literal NeoForge jobs, and the 4 config-behaviors legs (#34, one per
-// loader); on push only 15 of these run — gate, NeoForge and
-// config-behaviors are event-skipped). Run against an empty fixture root so
-// FORCE_BANDS alone decides. The forge-less cases double as proof that
-// absent Forge bands emit [] and add zero pairs. Note the forge-without-
-// forge_legacy case: forge_java21 drops to 2 pairs because 1.20.4 is keyed
-// on the legacy band (it boots the legacy jar).
+// jobs per fabric pair (-fabric/-quilt), 1 per forge or neo pair
+// (single-loader), plus 22 fixed jobs (contracts, go-quality, lint-java,
+// unit-tests, the 10 build jobs, the Build aggregator, the 4 e2e-gate
+// canaries and the 4 config-behaviors legs (#34, one per loader); on push
+// only 15 of these run — gate and config-behaviors are event-skipped). Run
+// against an empty fixture root so FORCE_BANDS alone decides. The forge-less
+// cases double as proof that absent Forge bands emit [] and add zero pairs.
+// Note the forge-without-forge_legacy case: forge_java21 drops to 2 pairs
+// because 1.20.4 is keyed on the legacy band (it boots the legacy jar). The
+// last case adds `neo`: +6 pairs and +6 jobs, NOT +12 — see
+// TestNeoRowsCountAsOneJobEach.
 func TestOptionCombinationTotals(t *testing.T) {
 	cases := []struct {
 		bands              string
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 38, 61, 101},
-		{"t0", 26, 50, 77, 125},
-		{"t0 mc1192", 32, 58, 89, 141},
-		{"t0 mc1192 mc114", 39, 68, 103, 161},
-		{"t0 mc1192 mc114 forge", 41, 70, 105, 163},
-		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 116, 174},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 126, 184},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 133, 191},
+		{"", 18, 38, 58, 98},
+		{"t0", 26, 50, 74, 122},
+		{"t0 mc1192", 32, 58, 86, 138},
+		{"t0 mc1192 mc114", 39, 68, 100, 158},
+		{"t0 mc1192 mc114 forge", 41, 70, 102, 160},
+		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 113, 171},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 123, 181},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 130, 188},
+		{allBands, 75, 104, 136, 194},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -350,6 +366,29 @@ func TestBandDetection(t *testing.T) {
 			}
 		}
 	})
+	t.Run("neo via the band range key in neoforge/gradle.properties", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "neoforge/gradle.properties",
+			"neoforge_version_all=20.4.251\nminecraft_range_neo_all=[1.20.2,26.3)\n")
+		_, out := runGrid(t, root, "pull_request", "")
+		for name, want := range map[string]string{
+			"neo_java17": `["1.20.2","1.20.4"]`,
+			"neo_java21": `["1.20.6","1.21.1","1.21.11"]`,
+			"neo_java25": `["26.2"]`,
+		} {
+			if out[name] != want {
+				t.Errorf("%s = %s, want %s", name, out[name], want)
+			}
+		}
+	})
+	t.Run("no neoforge/gradle.properties yields all NeoForge rows empty", func(t *testing.T) {
+		_, out := runGrid(t, t.TempDir(), "pull_request", "")
+		for _, name := range []string{"neo_java17", "neo_java21", "neo_java25"} {
+			if out[name] != "[]" {
+				t.Errorf("%s = %s, want []", name, out[name])
+			}
+		}
+	})
 	t.Run("no forge/gradle.properties yields all Forge rows empty", func(t *testing.T) {
 		_, out := runGrid(t, t.TempDir(), "pull_request", "")
 		for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
@@ -363,8 +402,10 @@ func TestBandDetection(t *testing.T) {
 
 // push-to-main builds jars but runs ZERO e2e: every band emits the literal
 // [], even when FORCE_BANDS would force it present, and TOTAL_JOBS counts
-// only the 15 fixed jobs that actually run on push (the 4 e2e-gate
-// canaries and 2 NeoForge legs are event-skipped in ci.yml).
+// only the 15 fixed jobs that actually run on push (the 4 e2e-gate canaries
+// and the 4 config-behaviors legs are event-skipped in ci.yml). The NeoForge
+// legs are generated rows now, so push zeroes them like every other band
+// instead of them riding in the fixed count.
 func TestPushEmitsEmptyBands(t *testing.T) {
 	stdout, out := runGrid(t, emptyRoot(t), "push", allBands)
 	for _, name := range allKeys {
@@ -372,10 +413,42 @@ func TestPushEmitsEmptyBands(t *testing.T) {
 			t.Errorf("[push] %s = %q, want the literal []", name, got)
 		}
 	}
-	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=15\n", "EVENT_NAME=push\n"} {
+	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=14\n", "EVENT_NAME=push\n"} {
 		if !strings.Contains(stdout, line) {
 			t.Errorf("[push] summary missing %q", line)
 		}
+	}
+}
+
+// The NeoForge rows are SINGLE-loader: LOADER=neoforge has no quilt twin, so
+// each version is one caller job, not two. The job-count loop keys that off a
+// name prefix, and strings.Contains(name, "forge") would match "neoforge" and
+// silently double these — this test is the tripwire for that regression.
+func TestNeoRowsCountAsOneJobEach(t *testing.T) {
+	jobs := func(bands string) int {
+		stdout, _ := runGrid(t, emptyRoot(t), "pull_request", bands)
+		var n int
+		for _, line := range strings.Split(stdout, "\n") {
+			if _, v, ok := strings.Cut(line, "TOTAL_JOBS="); ok {
+				if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+					t.Fatalf("bad TOTAL_JOBS line %q: %v", line, err)
+				}
+			}
+		}
+		return n
+	}
+	_, out := runGrid(t, emptyRoot(t), "pull_request", "neo")
+	for name, want := range map[string]string{
+		"neo_java17": `["1.20.2","1.20.4"]`,
+		"neo_java21": `["1.20.6","1.21.1","1.21.11"]`,
+		"neo_java25": `["26.2"]`,
+	} {
+		if out[name] != want {
+			t.Errorf("%s = %s, want %s", name, out[name], want)
+		}
+	}
+	if got := jobs("neo") - jobs(""); got != 6 {
+		t.Errorf("the neo band adds %d jobs, want 6 (one per version; 12 means the fabric -quilt doubling leaked in)", got)
 	}
 }
 
@@ -383,6 +456,13 @@ func TestPushEmitsEmptyBands(t *testing.T) {
 func TestSummaryLineFormat(t *testing.T) {
 	stdout, _ := runGrid(t, emptyRoot(t), "pull_request", "")
 	want := "mc26_java25:       1  [\"26.1\"]\n"
+	if !strings.Contains(stdout, want) {
+		t.Errorf("summary missing the %%-16s %%3d line %q in:\n%s", want, stdout)
+	}
+	// The neo_* names must stay inside the %-16s column, or the whole summary
+	// loses its alignment the way the forge_eventbus7_* names already do.
+	stdout, _ = runGrid(t, emptyRoot(t), "pull_request", allBands)
+	want = "neo_java25:        1  [\"26.2\"]\n"
 	if !strings.Contains(stdout, want) {
 		t.Errorf("summary missing the %%-16s %%3d line %q in:\n%s", want, stdout)
 	}
