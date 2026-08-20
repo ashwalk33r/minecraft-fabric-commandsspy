@@ -15,6 +15,11 @@ LOADER="${LOADER:-fabric}"
 FORGE_EXPECT_REFUSED="${FORGE_EXPECT_REFUSED:-0}"
 # Set by scripts/e2e-run-one.sh for LOADER=neoforge only.
 NEOFORGE_VERSION="${NEOFORGE_VERSION:-}"
+# 1 = the config-behaviors leg: seed config/commands-spy.json BEFORE boot and
+# assert blacklist suppression + logArguments:true instead of the default-leg
+# assertions. Its own boot exists because CommandsSpy.CONFIG is a static final
+# read once at class-init, with no reload path. Set by scripts/e2e-run-one.sh.
+E2E_CONFIG_VARIANT="${E2E_CONFIG_VARIANT:-0}"
 
 cd /mc-server
 
@@ -101,6 +106,17 @@ fi
 # test verifies.
 
 echo 'eula=true' > eula.txt
+
+if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
+  echo "[e2e] Config-behaviors leg: seeding config/commands-spy.json before boot"
+  mkdir -p config
+  cat > config/commands-spy.json <<'CFGEOF'
+{
+  "blacklist": ["list"],
+  "logArguments": true
+}
+CFGEOF
+fi
 
 cat > server.properties <<EOF
 enable-rcon=true
@@ -276,6 +292,49 @@ case "$MC_VERSION" in
   *)                       RCON_SOURCE_NAME="Rcon" ;;
 esac
 echo "[e2e] Minecraft $MC_VERSION: expecting RCON command source named '$RCON_SOURCE_NAME'"
+
+# Config-behaviors leg: its own assertions and its own verdict, exactly like the
+# Forge out-of-range guard leg above. The default leg's assertions all assume the
+# stock config; here the config is deliberately non-stock, so they would be wrong.
+if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
+  echo "[e2e] Assertion results (config-behaviors leg: blacklist + logArguments:true):"
+  CFG_FAILURES=""
+  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
+    echo "  [PASS] mod loaded (Loading CommandsSpy)"
+  else
+    echo "  [FAIL] mod not loaded (Loading CommandsSpy)"
+    CFG_FAILURES="${CFG_FAILURES}config-variant-mod-not-loaded,"
+  fi
+  if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then
+    echo "  [FAIL] blacklisted command 'list' was logged"
+    CFG_FAILURES="${CFG_FAILURES}blacklist-not-suppressed,"
+  else
+    echo "  [PASS] blacklisted command 'list' produced no [CommandsSpy] line"
+  fi
+  if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then
+    echo "  [PASS] non-blacklisted RCON command still logged (blacklist is not a global mute)"
+  else
+    echo "  [FAIL] non-blacklisted RCON command not logged"
+    CFG_FAILURES="${CFG_FAILURES}rcon-command-not-logged,"
+  fi
+  if grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then
+    echo "  [PASS] logArguments=true: 'say e2e-args-probe' logged with arguments"
+  else
+    echo "  [FAIL] logArguments=true: arguments not logged"
+    CFG_FAILURES="${CFG_FAILURES}logargs-true-not-logged,"
+  fi
+  if [ "$BOOTED" -ne 1 ]; then
+    CFG_FAILURES="${CFG_FAILURES}boot-failed,"
+  fi
+  echo "[e2e] Full contents of $LOG_FILE:"
+  cat "$LOG_FILE" || true
+  if [ -z "$CFG_FAILURES" ]; then
+    echo "E2E ${MC_VERSION} PASS config-behaviors"
+    exit 0
+  fi
+  echo "E2E ${MC_VERSION} FAIL ${CFG_FAILURES%,}"
+  exit 1
+fi
 
 # Player /list literal: slash included <1.19, bare 'list' on 1.19+.
 # See docs/e2e-harness.md.
