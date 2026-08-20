@@ -15,6 +15,11 @@ LOADER="${LOADER:-fabric}"
 FORGE_EXPECT_REFUSED="${FORGE_EXPECT_REFUSED:-0}"
 # Set by scripts/e2e-run-one.sh for LOADER=neoforge only.
 NEOFORGE_VERSION="${NEOFORGE_VERSION:-}"
+# 1 = the config-behaviors leg: seed config/commands-spy.json BEFORE boot and
+# assert blacklist suppression + logArguments:true instead of the default-leg
+# assertions. Its own boot exists because CommandsSpy.CONFIG is a static final
+# read once at class-init, with no reload path. Set by scripts/e2e-run-one.sh.
+E2E_CONFIG_VARIANT="${E2E_CONFIG_VARIANT:-0}"
 
 cd /mc-server
 
@@ -102,6 +107,17 @@ fi
 
 echo 'eula=true' > eula.txt
 
+if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
+  echo "[e2e] Config-behaviors leg: seeding config/commands-spy.json before boot"
+  mkdir -p config
+  cat > config/commands-spy.json <<'CFGEOF'
+{
+  "blacklist": ["list"],
+  "logArguments": true
+}
+CFGEOF
+fi
+
 cat > server.properties <<EOF
 enable-rcon=true
 rcon.port=${RCON_PORT}
@@ -181,6 +197,20 @@ if [ "$BOOTED" -eq 1 ]; then
   echo "[e2e] Server booted, sending console command..."
   echo "list" > console.in
   sleep 3
+
+  # Non-existing command (MOD.md's opening claim). Whether each loader's hook
+  # fires for a name the dispatcher cannot resolve is per-loader behavior; this
+  # send is what measures it. See UNKNOWN_COMMAND_GAP below.
+  echo "[e2e] Sending non-existing console command..."
+  echo "notacommand" > console.in
+  sleep 2
+
+  # logArguments probe: a command WITH arguments, so the default (false) can be
+  # distinguished from true. `list` has no arguments, so every pre-existing
+  # assertion in this file passes identically under either setting.
+  echo "[e2e] Sending console command with arguments..."
+  echo "say e2e-args-probe" > console.in
+  sleep 2
 
   echo "[e2e] Sending RCON command..."
   /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all || echo "[e2e] ⚠ RCON client failed"
@@ -263,6 +293,49 @@ case "$MC_VERSION" in
 esac
 echo "[e2e] Minecraft $MC_VERSION: expecting RCON command source named '$RCON_SOURCE_NAME'"
 
+# Config-behaviors leg: its own assertions and its own verdict, exactly like the
+# Forge out-of-range guard leg above. The default leg's assertions all assume the
+# stock config; here the config is deliberately non-stock, so they would be wrong.
+if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
+  echo "[e2e] Assertion results (config-behaviors leg: blacklist + logArguments:true):"
+  CFG_FAILURES=""
+  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
+    echo "  [PASS] mod loaded (Loading CommandsSpy)"
+  else
+    echo "  [FAIL] mod not loaded (Loading CommandsSpy)"
+    CFG_FAILURES="${CFG_FAILURES}config-variant-mod-not-loaded,"
+  fi
+  if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then
+    echo "  [FAIL] blacklisted command 'list' was logged"
+    CFG_FAILURES="${CFG_FAILURES}blacklist-not-suppressed,"
+  else
+    echo "  [PASS] blacklisted command 'list' produced no [CommandsSpy] line"
+  fi
+  if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then
+    echo "  [PASS] non-blacklisted RCON command still logged (blacklist is not a global mute)"
+  else
+    echo "  [FAIL] non-blacklisted RCON command not logged"
+    CFG_FAILURES="${CFG_FAILURES}rcon-command-not-logged,"
+  fi
+  if grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then
+    echo "  [PASS] logArguments=true: 'say e2e-args-probe' logged with arguments"
+  else
+    echo "  [FAIL] logArguments=true: arguments not logged"
+    CFG_FAILURES="${CFG_FAILURES}logargs-true-not-logged,"
+  fi
+  if [ "$BOOTED" -ne 1 ]; then
+    CFG_FAILURES="${CFG_FAILURES}boot-failed,"
+  fi
+  echo "[e2e] Full contents of $LOG_FILE:"
+  cat "$LOG_FILE" || true
+  if [ -z "$CFG_FAILURES" ]; then
+    echo "E2E ${MC_VERSION} PASS config-behaviors"
+    exit 0
+  fi
+  echo "E2E ${MC_VERSION} FAIL ${CFG_FAILURES%,}"
+  exit 1
+fi
+
 # Player /list literal: slash included <1.19, bare 'list' on 1.19+.
 # See docs/e2e-harness.md.
 case "$MC_VERSION" in
@@ -305,8 +378,36 @@ if ! grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then
   FAILURES="${FAILURES}console-command-not-logged,"
 fi
 
+# MOD.md's opening claim. Loader-specific: Fabric/Quilt hook
+# CommandManager.execute, Forge/NeoForge their platform's CommandEvent, and
+# whether either fires for a name the dispatcher cannot resolve is exactly what
+# this asserts.
+if ! grep -q '\[CommandsSpy\] \[Server\] notacommand' "$LOG_FILE"; then
+  FAILURES="${FAILURES}unknown-command-not-logged,"
+fi
+
 if ! grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then
   FAILURES="${FAILURES}rcon-command-not-logged,"
+fi
+
+# MOD.md: "On startup, the config file will be created automatically." Asserted
+# on disk, not in the log — the mod prints nothing when it writes the file.
+CONFIG_FILE="config/commands-spy.json"
+if [ -f "$CONFIG_FILE" ] \
+   && grep -q '"blacklist": \[\]' "$CONFIG_FILE" \
+   && grep -q '"logArguments": false' "$CONFIG_FILE"; then
+  :
+else
+  FAILURES="${FAILURES}config-not-autocreated,"
+fi
+
+# logArguments default (false): the bare name is logged and the arguments are
+# NOT. Both halves are needed — the positive alone passes under either setting.
+if ! grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE"; then
+  FAILURES="${FAILURES}logargs-default-bare-name-missing,"
+fi
+if grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then
+  FAILURES="${FAILURES}logargs-default-leaked-arguments,"
 fi
 
 if [ "$PLAYER_PHASE" = "1" ]; then
@@ -334,7 +435,10 @@ if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandE
 elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoForge jar has no mixin (it hooks CommandEvent)";
 elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
 if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
+if grep -q '\[CommandsSpy\] \[Server\] notacommand' "$LOG_FILE"; then echo "  [PASS] non-existing command logged"; else echo "  [FAIL] non-existing command not logged"; fi
 if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
+if [ -f "$CONFIG_FILE" ] && grep -q '"blacklist": \[\]' "$CONFIG_FILE" && grep -q '"logArguments": false' "$CONFIG_FILE"; then echo "  [PASS] config/commands-spy.json auto-created with the documented initial schema"; else echo "  [FAIL] config/commands-spy.json missing or not the documented initial schema"; cat "$CONFIG_FILE" 2>/dev/null || true; fi
+if grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE" && ! grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then echo "  [PASS] logArguments=false (default): 'say e2e-args-probe' logged as bare 'say'"; else echo "  [FAIL] logArguments=false (default) not honoured for 'say e2e-args-probe'"; fi
 if [ "$PLAYER_PHASE" = "1" ]; then
   if grep -q "\[CommandsSpy\] \[Player: e2e_player1\] ${PLAYER_LIST_LITERAL}" "$LOG_FILE"; then echo "  [PASS] player command logged as [Player: e2e_player1] ${PLAYER_LIST_LITERAL}"; else echo "  [FAIL] player command not logged as [Player: e2e_player1] ${PLAYER_LIST_LITERAL}"; fi
   if [ "$PLAYER2_LINES" -eq 0 ]; then echo "  [PASS] cross-check: 0 'Player: e2e_player2' lines (silent player never attributed)"; else echo "  [FAIL] cross-check: ${PLAYER2_LINES} 'Player: e2e_player2' line(s) — silent player got attributed a command"; fi
