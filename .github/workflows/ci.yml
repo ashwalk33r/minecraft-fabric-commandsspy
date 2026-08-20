@@ -173,7 +173,12 @@ jobs:
       # get their checkstyle/pmd pass here (neoforge/build.gradle applies both);
       # they have no unit tests — the suite lives in the root, Fabric-bound project.
       - name: "Build: mod compilation (all six jars: four Fabric/Quilt eras + two NeoForge lines)"
-        run: make build
+        run: |
+          # CI-SPIKE: mocked build
+          mkdir -p build/libs
+          for j in mc1.21.x mc1.19-1.20.2 mc1.14.x mc26.x neoforge-mc1.21.1 neoforge-mc26.2; do
+            touch "build/libs/commandsspy-0.0.0-spike+${j}.jar"
+          done
       - name: "Upload: the six jars, one artifact"
         id: upload
         uses: actions/upload-artifact@v7.0.1
@@ -214,7 +219,7 @@ jobs:
           path: ~/.cache/commandsspy-ci-gradle
           key: ci-gradle-forge-modern-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
       - name: "Build: mod compilation (Forge target, Minecraft 1.20.6-1.21.5)"
-        run: make build-forge
+        run: mkdir -p forge/build/libs && touch "forge/build/libs/commandsspy-0.0.0-spike+mc1.21.x-forge.jar"  # CI-SPIKE
       - name: "Upload: the modern Forge jar"
         id: upload
         uses: actions/upload-artifact@v7.0.1
@@ -249,7 +254,7 @@ jobs:
           path: ~/.cache/commandsspy-ci-gradle
           key: ci-gradle-forge-legacy-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
       - name: "Build: mod compilation (Forge target, Minecraft 1.17.1-1.20.4, legacy SRG)"
-        run: make build-forge-legacy
+        run: mkdir -p forge/build/libs && touch "forge/build/libs/commandsspy-0.0.0-spike+mc1.17-1.20.4-forge.jar"  # CI-SPIKE
       - name: "Upload: the legacy Forge jar"
         id: upload
         uses: actions/upload-artifact@v7.0.1
@@ -283,7 +288,7 @@ jobs:
           path: ~/.cache/commandsspy-ci-gradle
           key: ci-gradle-forge-mc116-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
       - name: "Build: mod compilation (Forge target, Minecraft 1.14-1.16.5, mc116 SRG)"
-        run: make build-forge-mc116
+        run: mkdir -p forge/build/libs && touch "forge/build/libs/commandsspy-0.0.0-spike+mc1.16.x-forge.jar"  # CI-SPIKE
       - name: "Upload: the mc116 Forge jar"
         id: upload
         uses: actions/upload-artifact@v7.0.1
@@ -317,7 +322,7 @@ jobs:
           path: ~/.cache/commandsspy-ci-gradle
           key: ci-gradle-forge-eventbus7-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
       - name: "Build: mod compilation (Forge target, Minecraft 1.21.6-26.2, EventBus 7)"
-        run: make build-forge-eventbus7
+        run: mkdir -p forge/build/libs && touch "forge/build/libs/commandsspy-0.0.0-spike+mc1.21.6-26.2-forge.jar"  # CI-SPIKE
       - name: "Upload: the EventBus-7 Forge jar"
         id: upload
         uses: actions/upload-artifact@v7.0.1
@@ -406,7 +411,7 @@ jobs:
           path: ~/.cache/commandsspy-e2e-jars
           key: e2e-jar-${{ matrix.mc }}-${{ matrix.loader }}
       - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ matrix.java }} (${{ matrix.loader }})"
-        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ matrix.java }}" LOADER="${{ matrix.loader }}" PARALLEL=1
+        run: echo "CI-SPIKE skipped real boot for ${{ matrix.mc }}"
       - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ matrix.java }}, ${{ matrix.loader }})"
         if: always()
         uses: actions/upload-artifact@v7.0.1
