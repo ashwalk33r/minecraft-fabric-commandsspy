@@ -323,6 +323,26 @@ if ! grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; the
   FAILURES="${FAILURES}rcon-command-not-logged,"
 fi
 
+# MOD.md: "On startup, the config file will be created automatically." Asserted
+# on disk, not in the log — the mod prints nothing when it writes the file.
+CONFIG_FILE="config/commands-spy.json"
+if [ -f "$CONFIG_FILE" ] \
+   && grep -q '"blacklist": \[\]' "$CONFIG_FILE" \
+   && grep -q '"logArguments": false' "$CONFIG_FILE"; then
+  :
+else
+  FAILURES="${FAILURES}config-not-autocreated,"
+fi
+
+# logArguments default (false): the bare name is logged and the arguments are
+# NOT. Both halves are needed — the positive alone passes under either setting.
+if ! grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE"; then
+  FAILURES="${FAILURES}logargs-default-bare-name-missing,"
+fi
+if grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then
+  FAILURES="${FAILURES}logargs-default-leaked-arguments,"
+fi
+
 if [ "$PLAYER_PHASE" = "1" ]; then
   if ! grep -q "\[CommandsSpy\] \[Player: e2e_player1\] ${PLAYER_LIST_LITERAL}" "$LOG_FILE"; then
     FAILURES="${FAILURES}player-command-not-logged,"
@@ -349,6 +369,8 @@ elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoFor
 elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
 if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
 if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
+if [ -f "$CONFIG_FILE" ] && grep -q '"blacklist": \[\]' "$CONFIG_FILE" && grep -q '"logArguments": false' "$CONFIG_FILE"; then echo "  [PASS] config/commands-spy.json auto-created with the documented initial schema"; else echo "  [FAIL] config/commands-spy.json missing or not the documented initial schema"; cat "$CONFIG_FILE" 2>/dev/null || true; fi
+if grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE" && ! grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then echo "  [PASS] logArguments=false (default): 'say e2e-args-probe' logged as bare 'say'"; else echo "  [FAIL] logArguments=false (default) not honoured for 'say e2e-args-probe'"; fi
 if [ "$PLAYER_PHASE" = "1" ]; then
   if grep -q "\[CommandsSpy\] \[Player: e2e_player1\] ${PLAYER_LIST_LITERAL}" "$LOG_FILE"; then echo "  [PASS] player command logged as [Player: e2e_player1] ${PLAYER_LIST_LITERAL}"; else echo "  [FAIL] player command not logged as [Player: e2e_player1] ${PLAYER_LIST_LITERAL}"; fi
   if [ "$PLAYER2_LINES" -eq 0 ]; then echo "  [PASS] cross-check: 0 'Player: e2e_player2' lines (silent player never attributed)"; else echo "  [FAIL] cross-check: ${PLAYER2_LINES} 'Player: e2e_player2' line(s) — silent player got attributed a command"; fi
