@@ -1,44 +1,33 @@
-# End-to-end Docker tests: boot a real Fabric server per {Minecraft, Java} pair.
-# A band whose list is '[]' skips its stage jobs at zero cost.
-# See docs/ci.md.
-name: E2E
+# Single CI pipeline: cheap gates -> five parallel jar builds -> e2e fleet.
+# Replaces the old gradle.yml (Build) + e2e.yml pair, which duplicated
+# `make test` and `make build` on every PR. See docs/ci.md.
+name: CI
 
 on:
+  push:
+    branches: [ "main" ]
   pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  # `make test` runs all four targets inside the pinned Dockerfile.ci image —
-  # no runner-installed JDK needed for any target, including the 26.x one.
-  unit-tests:
-    name: "Unit tests"
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: gradle/actions/wrapper-validation@v6.3.0
-      - name: "Log in to GHCR"
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
-      - name: "Test: unit tests (all four Minecraft targets)"
-        run: make test
+env:
+  # '|' falls back to direct on network errors too; ',' only on 404.
+  GOPROXY: 'https://proxy.golang.org|direct'
 
-  build-jars:
-    name: "Build jars for e2e"
+jobs:
+  # ---------------------------------------------------------------- Tier 0
+  # Cheap parallel gates, cheapest steps first inside each job.
+
+  contracts:
+    name: "Contracts: action pins, wrapper, e2e grid, jar routing"
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    timeout-minutes: 10
     outputs:
       mc121_java21: ${{ steps.grid.outputs.mc121_java21 }}
       mc121_java25: ${{ steps.grid.outputs.mc121_java25 }}
@@ -65,14 +54,9 @@ jobs:
       - uses: gradle/actions/wrapper-validation@v6.3.0
       - name: "Log in to GHCR"
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/commandsspy-ci-gradle
-          key: ci-gradle-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
-      # Same cache the go-tools job (gradle.yml) keeps warm: ci-tools-test/
-      # ci-gen-matrix compile tools/ from scratch without it (measured: ~51s
-      # cold vs ~4.6s warm combined for these two steps).
-      - uses: actions/cache@v6.1.0
+      # Restore-only: go-quality owns the ci-go cache save (its `make ci`
+      # populates the richer cache; a save race here would clobber it).
+      - uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.cache/commandsspy-ci-go
           key: ci-go-${{ hashFiles('Dockerfile.ci', 'tools/go.mod') }}
@@ -81,116 +65,307 @@ jobs:
       # Probes the real version->jar routing paths so cross-file drift fails here, not in a boot.
       - name: "Assert the version->jar routing contract"
         run: scripts/test-jar-routing.sh
-      - name: "Build: mod compilation (all six jars: four Fabric/Quilt eras + two NeoForge lines)"
-        run: make build
-      - name: "Build: upload the mod artifact (Minecraft 1.21.x target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-mc1.21.x-${{ github.sha }}
-          path: build/libs/commandsspy-*+mc1.21.x.jar
-          if-no-files-found: error
-          retention-days: 1
-      - name: "Build: upload the mod artifact (Minecraft 1.19-1.20.2 target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-mc1.19-1.20.2-${{ github.sha }}
-          path: build/libs/commandsspy-*+mc1.19-1.20.2.jar
-          if-no-files-found: error
-          retention-days: 1
-      - name: "Build: upload the mod artifact (Minecraft 1.14-1.18 target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-mc1.14.x-${{ github.sha }}
-          path: build/libs/commandsspy-*+mc1.14.x.jar
-          if-no-files-found: error
-          retention-days: 1
-      - name: "Build: upload the mod artifact (Minecraft 26.x target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-mc26.x-${{ github.sha }}
-          path: build/libs/commandsspy-*+mc26.x.jar
-          if-no-files-found: error
-          retention-days: 1
-      # Separate step and separate Gradle build (forge/), on purpose: ForgeGradle
-      # never touches the four shipping jars above. First build decompiles
-      # Minecraft, so it is slow when the ci-gradle cache misses.
-      - name: "Build: mod compilation (Forge target, Minecraft 1.20.6-1.21.5)"
-        run: make build-forge
-      - name: "Build: upload the mod artifact (Forge target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-forge-${{ github.sha }}
-          path: forge/build/libs/commandsspy-*+mc1.21.x-forge.jar
-          if-no-files-found: error
-          retention-days: 1
-      # Legacy Forge target: SRG-reobfuscated jar, issue #28 task 1. Same
-      # forge/ Gradle build, -PforgeTarget=legacy; decompiles Minecraft again
-      # (a different compile target than the modern step above), so it is its
-      # own slow-on-cache-miss step too.
-      - name: "Build: mod compilation (Forge target, Minecraft 1.17.1-1.20.4, legacy SRG)"
-        run: make build-forge-legacy
-      - name: "Build: upload the mod artifact (Forge legacy target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-forge-legacy-${{ github.sha }}
-          path: forge/build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar
-          if-no-files-found: error
-          retention-days: 1
-      # mc116 Forge target: issue #30, SRG-reobfuscated jar with its own
-      # entrypoint source for the pre-1.17 era. Same forge/ Gradle build,
-      # -PforgeTarget=mc116;
-      # decompiles Minecraft against its own 1.16.5 compile target, so it is
-      # its own slow-on-cache-miss step too.
-      - name: "Build: mod compilation (Forge target, Minecraft 1.14-1.16.5, mc116 SRG)"
-        run: make build-forge-mc116
-      - name: "Build: upload the mod artifact (Forge mc116 target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-forge-mc116-${{ github.sha }}
-          path: forge/build/libs/commandsspy-*+mc1.16.x-forge.jar
-          if-no-files-found: error
-          retention-days: 1
-      # EventBus-7 Forge target: issue #32 task 2, for Forge 56+ (Minecraft
-      # 1.21.6-26.2). Same forge/ Gradle build, -PforgeTarget=eventbus7;
-      # decompiles Minecraft against its own 1.21.8 compile target, so it is
-      # its own slow-on-cache-miss step too.
-      - name: "Build: mod compilation (Forge target, Minecraft 1.21.6-26.2, EventBus 7)"
-        run: make build-forge-eventbus7
-      - name: "Build: upload the mod artifact (Forge EventBus-7 target)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-forge-eventbus7-${{ github.sha }}
-          path: forge/build/libs/commandsspy-*+mc1.21.6-26.2-forge.jar
-          if-no-files-found: error
-          retention-days: 1
-      - name: "Build: upload the mod artifact (NeoForge 21.1, Minecraft 1.21.1)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-neoforge-mc1.21.1-${{ github.sha }}
-          path: build/libs/commandsspy-*+neoforge-mc1.21.1.jar
-          if-no-files-found: error
-          retention-days: 1
-      - name: "Build: upload the mod artifact (NeoForge 26.2, Minecraft 26.2)"
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: commandsspy-jar-neoforge-mc26.2-${{ github.sha }}
-          path: build/libs/commandsspy-*+neoforge-mc26.2.jar
-          if-no-files-found: error
-          retention-days: 1
-
       # THE single source of stage definitions. Lean grid on pull_request,
-      # full cross-product on workflow_dispatch; absent bands emit [].
+      # full cross-product on workflow_dispatch, all-empty on push; absent
+      # bands emit [].
       - name: "Compute the gated version lists for this trigger"
         id: grid
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: make ci-gen-matrix
 
-  # Stage 1. Two canary pairs — the newest version of each Minecraft line on its
-  # floor JVM — run before the wide fan-out, so a broken build costs 2 jobs.
+  # Fast quality gate: exactly `make ci`, which runs the gate INSIDE the
+  # pinned Dockerfile.ci container — the same image, tag, and entry path as
+  # the tracked pre-commit hook. Green locally IS green here, by
+  # construction (tool versions live in Dockerfile.ci, not on this runner).
+  go-quality:
+    name: "Quality gate: Go/shell lint+vet+build+test (make ci)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-go
+          key: ci-go-${{ hashFiles('Dockerfile.ci', 'tools/go.mod') }}
+      - name: "Quality gate: make ci"
+        run: make ci
+
+  lint-java:
+    name: "Static analysis: checkstyle + PMD (make lint-java)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-lint-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      - name: "Static code analysis: checkstyle + PMD"
+        run: make lint-java
+
+  # `make test` runs all four targets inside the pinned Dockerfile.ci image —
+  # no runner-installed JDK needed for any target, including the 26.x one.
+  unit-tests:
+    name: "Unit tests: routing contract + all four Minecraft targets (make test)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      # Own key on purpose: five build jobs + this one restoring/saving a
+      # single shared key would race the save and lose four of the caches.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-test-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      - name: "Test: unit tests (all four Minecraft targets)"
+        run: make test
+      - name: "Test: upload the test reports"
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-test-reports-${{ github.sha }}
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ---------------------------------------------------------------- Tier 1
+  # Five parallel build jobs. Per-target gradle cache keys on purpose: a
+  # single shared key is saved by whichever job finishes first, so the other
+  # four targets' (ForgeGradle decompile) caches would never persist and
+  # every run would rebuild cold. One multi-path upload step per job; the
+  # follow-up step prints a grouped log with the artifact link.
+
+  build-fabric-neoforge:
+    name: "Build: Fabric/Quilt eras + NeoForge lines, six jars (make build)"
+    runs-on: ubuntu-latest
+    needs: [contracts]
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-fabric-neoforge-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      # `gradle build` = assemble + check, so the NeoForge jars this also builds
+      # get their checkstyle/pmd pass here (neoforge/build.gradle applies both);
+      # they have no unit tests — the suite lives in the root, Fabric-bound project.
+      - name: "Build: mod compilation (all six jars: four Fabric/Quilt eras + two NeoForge lines)"
+        run: make build
+      - name: "Upload: the six jars, one artifact"
+        id: upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-fabric-neoforge-${{ github.sha }}
+          path: |
+            build/libs/commandsspy-*+mc1.21.x.jar
+            build/libs/commandsspy-*+mc1.19-1.20.2.jar
+            build/libs/commandsspy-*+mc1.14.x.jar
+            build/libs/commandsspy-*+mc26.x.jar
+            build/libs/commandsspy-*+neoforge-mc1.21.1.jar
+            build/libs/commandsspy-*+neoforge-mc26.2.jar
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
+      - name: "Artifact links"
+        run: |
+          echo "::group::Uploaded jars -> ${{ steps.upload.outputs.artifact-url }}"
+          ls -l build/libs/commandsspy-*.jar
+          echo "::endgroup::"
+
+  # Separate job and separate Gradle build (forge/), on purpose: ForgeGradle
+  # never touches the six jars above. First build decompiles Minecraft, so
+  # it is slow when its per-target ci-gradle cache misses.
+  build-forge-modern:
+    name: "Build: Forge modern (MC 1.20.6-1.21.5)"
+    runs-on: ubuntu-latest
+    needs: [contracts]
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-forge-modern-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      - name: "Build: mod compilation (Forge target, Minecraft 1.20.6-1.21.5)"
+        run: make build-forge
+      - name: "Upload: the modern Forge jar"
+        id: upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-modern-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.21.x-forge.jar
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
+      - name: "Artifact links"
+        run: |
+          echo "::group::Uploaded jar -> ${{ steps.upload.outputs.artifact-url }}"
+          ls -l forge/build/libs/commandsspy-*.jar
+          echo "::endgroup::"
+
+  # Legacy Forge target: SRG-reobfuscated jar, issue #28 task 1. Same forge/
+  # Gradle build, -PforgeTarget=legacy; decompiles Minecraft against its own
+  # compile target.
+  build-forge-legacy:
+    name: "Build: Forge legacy SRG (MC 1.17.1-1.20.4)"
+    runs-on: ubuntu-latest
+    needs: [contracts]
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-forge-legacy-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      - name: "Build: mod compilation (Forge target, Minecraft 1.17.1-1.20.4, legacy SRG)"
+        run: make build-forge-legacy
+      - name: "Upload: the legacy Forge jar"
+        id: upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-legacy-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
+      - name: "Artifact links"
+        run: |
+          echo "::group::Uploaded jar -> ${{ steps.upload.outputs.artifact-url }}"
+          ls -l forge/build/libs/commandsspy-*.jar
+          echo "::endgroup::"
+
+  # mc116 Forge target: issue #30, SRG-reobfuscated jar with its own
+  # entrypoint source for the pre-1.17 era (-PforgeTarget=mc116).
+  build-forge-mc116:
+    name: "Build: Forge mc116 SRG (MC 1.14-1.16.5)"
+    runs-on: ubuntu-latest
+    needs: [contracts]
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-forge-mc116-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      - name: "Build: mod compilation (Forge target, Minecraft 1.14-1.16.5, mc116 SRG)"
+        run: make build-forge-mc116
+      - name: "Upload: the mc116 Forge jar"
+        id: upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-mc116-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.16.x-forge.jar
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
+      - name: "Artifact links"
+        run: |
+          echo "::group::Uploaded jar -> ${{ steps.upload.outputs.artifact-url }}"
+          ls -l forge/build/libs/commandsspy-*.jar
+          echo "::endgroup::"
+
+  # EventBus-7 Forge target: issue #32 task 2, for Forge 56+ (Minecraft
+  # 1.21.6-26.2), -PforgeTarget=eventbus7.
+  build-forge-eventbus7:
+    name: "Build: Forge EventBus-7 (MC 1.21.6-26.2)"
+    runs-on: ubuntu-latest
+    needs: [contracts]
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-forge-eventbus7-${{ hashFiles('Dockerfile.ci', 'gradle.properties', 'build.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'forge/build.gradle', 'forge/gradle.properties', 'neoforge/build.gradle', 'neoforge/gradle.properties') }}
+      - name: "Build: mod compilation (Forge target, Minecraft 1.21.6-26.2, EventBus 7)"
+        run: make build-forge-eventbus7
+      - name: "Upload: the EventBus-7 Forge jar"
+        id: upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-forge-eventbus7-${{ github.sha }}
+          path: forge/build/libs/commandsspy-*+mc1.21.6-26.2-forge.jar
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
+      - name: "Artifact links"
+        run: |
+          echo "::group::Uploaded jar -> ${{ steps.upload.outputs.artifact-url }}"
+          ls -l forge/build/libs/commandsspy-*.jar
+          echo "::endgroup::"
+
+  # ------------------------------------------------------------ Aggregator
+  # Named `Build` on purpose: main's branch protection requires the status
+  # check context "Build" (previously gradle.yml's job). This job is the one
+  # required check; it fails on ANY failed, cancelled, or skipped dependency
+  # (skipped too, so a future `if:` on a build job cannot vacuously green
+  # the required check).
+  build-summary:
+    name: "Build"
+    runs-on: ubuntu-latest
+    needs: [contracts, go-quality, lint-java, unit-tests,
+            build-fabric-neoforge, build-forge-modern, build-forge-legacy,
+            build-forge-mc116, build-forge-eventbus7]
+    if: ${{ always() }}
+    timeout-minutes: 5
+    steps:
+      - name: "Fail unless every dependency succeeded"
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "dependency results: $results"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "ERROR: a required job ended '$r'" >&2
+              exit 1
+            fi
+          done
+
   e2e-gate:
     name: "e2e-gate (${{ matrix.mc }}, java ${{ matrix.java }}, ${{ matrix.loader }})"
-    needs: [build-jars, unit-tests]
+    needs: [contracts, go-quality, lint-java, unit-tests,
+            build-fabric-neoforge, build-forge-modern, build-forge-legacy,
+            build-forge-mc116, build-forge-eventbus7]
+    # No status function here, so GitHub prepends the implicit success()
+    # check — push-to-main builds jars but runs no e2e.
+    if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -250,7 +425,7 @@ jobs:
   # the same Actions-UI reason the Quilt variants are (see the stage comment
   # below): separate, independently-collapsible groups.
   #
-  # `versions:` is a literal list, not a build-jars output: NeoForge has no
+  # `versions:` is a literal list, not a contracts output: NeoForge has no
   # Intermediary-equivalent stable mapping, so one jar covers exactly one
   # Minecraft version and the whole loader is two versions wide. Generating
   # a two-element list would buy nothing — tools/gen_matrix.go stays untouched.
@@ -258,10 +433,11 @@ jobs:
   # need: a literal list is never empty.
   e2e-neoforge-mc1211-java21:
     name: "e2e 1.21.1 java 21 (neoforge)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
-          && !contains(needs.*.result, 'failure') }}
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
     permissions:
       contents: read
       packages: write
@@ -274,10 +450,11 @@ jobs:
 
   e2e-neoforge-mc262-java25:
     name: "e2e 26.2 java 25 (neoforge)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
-          && !contains(needs.*.result, 'failure') }}
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
     permissions:
       contents: read
       packages: write
@@ -301,34 +478,34 @@ jobs:
   # band's `needs:` lists both loader variants of every prior band.
   e2e-mc121-java21-fabric:
     name: "e2e 1.21.x java 21 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc121_java21 != '[]' }}
+          && needs.contracts.outputs.mc121_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc121_java21 }}
+      versions: ${{ needs.contracts.outputs.mc121_java21 }}
       java: "21"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc121-java21-quilt:
     name: "e2e 1.21.x java 21 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc121_java21 != '[]' }}
+          && needs.contracts.outputs.mc121_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc121_java21 }}
+      versions: ${{ needs.contracts.outputs.mc121_java21 }}
       java: "21"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
@@ -339,51 +516,51 @@ jobs:
   # Forge stage — floor rows only, no coverage rows, by design.
   e2e-forge-java21:
     name: "e2e 1.20.6-1.21.5 java 21 (forge)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.forge_java21 != '[]' }}
+          && needs.contracts.outputs.forge_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.forge_java21 }}
+      versions: ${{ needs.contracts.outputs.forge_java21 }}
       java: "21"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
   e2e-forge-legacy-java17:
     name: "e2e 1.17.1-1.20.4 java 17 (forge legacy)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.forge_legacy_java17 != '[]' }}
+          && needs.contracts.outputs.forge_legacy_java17 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.forge_legacy_java17 }}
+      versions: ${{ needs.contracts.outputs.forge_legacy_java17 }}
       java: "17"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
   e2e-forge-mc116-java8:
     name: "e2e 1.14.4-1.16.5 java 8 (forge mc116)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.forge_mc116_java8 != '[]' }}
+          && needs.contracts.outputs.forge_mc116_java8 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.forge_mc116_java8 }}
+      versions: ${{ needs.contracts.outputs.forge_mc116_java8 }}
       java: "8"
       loader: "forge"
       jar-sha: ${{ github.sha }}
@@ -393,177 +570,177 @@ jobs:
   # version, like the legacy band — rationale in tools/gen_matrix.go.
   e2e-forge-eventbus7-java21:
     name: "e2e 1.21.6-1.21.11 java 21 (forge eventbus7)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.forge_eventbus7_java21 != '[]' }}
+          && needs.contracts.outputs.forge_eventbus7_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.forge_eventbus7_java21 }}
+      versions: ${{ needs.contracts.outputs.forge_eventbus7_java21 }}
       java: "21"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
   e2e-forge-eventbus7-java25:
     name: "e2e 26.1-26.2 java 25 (forge eventbus7)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.forge_eventbus7_java25 != '[]' }}
+          && needs.contracts.outputs.forge_eventbus7_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.forge_eventbus7_java25 }}
+      versions: ${{ needs.contracts.outputs.forge_eventbus7_java25 }}
       java: "25"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
   e2e-mc121-java25-fabric:
     name: "e2e 1.21.x java 25 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc121_java25 != '[]' }}
+          && needs.contracts.outputs.mc121_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc121_java25 }}
+      versions: ${{ needs.contracts.outputs.mc121_java25 }}
       java: "25"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc121-java25-quilt:
     name: "e2e 1.21.x java 25 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc121_java25 != '[]' }}
+          && needs.contracts.outputs.mc121_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc121_java25 }}
+      versions: ${{ needs.contracts.outputs.mc121_java25 }}
       java: "25"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-mc121-java26-fabric:
     name: "e2e 1.21.x java 26 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc121_java26 != '[]' }}
+          && needs.contracts.outputs.mc121_java26 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc121_java26 }}
+      versions: ${{ needs.contracts.outputs.mc121_java26 }}
       java: "26"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc121-java26-quilt:
     name: "e2e 1.21.x java 26 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc121_java26 != '[]' }}
+          && needs.contracts.outputs.mc121_java26 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc121_java26 }}
+      versions: ${{ needs.contracts.outputs.mc121_java26 }}
       java: "26"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-mc26-java25-fabric:
     name: "e2e 26.x java 25 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc26_java25 != '[]' }}
+          && needs.contracts.outputs.mc26_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc26_java25 }}
+      versions: ${{ needs.contracts.outputs.mc26_java25 }}
       java: "25"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc26-java25-quilt:
     name: "e2e 26.x java 25 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc26_java25 != '[]' }}
+          && needs.contracts.outputs.mc26_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc26_java25 }}
+      versions: ${{ needs.contracts.outputs.mc26_java25 }}
       java: "25"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-mc26-java26-fabric:
     name: "e2e 26.x java 26 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc26_java26 != '[]' }}
+          && needs.contracts.outputs.mc26_java26 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc26_java26 }}
+      versions: ${{ needs.contracts.outputs.mc26_java26 }}
       java: "26"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc26-java26-quilt:
     name: "e2e 26.x java 26 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate]
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc26_java26 != '[]' }}
+          && needs.contracts.outputs.mc26_java26 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc26_java26 }}
+      versions: ${{ needs.contracts.outputs.mc26_java26 }}
       java: "26"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-t0-java21-fabric:
     name: "e2e 1.20.3-1.20.6 java 21 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -572,20 +749,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.t0_java21 != '[]' }}
+          && needs.contracts.outputs.t0_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.t0_java21 }}
+      versions: ${{ needs.contracts.outputs.t0_java21 }}
       java: "21"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-t0-java21-quilt:
     name: "e2e 1.20.3-1.20.6 java 21 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -594,20 +771,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.t0_java21 != '[]' }}
+          && needs.contracts.outputs.t0_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.t0_java21 }}
+      versions: ${{ needs.contracts.outputs.t0_java21 }}
       java: "21"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-t0-java25-fabric:
     name: "e2e 1.20.3-1.20.6 java 25 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -616,20 +793,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.t0_java25 != '[]' }}
+          && needs.contracts.outputs.t0_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.t0_java25 }}
+      versions: ${{ needs.contracts.outputs.t0_java25 }}
       java: "25"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-t0-java25-quilt:
     name: "e2e 1.20.3-1.20.6 java 25 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -638,20 +815,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.t0_java25 != '[]' }}
+          && needs.contracts.outputs.t0_java25 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.t0_java25 }}
+      versions: ${{ needs.contracts.outputs.t0_java25 }}
       java: "25"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-t0-java26-fabric:
     name: "e2e 1.20.3-1.20.6 java 26 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -660,20 +837,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.t0_java26 != '[]' }}
+          && needs.contracts.outputs.t0_java26 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.t0_java26 }}
+      versions: ${{ needs.contracts.outputs.t0_java26 }}
       java: "26"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-t0-java26-quilt:
     name: "e2e 1.20.3-1.20.6 java 26 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -682,20 +859,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.t0_java26 != '[]' }}
+          && needs.contracts.outputs.t0_java26 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.t0_java26 }}
+      versions: ${{ needs.contracts.outputs.t0_java26 }}
       java: "26"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-mc1192-java17-fabric:
     name: "e2e 1.19-1.20.2 java 17 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -707,20 +884,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc1192_java17 != '[]' }}
+          && needs.contracts.outputs.mc1192_java17 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc1192_java17 }}
+      versions: ${{ needs.contracts.outputs.mc1192_java17 }}
       java: "17"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc1192-java17-quilt:
     name: "e2e 1.19-1.20.2 java 17 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -732,20 +909,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc1192_java17 != '[]' }}
+          && needs.contracts.outputs.mc1192_java17 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc1192_java17 }}
+      versions: ${{ needs.contracts.outputs.mc1192_java17 }}
       java: "17"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-mc1192-java21-fabric:
     name: "e2e 1.19-1.20.2 java 21 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -757,20 +934,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc1192_java21 != '[]' }}
+          && needs.contracts.outputs.mc1192_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc1192_java21 }}
+      versions: ${{ needs.contracts.outputs.mc1192_java21 }}
       java: "21"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc1192-java21-quilt:
     name: "e2e 1.19-1.20.2 java 21 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -782,13 +959,13 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc1192_java21 != '[]' }}
+          && needs.contracts.outputs.mc1192_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc1192_java21 }}
+      versions: ${{ needs.contracts.outputs.mc1192_java21 }}
       java: "21"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
@@ -796,7 +973,7 @@ jobs:
   # Stage 5 — mc114 band: 1.14-1.18, split floors (1.14-1.16.x java 8, 1.17-1.18 java 17).
   e2e-mc114-java8-fabric:
     name: "e2e 1.14-1.16 java 8 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -810,20 +987,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc114_java8 != '[]' }}
+          && needs.contracts.outputs.mc114_java8 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc114_java8 }}
+      versions: ${{ needs.contracts.outputs.mc114_java8 }}
       java: "8"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc114-java8-quilt:
     name: "e2e 1.14-1.16 java 8 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -837,20 +1014,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc114_java8 != '[]' }}
+          && needs.contracts.outputs.mc114_java8 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc114_java8 }}
+      versions: ${{ needs.contracts.outputs.mc114_java8 }}
       java: "8"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-mc114-java17-fabric:
     name: "e2e 1.17-1.18 java 17 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -864,20 +1041,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc114_java17 != '[]' }}
+          && needs.contracts.outputs.mc114_java17 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc114_java17 }}
+      versions: ${{ needs.contracts.outputs.mc114_java17 }}
       java: "17"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc114-java17-quilt:
     name: "e2e 1.17-1.18 java 17 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -891,20 +1068,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc114_java17 != '[]' }}
+          && needs.contracts.outputs.mc114_java17 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc114_java17 }}
+      versions: ${{ needs.contracts.outputs.mc114_java17 }}
       java: "17"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
   e2e-mc114-java21-fabric:
     name: "e2e 1.14-1.18 java 21 (fabric)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -918,20 +1095,20 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc114_java21 != '[]' }}
+          && needs.contracts.outputs.mc114_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc114_java21 }}
+      versions: ${{ needs.contracts.outputs.mc114_java21 }}
       java: "21"
       loader: "fabric"
       jar-sha: ${{ github.sha }}
 
   e2e-mc114-java21-quilt:
     name: "e2e 1.14-1.18 java 21 (quilt)"
-    needs: [build-jars, unit-tests, e2e-gate,
+    needs: [contracts, build-fabric-neoforge, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -945,13 +1122,13 @@ jobs:
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
-          && needs.build-jars.outputs.mc114_java21 != '[]' }}
+          && needs.contracts.outputs.mc114_java21 != '[]' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/e2e-stage.yml
     with:
-      versions: ${{ needs.build-jars.outputs.mc114_java21 }}
+      versions: ${{ needs.contracts.outputs.mc114_java21 }}
       java: "21"
       loader: "quilt"
       jar-sha: ${{ github.sha }}
