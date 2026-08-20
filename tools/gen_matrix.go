@@ -262,12 +262,12 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// GATED_PAIRS counts submatrix legs (versions x rows) once each.
 	// TOTAL_JOBS counts what the workflow actually spawns: every fabric band
 	// key feeds TWO caller jobs in ci.yml (-fabric and -quilt), Forge keys
-	// feed ONE (LOADER=forge has no quilt twin), plus the 16 fixed jobs:
-	// contracts, go-quality, lint-java, unit-tests, the 5 build jobs, the
+	// feed ONE (LOADER=forge has no quilt twin), plus the 21 fixed jobs:
+	// contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
 	// Build aggregator, the 4 e2e-gate canaries (2 versions x fabric/quilt),
 	// and the 2 literal NeoForge jobs (deliberately not generated — see
 	// docs/ci.md "The NeoForge stages"). On push the gate canaries and
-	// NeoForge legs are event-skipped, leaving 10.
+	// NeoForge legs are event-skipped, leaving 15.
 	total, jobs := 0, 0
 	for _, r := range rows {
 		total += r.n
@@ -280,9 +280,9 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	}
 	_, _ = fmt.Fprintf(stdout, "EVENT_NAME=%s\n", eventName)
 	_, _ = fmt.Fprintf(stdout, "GATED_PAIRS=%d\n", total)
-	fixedJobs := 16
+	fixedJobs := 21
 	if push {
-		fixedJobs = 10
+		fixedJobs = 15
 	}
 	_, _ = fmt.Fprintf(stdout, "TOTAL_JOBS=%d\n", jobs+fixedJobs)
 	return nil

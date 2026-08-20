@@ -302,6 +302,16 @@ $(MOD_JAR_NEO26): $(MOD_SOURCES) | ci-image
 .PHONY: build
 build: $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(MOD_JAR_NEO121) $(MOD_JAR_NEO26) ## build all six jars: four Fabric/Quilt eras + two NeoForge lines (dockerized)
 
+# Per-jar aliases of `build`'s six file targets, so CI can build each jar in
+# its own parallel job (.NOTPARALLEL only serializes one make process).
+.PHONY: build-121 build-1192 build-114 build-26 build-neo121 build-neo26
+build-121: $(MOD_JAR_121) ## build only the 1.21.x jar (dockerized)
+build-1192: $(MOD_JAR_1192) ## build only the 1.19-1.20.2 jar (dockerized)
+build-114: $(MOD_JAR_114) ## build only the 1.14.x jar, MC 1.14-1.18 (dockerized)
+build-26: $(MOD_JAR_26) ## build only the 26.x jar (dockerized)
+build-neo121: $(MOD_JAR_NEO121) ## build only the NeoForge 21.1 jar, MC 1.21.1 (dockerized)
+build-neo26: $(MOD_JAR_NEO26) ## build only the NeoForge 26.2 jar, MC 26.2 (dockerized)
+
 .PHONY: test
 test: ci-image ## offline suite: routing contract + 41 unit tests on all four targets (dockerized)
 	@echo "[test] Offline version->jar routing contract..."

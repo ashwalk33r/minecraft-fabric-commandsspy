@@ -82,13 +82,18 @@ an explicit `github.event_name != 'push'` guard.
 Stage order is popularity order: a failure in a widely-run version surfaces
 before runner minutes are spent on the long tail.
 
-1. **Tier 1: five parallel build jobs** (`needs: [contracts]`), replacing
-   the old sequential ~25-minute `build-jars` job: `build-fabric-neoforge`
-   (`make build` — all six jars, four Fabric/Quilt eras + two NeoForge
-   lines), `build-forge-modern`, `build-forge-legacy`, `build-forge-mc116`,
-   and `build-forge-eventbus7` — each Forge target a separate Gradle build
-   (`forge/`), all in the same pinned CI image. One artifact per job:
-   `commandsspy-jar-fabric-neoforge-<sha>` (six jars),
+1. **Tier 1: ten parallel build jobs, one jar each** (`needs: [contracts]`),
+   replacing the old sequential ~25-minute `build-jars` job:
+   `build-mc121x`/`build-mc1192`/`build-mc114x`/`build-mc26x` (per-era
+   `make build-121`/`-1192`/`-114`/`-26`), `build-neo121`/`build-neo26`
+   (the two NeoForge lines), and `build-forge-modern`, `build-forge-legacy`,
+   `build-forge-mc116`, `build-forge-eventbus7` — each Forge target a
+   separate Gradle build (`forge/`), all in the same pinned CI image. One
+   artifact per job:
+   `commandsspy-jar-mc1.21.x-<sha>`, `commandsspy-jar-mc1.19-1.20.2-<sha>`,
+   `commandsspy-jar-mc1.14.x-<sha>`, `commandsspy-jar-mc26.x-<sha>`,
+   `commandsspy-jar-neoforge-mc1.21.1-<sha>`,
+   `commandsspy-jar-neoforge-mc26.2-<sha>`,
    `commandsspy-jar-forge-modern-<sha>`,
    `commandsspy-jar-forge-legacy-<sha>`,
    `commandsspy-jar-forge-mc116-<sha>`,
@@ -177,7 +182,8 @@ empty on push the way the generated bands do. They are not in any other
 job's `needs:`, so the popularity-first band ordering is untouched and they
 run in parallel with it.
 
-`build-fabric-neoforge` uploads all six jars in one artifact;
+Each build job uploads its one jar as its own artifact, and the `Build`
+aggregator prints one grouped log with every artifact link;
 `e2e-stage.yml`'s "Verify prebuilt jars"
 step checks for all six, so a jar that silently failed to build fails the stage
 before a server boots rather than surfacing as `mod-not-loaded` later.
@@ -253,12 +259,12 @@ Job counts per band and trigger are pinned in `tools/gen_matrix_test.go`;
 `tools/floors_test.go` pins the Java floors against
 `scripts/e2e-run-one.sh` (and the Forge rows against
 `--print-forge-routing`). Change the grid → those tests name the new numbers.
-`TOTAL_JOBS = 2 x fabric pairs + forge pairs + 16`: every fabric band key
+`TOTAL_JOBS = 2 x fabric pairs + forge pairs + 21`: every fabric band key
 feeds two caller jobs (`-fabric` and `-quilt`), Forge keys feed one
-(single-loader), and the 16 fixed jobs are contracts, go-quality,
-lint-java, unit-tests, the 5 build jobs, the `Build` aggregator, the 4
+(single-loader), and the 21 fixed jobs are contracts, go-quality,
+lint-java, unit-tests, the 10 build jobs, the `Build` aggregator, the 4
 e2e-gate canaries (2 versions x fabric/quilt), and the 2 literal NeoForge
-jobs. On `pull_request` that is 2x39 + 30 + 16 = 124 jobs; on push only 10
+jobs. On `pull_request` that is 2x39 + 30 + 21 = 129 jobs; on push only 15
 of the fixed jobs run (the gate and NeoForge jobs are event-skipped) and
 every band is empty.
 
