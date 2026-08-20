@@ -158,6 +158,8 @@ carries both `META-INF/mods.toml` (FML 1.x/2.x) and
 `META-INF/neoforge.mods.toml` (FML 3.x+) so each loader major reads the one it
 knows. Minecraft 1.20.2 is NeoForge's own permanent floor; 1.20.1 and below are
 MinecraftForge or nothing. The jar uses NeoForge's native `CommandEvent` rather
-than a mixin — same hook point, same coverage. Evidence, the metadata seams and
-the measured boot table:
+than a mixin — same hook point, same coverage. The range is measured, not
+declared: the one jar boots real NeoForge servers on 1.20.2, 1.20.4, 1.20.6,
+1.21.1, 1.21.11 and 26.2 in CI, spanning FML 1.x through 11.x. Evidence, the
+metadata seams and the measured boot table:
 [docs/version-matrix.md](docs/version-matrix.md) → "NeoForge".

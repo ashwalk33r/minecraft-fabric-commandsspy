@@ -181,7 +181,30 @@ Beta-only Minecraft versions: 1.20.3, 1.20.5, 1.21.2, 1.21.6, 1.21.7, 1.21.9,
 
 | Minecraft | NeoForge | FML | Java | Result |
 |---|---|---|---|---|
-<!-- BOOT-TABLE-PENDING -->
+| 1.20.2 | `20.2.93` | 1.0.16 | 17 | PASS |
+| 1.20.4 | `20.4.251` | 2.0.17 | 17 | PASS (compile anchor) |
+| 1.20.6 | `20.6.139` | 3.0.45 | 21 | PASS |
+| 1.21.1 | `21.1.248` | 4.0.43 | 21 | PASS |
+| 1.21.11 | `21.11.45` | 10.0.36 | 21 | PASS |
+| 26.2 | `26.2.0.64` | 11.0.16 | 25 | PASS |
+
+**One jar, six measured rows, four FML majors apart at the ends.** 1.20.2 runs
+FML 1.0.16, which reads `META-INF/mods.toml` and demands `mandatory`; 26.2 runs
+FML 11.0.16, which reads `META-INF/neoforge.mods.toml` and demands `type`. The
+same jar file satisfies both, which is the dual-metadata trick working exactly
+as the file-format reading predicted. 1.20.6 is the row that mattered most
+beyond the edges: FML 3.x is the major whose dependency-key handling was
+documented but never observed here, and it passes.
+
+Java-17 bytecode was also confirmed to run all the way up: the jar is compiled
+`--release 17` and boots unchanged on the Java-21 (1.20.6-1.21.11) and Java-25
+(26.2) runtimes. Bytecode binds only downward, and this is the measurement of
+that claim rather than an assumption.
+
+Measured on GitHub Actions in the PR for #33 (run 32386749463), full assertion
+set per row. `config/commands-spy.json` behaviors (blacklist suppression,
+`logArguments`, auto-creation) are asserted separately by the
+`CONFIG_VARIANT=1` leg on 1.21.1, which also passes.
 
 ### Hard floors
 

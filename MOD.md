@@ -20,7 +20,8 @@ whole range NeoForge publishes for. There is nothing to pick: unlike Forge, one
 NeoForge jar spans every line. On Minecraft 1.20.1 and below there is no
 NeoForge at all (that era is MinecraftForge — use the Forge jars), and the jar
 declares the range, so a server outside it refuses the mod with a clean
-dependency message instead of logging anything.
+dependency message instead of logging anything. The span is verified by booting
+real NeoForge servers across it, from 1.20.2 up to 26.2.
 
 ## Examples
 Player "Ultra_MC" executing "/gamemode creative" command is logged without arguments in server logs when using config `"logArguments": false` (default):
