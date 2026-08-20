@@ -239,4 +239,60 @@ class CommandsSpyHandleCommandTest {
                 Arrays.asList(LOGGED_LIST_FROM_SERVER, "[CommandsSpy] [Rcon] seed"),
                 appender.messages());
     }
+
+    // --- non-existing commands (MOD.md: "Both existing and non-existing commands
+    // are logged"). The shared core never consults the dispatcher, so an unknown
+    // name must travel exactly the path a known one does. Whether each LOADER's
+    // hook fires at all for an unknown name is e2e's question, not this file's.
+
+    private static final String UNKNOWN = "notacommand";
+    private static final String UNKNOWN_WITH_ARGS = "notacommand foo bar";
+
+    @Test
+    void logsAnUnknownCommandFromTheConsole() {
+        CommandsSpy.handleCommand(UNKNOWN, false, SERVER);
+
+        assertEquals("[CommandsSpy] [Server] notacommand", appender.onlyMessage());
+    }
+
+    @Test
+    void logsAnUnknownCommandFromAPlayer() {
+        CommandsSpy.handleCommand(UNKNOWN, true, STEVE);
+
+        assertEquals("[CommandsSpy] [Player: Steve] notacommand", appender.onlyMessage());
+    }
+
+    @Test
+    void dropsArgumentsOfAnUnknownCommandByDefault() {
+        CommandsSpy.handleCommand(UNKNOWN_WITH_ARGS, false, SERVER);
+
+        assertEquals("[CommandsSpy] [Server] notacommand", appender.onlyMessage());
+    }
+
+    @Test
+    void logsArgumentsOfAnUnknownCommandWhenLogArgumentsIsOn() {
+        CommandsSpy.CONFIG.logArguments = true;
+
+        CommandsSpy.handleCommand(UNKNOWN_WITH_ARGS, false, SERVER);
+
+        assertEquals("[CommandsSpy] [Server] notacommand foo bar", appender.onlyMessage());
+    }
+
+    @Test
+    void suppressesAnUnknownCommandThatIsBlacklisted() {
+        CommandsSpy.CONFIG.blacklist.add(UNKNOWN);
+
+        CommandsSpy.handleCommand(UNKNOWN_WITH_ARGS, false, SERVER);
+
+        assertEquals(Collections.emptyList(), appender.messages());
+    }
+
+    @Test
+    void logsAnUnknownCommandFromRconWhenTheBlacklistHoldsSomethingElse() {
+        CommandsSpy.CONFIG.blacklist.add(SAY);
+
+        CommandsSpy.handleCommand(UNKNOWN, false, RCON);
+
+        assertEquals("[CommandsSpy] [Rcon] notacommand", appender.onlyMessage());
+    }
 }
