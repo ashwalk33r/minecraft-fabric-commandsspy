@@ -246,6 +246,14 @@ check "e2e.yml e2e-neoforge-mc1211-java21 with:" "[1.21.1] 21 neoforge" \
 check "e2e.yml e2e-neoforge-mc262-java25 with:" "[26.2] 25 neoforge" \
       "$(neo_job_with e2e-neoforge-mc262-java25)"
 
+echo "== config-behaviors legs in ci.yml (#34)"
+for loader in fabric quilt forge neoforge; do
+  check "config-behaviors leg present ($loader)" "1" \
+        "$(grep -cE "^  e2e-config-behaviors-${loader}:$" "$gate_yml")"
+done
+check "config-behaviors legs pass config-variant: 1" "4" \
+      "$(grep -cE '^      config-variant: "1"$' "$gate_yml")"
+
 # Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the two
 # `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.
 echo "== e2e-entrypoint.sh era literals (RCON source name, player /list form)"
