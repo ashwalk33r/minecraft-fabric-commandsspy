@@ -13,6 +13,10 @@ LOADER="${LOADER:-fabric}"
 # 1 = this Minecraft version is OUTSIDE the Forge jar's declared range and Forge
 # is expected to refuse the mod. Decided by scripts/e2e-run-one.sh.
 FORGE_EXPECT_REFUSED="${FORGE_EXPECT_REFUSED:-0}"
+# 1 = this Minecraft version is OUTSIDE every declared minecraft range in
+# gradle.properties and the Fabric/Quilt loader is expected to refuse the mod.
+# Decided by scripts/e2e-run-one.sh.
+FABRIC_EXPECT_REFUSED="${FABRIC_EXPECT_REFUSED:-0}"
 # Set by scripts/e2e-run-one.sh for LOADER=neoforge only.
 NEOFORGE_VERSION="${NEOFORGE_VERSION:-}"
 # 1 = the config-behaviors leg: seed config/commands-spy.json BEFORE boot and
@@ -287,6 +291,38 @@ if [ "$FORGE_EXPECT_REFUSED" = "1" ]; then
   cat "$LOG_FILE" || true
   if [ -z "$GUARD_FAILURES" ]; then
     echo "E2E ${MC_VERSION} PASS forge-out-of-range-refused-as-expected"
+    exit 0
+  fi
+  echo "E2E ${MC_VERSION} FAIL ${GUARD_FAILURES%,}"
+  exit 1
+fi
+
+# Fabric/Quilt out-of-range guard leg, the mirror of the Forge block above, and
+# for the same reason: the assertions below all assume the mod RAN, and here the
+# whole point is that it must not have. This is what fails the day one of
+# gradle.properties' four minecraft_range_* values is widened over a version
+# whose mixin cannot apply — commandsspy.mixins.json is "required": true with
+# defaultRequire 1, so that widening is a hard crash at server start, not a
+# no-op. Its own assertions, its own verdict, its own exit.
+if [ "$FABRIC_EXPECT_REFUSED" = "1" ]; then
+  echo "[e2e] Assertion results (Fabric/Quilt out-of-range guard leg):"
+  GUARD_FAILURES=""
+  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
+    echo "  [FAIL] the loader accepted the mod on $MC_VERSION, which is outside every declared minecraft range"
+    GUARD_FAILURES="${GUARD_FAILURES}fabric-out-of-range-not-refused,"
+  else
+    echo "  [PASS] the loader refused the mod: $MC_VERSION is outside every declared minecraft range"
+  fi
+  # Informational only, never gating: the exact wording of a resolution failure
+  # differs across Fabric and Quilt loader versions, and asserting on it would
+  # make the guard brittle for no extra proof.
+  if grep -qE 'Incompatible mod set|requires .*minecraft|unsupported|Mod resolution' "$LOG_FILE"; then
+    echo "  [INFO] loader reported a dependency-resolution failure, as expected"
+  fi
+  echo "[e2e] Full contents of $LOG_FILE:"
+  cat "$LOG_FILE" || true
+  if [ -z "$GUARD_FAILURES" ]; then
+    echo "E2E ${MC_VERSION} PASS fabric-out-of-range-refused-as-expected"
     exit 0
   fi
   echo "E2E ${MC_VERSION} FAIL ${GUARD_FAILURES%,}"
