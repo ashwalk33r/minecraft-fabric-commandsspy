@@ -40,6 +40,7 @@ jobs:
       mc1192_java17: ${{ steps.grid.outputs.mc1192_java17 }}
       mc1192_java21: ${{ steps.grid.outputs.mc1192_java21 }}
       mc114_java8: ${{ steps.grid.outputs.mc114_java8 }}
+      mc114_java8_fabric: ${{ steps.grid.outputs.mc114_java8_fabric }}
       mc114_java17: ${{ steps.grid.outputs.mc114_java17 }}
       mc114_java21: ${{ steps.grid.outputs.mc114_java21 }}
       forge_java21: ${{ steps.grid.outputs.forge_java21 }}
@@ -1380,6 +1381,36 @@ jobs:
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.contracts.outputs.mc114_java8 }}
+      java: "8"
+      loader: "fabric"
+      jar-sha: ${{ github.sha }}
+  # Versions Quilt Loader is not published for, so they get a fabric-only leg
+  # instead of a permanently red quilt twin (issue #69). gen_matrix.go's
+  # quiltUnavailable set decides membership; today that is 1.14, which
+  # meta.quiltmc.org lists no game version for while Fabric boots it green.
+  e2e-mc114-java8-fabric-only:
+    name: "e2e 1.14-1.16 java 8 (fabric, no quilt build)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+            e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
+            e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
+            e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
+            e2e-mc26-java25-fabric, e2e-mc26-java25-quilt,
+            e2e-mc26-java26-fabric, e2e-mc26-java26-quilt,
+            e2e-t0-java21-fabric, e2e-t0-java21-quilt,
+            e2e-t0-java25-fabric, e2e-t0-java25-quilt,
+            e2e-t0-java26-fabric, e2e-t0-java26-quilt,
+            e2e-mc1192-java17-fabric, e2e-mc1192-java17-quilt,
+            e2e-mc1192-java21-fabric, e2e-mc1192-java21-quilt]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.contracts.outputs.mc114_java8_fabric != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.contracts.outputs.mc114_java8_fabric }}
       java: "8"
       loader: "fabric"
       jar-sha: ${{ github.sha }}

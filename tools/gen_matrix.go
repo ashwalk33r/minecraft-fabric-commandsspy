@@ -82,6 +82,16 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 	return false
 }
 
+// Versions the FABRIC jar boots and QUILT LOADER has no build for, so they run
+// as a fabric-only row instead of a permanently red quilt twin (issue #69).
+// Membership is an upstream fact — meta.quiltmc.org/v3/versions/game lists
+// 1.14.4 and not plain 1.14 — which contracts cannot re-probe, because that is
+// a network call and contracts makes none. What IS asserted offline, in
+// gen_matrix_test.go, is that every version named here leaves the shared row
+// and lands in the _fabric one: the set cannot be edited without the grid
+// following it.
+var quiltUnavailable = map[string]bool{"1.14": true}
+
 func ends(list []string) []string {
 	if len(list) < 2 {
 		return list
@@ -480,7 +490,23 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		return strings.HasPrefix(v, "1.14") || strings.HasPrefix(v, "1.15") || strings.HasPrefix(v, "1.16")
 	}
 	mc114 := band("mc114", booted("mc114", full)...)
-	emit("mc114_java8", pick(mc114, mc114j8))
+	// Versions the FABRIC jar boots and the QUILT one cannot. Quilt Loader is
+	// not published for every Minecraft release Fabric supports —
+	// meta.quiltmc.org/v3/versions/game lists 1.14.4 but not plain 1.14 — so
+	// the installer produces no quilt-server-launch.jar and the leg dies with
+	// "Unable to access jarfile" before a server exists. That is a Quilt fact,
+	// not a jar fact: the mc114 jar declares 1.14 and Fabric boots it green.
+	//
+	// The coverage table above is keyed per BAND, which cannot express
+	// "declared, booted on one loader, unbootable on the other" — both caller
+	// jobs read one list. Rather than drop the version (losing real Fabric
+	// coverage) or leave a permanently red Quilt leg, the affected versions
+	// move to a fabric-only row and the shared row keeps the rest. The band's
+	// deep list is unchanged, so deep + excluded == declared still holds; what
+	// changes is which caller job boots which version. See issue #69.
+	mc114j8List := pick(mc114, mc114j8)
+	emit("mc114_java8", pick(mc114j8List, func(v string) bool { return !quiltUnavailable[v] }))
+	emit("mc114_java8_fabric", pick(mc114j8List, func(v string) bool { return quiltUnavailable[v] }))
 	emit("mc114_java17", pick(mc114, func(v string) bool { return !mc114j8(v) }))
 	emitCoverage("mc114_java21", band("mc114", sampledOf("mc114")...))
 
@@ -661,7 +687,13 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		// Prefix test, never strings.Contains(name, "forge"): that matches
 		// "neoforge" too, and a neo_* row named that way would be counted as
 		// a quilt pair the workflow never spawns.
-		if strings.HasPrefix(r.name, "forge") || strings.HasPrefix(r.name, "neo") {
+		// Single-loader rows spawn ONE caller job; every other row spawns two,
+		// a -fabric and a -quilt. Prefix test for forge/neo, never
+		// strings.Contains(name, "forge"): that matches "neoforge" too. The
+		// _fabric suffix marks a row whose versions Quilt cannot boot at all
+		// (issue #69) — it has no quilt twin either.
+		if strings.HasPrefix(r.name, "forge") || strings.HasPrefix(r.name, "neo") ||
+			strings.HasSuffix(r.name, "_fabric") {
 			jobs += r.n
 		} else {
 			jobs += 2 * r.n
