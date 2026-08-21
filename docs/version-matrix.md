@@ -151,7 +151,78 @@ minimum-supported-Minecraft table.
 These versions stay in the Quilt e2e matrix with every functional assertion
 intact. `scripts/e2e-entrypoint.sh` asserts the banner **expected-absent** on
 `LOADER=quilt` below 1.18 (`QUILT_ENTRYPOINT_GAP`), so CI fails and tells us to
-update this section the day upstream fixes it.
+update this section the day upstream fixes it. It separately asserts the preLaunch
+line **present** on every Fabric and Quilt leg (`prelaunch-entrypoint-not-invoked`,
+see below), under its own gate rather than `QUILT_ENTRYPOINT_GAP` — the two are
+independent upstream facts that only happen to share a version boundary today,
+and that flag's failure text tells whoever sees the `main` gap close to delete it.
+
+### The gap is specific to the `main` call site
+
+`preLaunch` is not affected. quilt-loader invokes the
+`net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint` declared in
+`quilt.mod.json` below 1.18 — a different call site from the one the `main` gap
+lives on: Knot runs preLaunch before the game's main class is loaded, not from
+the EntrypointPatch-injected `Hooks.startServer` path.
+
+Both stages were measured in the **same boot**, quilt-loader 0.30.0 on
+Minecraft 1.16.5: `CommandsSpy preLaunch: config loaded.` 25 seconds ahead of
+`Done (17.977s)!`, and the `main` banner never at all. The Fabric legs on the
+same versions are the control — without them a silent Quilt result could not be
+told apart from a broken class or a broken declaration, since Quilt reads
+`quilt.mod.json` and never falls back to `fabric.mod.json` for this jar.
+
+So on Quilt below 1.18 the class is initialised at boot after all, and both
+consequences listed above are the `main` entrypoint's, not the loader's:
+`config/commands-spy.json` is created at startup as MOD.md promises, and a
+malformed config fails at boot rather than on the first command. Only the
+banner itself is still missing. (The config file's boot-time creation is
+asserted; the malformed-config timing follows from the same class
+initialisation but is not separately measured.)
+
+The probe logs its own string precisely because `Loading CommandsSpy` is the
+expected-absent tripwire above — emitting that literal from a working preLaunch
+would report a closed upstream bug that has not closed.
+
+### Why a Quilt-native entrypoint cannot close this gap
+
+Do not re-propose one. The jar already ships a native Quilt entrypoint
+declaration — `quilt.mod.json`'s `quilt_loader.entrypoints.main` names
+`CommandsSpyFabric` — and under quilt-loader 0.30.0, the version the e2e
+harness pins, that declaration is what the loader honours on every version
+where the banner *does* print: once the Quilt plugin returns a load option
+for a jar, the Fabric plugin is never consulted for it. The same class, the
+same `net.fabricmc.api.ModInitializer` interface and the same declaration
+are invoked on 1.18.2 and silently skipped on 1.17.1, out of the same mc114
+jar on the same Java 17 floor. Everything on the entrypoint side is constant
+across the boundary; only the Minecraft version changes, so nothing on the
+entrypoint side can be the cause.
+
+Swapping to `org.quiltmc.loader.api.ModInitializer` is not merely useless, it
+is rejected outright, and it costs a great deal to try: one jar serves both
+loaders, so a Quilt superinterface on the shared entrypoint class becomes a
+`NoClassDefFoundError` under Fabric Loader, and avoiding that needs a
+Quilt-only class plus an `org.quiltmc:quilt-loader` dependency plus the Maven
+repository declaration `build.gradle`'s empty `repositories { }` block does not
+have — to restore one banner line on versions where every command is already
+logged. The defect sits upstream of entrypoint dispatch: the type of an object
+that is never dispatched to cannot decide whether the dispatch happens.
+
+Measured, not merely argued: declaring the same class under `quilt.mod.json`'s
+`pre_launch` stage crashes the server at boot on 1.16.5 with
+`LanguageAdapterException: ... cannot be cast to
+org.quiltmc.loader.api.entrypoint.PreLaunchEntrypoint`. quilt-loader's
+`QuiltLoaderImpl.invokePreLaunch` dispatches `pre_launch` against Quilt's own
+interface and `preLaunch` against Fabric's, and its `main`, `client` and
+`server` stages all require the Fabric types — so a Quilt-typed initializer
+under `main` would be rejected on every version, including the ones where the
+banner works today. The two stages also reach their call sites by different
+routes: `preLaunch` is invoked directly from `Knot.init`, while `main` is
+dispatched from `Hooks.startServer` — which is reached only through the
+`EntrypointPatch` bytecode injection into Minecraft's own main class. So a
+working `preLaunch` below 1.18 shows the entrypoint storage and language-adapter
+layers are sound there; it does not show that the patch fired or that
+`Hooks.startServer` was reached, and those remain the open suspects.
 
 ## NeoForge: one band jar on a different contract
 
