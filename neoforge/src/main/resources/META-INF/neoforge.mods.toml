@@ -28,7 +28,7 @@ authors = "Ultra_MC"
 # The band's measured span. NeoForge has shipped Mojang official names since
 # 20.2 and has no SRG era, so the range is bounded by what booted, not by the
 # mappings. Every edge in it has a row in the boot table; see the wiki,
-# Version-Boundaries-And-Root-Causes -> "Hard floors".
+# Version-Boundaries-And-Root-Causes -> "Measured boot table".
 [[dependencies.commandsspy]]
 modId = "neoforge"
 type = "required"

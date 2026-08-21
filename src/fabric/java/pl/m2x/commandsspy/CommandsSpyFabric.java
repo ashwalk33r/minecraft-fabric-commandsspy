@@ -5,7 +5,8 @@ import net.fabricmc.api.ModInitializer;
 /**
  * Fabric/Quilt entrypoint. The only class in this mod that touches a loader API;
  * everything it needs lives in {@link CommandsSpy}, which stays loader-agnostic so
- * the Forge build can compile the same shared core. See the wiki, Supported-Versions.
+ * the Forge build can compile the same shared core. See the wiki,
+ * Version-Boundaries-And-Root-Causes -> "The loader seam in the shared core".
  */
 public class CommandsSpyFabric implements ModInitializer {
 	@Override

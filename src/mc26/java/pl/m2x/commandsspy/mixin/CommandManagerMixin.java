@@ -13,7 +13,8 @@ import pl.m2x.commandsspy.CommandsSpy;
 
 /**
  * Hook for MC 26.x: the runtime is unobfuscated, so this targets official
- * Mojang names ({@code Commands.performCommand}). See the wiki, Supported-Versions.
+ * Mojang names ({@code Commands.performCommand}). See the wiki,
+ * Version-Boundaries-And-Root-Causes -> "Why the boundaries sit where they do".
  */
 @Mixin(Commands.class)
 public class CommandManagerMixin {

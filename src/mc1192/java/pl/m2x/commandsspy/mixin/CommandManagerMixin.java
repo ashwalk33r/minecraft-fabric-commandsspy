@@ -15,7 +15,7 @@ import pl.m2x.commandsspy.CommandsSpy;
  * Hook for MC 1.19 - 1.20.2: {@code execute} takes {@code ParseResults} and
  * returns {@code int}, so the callback is {@code CallbackInfoReturnable<Integer>}.
  * 1.20.3+ returns {@code void} - see src/mc121 and the wiki,
- * Version-Boundaries-And-Root-Causes.
+ * Version-Boundaries-And-Root-Causes -> "Why the boundaries sit where they do".
  */
 @Mixin(CommandManager.class)
 public class CommandManagerMixin {

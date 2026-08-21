@@ -12,7 +12,8 @@ help: ## list every documented target with its description
 
 
 .PHONY: e2e e2e-ci
-# Default matrix: sampled per band — rationale in the wiki, Supported-Versions.
+# Default matrix: sampled per band — rationale in the wiki, Supported-Versions
+# -> "The Makefile's default version list".
 # Suspect versions can be run explicitly, e.g.:
 #   make e2e VERSIONS="26.1 26.1.1 26.1.2 26.2"
 #   make e2e VERSIONS="1.19.1 1.19.3 1.20 1.14.4 1.15.2"
@@ -39,7 +40,7 @@ MOD_JAR_1192 := build/libs/commandsspy-$(MOD_VERSION)+mc1.19-1.20.2.jar
 MOD_JAR_114 := build/libs/commandsspy-$(MOD_VERSION)+mc1.14.x.jar
 MOD_JAR_26 := build/libs/commandsspy-$(MOD_VERSION)+mc26.x.jar
 # Four Forge jars, built by the separate forge/ Gradle build via -PforgeTarget
-# (default 'modern'). See the wiki, Supported-Versions.
+# (default 'modern'). See the wiki, Supported-Versions -> "Forge".
 MOD_JAR_FORGE := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x-forge.jar
 MOD_JAR_FORGE_LEGACY := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.17-1.20.4-forge.jar
 MOD_JAR_FORGE_EB7 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.6-26.2-forge.jar
@@ -123,7 +124,7 @@ E2E_KEYS := $(addsuffix $(_cfgvar_suffix),$(if $(JAVA),$(addsuffix -java$(JAVA),
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
 # writing the same tag race, so the parallel phase only ever runs containers.
 # Floors come from `scripts/e2e-run-one.sh --print-java` — the table's single
-# home. See the wiki, Supported-Versions.
+# home. See the wiki, Supported-Versions -> "Java floors".
 # Offline probe used by scripts/test-jar-routing.sh: the default list is part
 # of the routing surface.
 .PHONY: print-e2e-versions
