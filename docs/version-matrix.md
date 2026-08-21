@@ -511,7 +511,9 @@ The default `VERSIONS` in the Makefile samples the matrix:
 ## Forge: four jars, narrower by construction
 
 Forge ships **four** jars — mc116, legacy, modern and eventbus7 — one per
-mapping/EventBus era; together they cover Minecraft 1.14 through 26.2. This
+mapping/EventBus era; together they cover Minecraft 1.14 through 26.2 apart from
+two interior holes, 1.17 and 1.20.5, that no jar claims — Forge published no
+server build for either version, which is why the ranges skip them. This
 section covers the `modern` jar, `commandsspy-<ver>+mc1.21.x-forge.jar`, which
 landed first (issue #23 phase 1); the legacy, eventbus7 and mc116 sections
 below cover the other three.

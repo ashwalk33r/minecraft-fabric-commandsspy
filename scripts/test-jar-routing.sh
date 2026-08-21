@@ -174,7 +174,13 @@ FORGE_MC116_VERSIONS="1.14.4 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5"
 FORGE_LEGACY_VERSIONS="1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4"
 FORGE_MODERN_VERSIONS="1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5"
 FORGE_EB7_VERSIONS="1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2"
-FORGE_OUT_OF_RANGE_VERSIONS="1.20.5"
+# The two interior holes between the four declared Forge ranges: 1.17 sits
+# between the mc116 ceiling (<1.17) and the legacy floor (>=1.17.1), 1.20.5
+# between the legacy ceiling (<1.20.5) and the modern floor (>=1.20.6). Both
+# route to the nearest jar, which must refuse them. Offline only — Forge
+# published no server build for either version, so neither can ever be booted;
+# see the guard block in scripts/e2e-entrypoint.sh for what does boot instead.
+FORGE_OUT_OF_RANGE_VERSIONS="1.17 1.20.5"
 for v in $FORGE_MC116_VERSIONS; do
   check "forge-routing $v -> mc116, not refused" "mc116 0"           "$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
 done
@@ -191,6 +197,22 @@ for v in $FORGE_OUT_OF_RANGE_VERSIONS; do
   got="$("$script_dir/e2e-run-one.sh" --print-forge-routing "$v")"
   check "forge-routing $v refused" "1" "${got##* }"
 done
+
+# ...and the four declared ranges the band table above mirrors, exactly as the
+# Fabric block near the bottom of this file pins gradle.properties. The band
+# case statement in e2e-run-one.sh is a hand-maintained copy of these, so the
+# copy proves nothing on its own: without this block, widening a Forge range
+# would silently make the two diverge and every check above would still pass.
+# Pinning the literal strings is deliberately conservative — ANY move fails
+# here, forcing whoever moves one to revisit whether 1.17 and 1.20.5 are still
+# the versions no Forge jar claims.
+echo "== declared Forge minecraft ranges (forge/gradle.properties)"
+forge_gp="$repo_root/forge/gradle.properties"
+forge_declared_range() { sed -n "s/^minecraft_range_$1=//p" "$forge_gp"; }
+check "minecraft_range_mc116"     "[1.14,1.17)"      "$(forge_declared_range mc116)"
+check "minecraft_range_legacy"    "[1.17.1,1.20.5)"  "$(forge_declared_range legacy)"
+check "minecraft_range_modern"    "[1.20.6,1.21.6)"  "$(forge_declared_range modern)"
+check "minecraft_range_eventbus7" "[1.21.6,26.3)"    "$(forge_declared_range eventbus7)"
 
 # Probe 3a-bis — LOADER=fabric/quilt routing and the out-of-range refusal flag.
 # This is the always-on half of the Fabric guard: it fails in `contracts`,

@@ -761,6 +761,43 @@ jobs:
       fabric-expect-refused: "1"
       jar-sha: ${{ github.sha }}
 
+  # The Forge half of the same guard, and the reason it does not look like the
+  # two legs above: Forge's declared ranges leave holes at 1.17 and 1.20.5, but
+  # Forge published no server build for either version — the holes exist BECAUSE
+  # nothing was published there — so a leg on them would die at
+  # no-forge-build-for-version before a container started, not pass. The
+  # bootable form of the same proposition puts the mismatch on the other axis:
+  # forge-refusal-probe hands a version Forge DOES publish for the wrong band's
+  # jar. 1.21.6 with the MODERN jar is the one pairing that isolates the
+  # minecraft range — every band's loader_range mirrors its minecraft_range, so
+  # anywhere else FML rejects on the language provider and never reads the
+  # minecraft dependency; modern's loader_range [50,) is unbounded above, so
+  # here only its <1.21.6 ceiling refuses. That refusal is the only thing
+  # standing between an operator and a mod whose Minecraft calls do not resolve
+  # on the runtime it was handed — and unlike the Fabric case that failure is
+  # quiet, because the mc116/legacy split exists for a class rename
+  # (CommandSource -> CommandSourceStack), so the wrong jar dies with
+  # NoClassDefFoundError at the first command rather than at boot. The offline
+  # half lives in scripts/test-jar-routing.sh, which pins both holes and all
+  # four declared ranges and fails in `contracts` before anything builds.
+  e2e-forge-refusal-guard:
+    name: "e2e out-of-range refusal (forge)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.21.6"]'
+      java: "21"
+      loader: "forge"
+      forge-refusal-probe: "1"
+      jar-sha: ${{ github.sha }}
+
   # Stage 2 — current mainstream (1.21.x, 26.x). The `if:` used on every stage job:
   # !cancelled() lets an upstream SKIP pass through, !contains(...'failure') still
   # stops on a real failure, and != '[]' skips an empty band (GitHub errors on a

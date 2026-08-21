@@ -296,13 +296,16 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// TOTAL_JOBS counts what the workflow actually spawns: every fabric band
 	// key feeds TWO caller jobs in ci.yml (-fabric and -quilt), forge_* and
 	// neo_* keys feed ONE (LOADER=forge/neoforge have no quilt twin), plus the
-	// 24 fixed jobs: contracts, go-quality, lint-java, unit-tests, the 9
+	// 25 fixed jobs: contracts, go-quality, lint-java, unit-tests, the 9
 	// build jobs, the Build aggregator, the 4 e2e-gate canaries (2 versions x
 	// fabric/quilt), the 4 config-behaviors legs (#34, one per loader), and
-	// the 2 out-of-range refusal guards (fabric + quilt on 1.19.0, the version
-	// no declared minecraft_range_* covers). On push the gate canaries, the
-	// config-behaviors legs and the refusal guards are all event-skipped,
-	// leaving 14. The build jobs went 10 -> 9 when the two per-version
+	// the 3 out-of-range refusal guards — fabric + quilt on 1.19.0, the version
+	// no declared minecraft_range_* covers, plus forge on 1.21.6 handed the
+	// modern jar, whose declared range excludes it (#56; Forge published no
+	// build for either of its own holes, 1.17 and 1.20.5, so the mismatch has
+	// to be made on the jar axis rather than the version axis). On push the
+	// gate canaries, the config-behaviors legs and the refusal guards are all
+	// event-skipped, leaving 14. The build jobs went 10 -> 9 when the two per-version
 	// NeoForge jobs collapsed into the one band job, and the 2 literal
 	// NeoForge e2e jobs this count used to carry are generated rows now.
 	total, jobs := 0, 0
@@ -320,7 +323,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	}
 	_, _ = fmt.Fprintf(stdout, "EVENT_NAME=%s\n", eventName)
 	_, _ = fmt.Fprintf(stdout, "GATED_PAIRS=%d\n", total)
-	fixedJobs := 24
+	fixedJobs := 25
 	if push {
 		fixedJobs = 14
 	}

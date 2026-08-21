@@ -72,12 +72,18 @@ esac
 # of the mods.toml metadata gate a real Forge run enforces separately).
 # 1.14/1.15 route to mc116 (the nearest jar, whose declared range they sit
 # just below) so their refusal guard probes the jar a user would actually try.
+# FORGE_JAR_BAND itself is pre-settable, in the same spirit as the
+# FORGE_KNOWN_GOOD_* overrides: the out-of-range refusal guard leg (#56) is a
+# deliberate jar/version mismatch, and setting the band is how it hands a
+# version the OTHER band's jar without perturbing that version's normal row.
+if [ -z "${FORGE_JAR_BAND:-}" ]; then
 case "$VERSION" in
   1.14*|1.15*|1.16*)                                   FORGE_JAR_BAND=mc116 ;;
   1.17*|1.18*|1.19*|1.20|1.20.1|1.20.2|1.20.3|1.20.4)  FORGE_JAR_BAND=legacy ;;
   1.21.6|1.21.7|1.21.8|1.21.9|1.21.10|1.21.11|26*)     FORGE_JAR_BAND=eventbus7 ;;
   *)                                                   FORGE_JAR_BAND=modern ;;
 esac
+fi
 # 1.16.4's whole Forge 35.x line predates the ModLauncher fix for the JDK
 # 8u321+ ManifestEntryVerifier change and cannot boot a STOCK current JDK 8
 # (mod-independent) — the harness makes it known-good by dropping the fixed

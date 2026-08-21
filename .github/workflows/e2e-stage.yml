@@ -31,6 +31,11 @@ on:
         required: false
         default: "0"
         type: string
+      forge-refusal-probe:
+        description: "1 = the Forge out-of-range guard leg: route this version to the MODERN jar regardless of its own band, so mods.toml's minecraft range (ceiling <1.21.6) is what refuses it. LOADER=forge only"
+        required: false
+        default: "0"
+        type: string
 
 jobs:
   run:
@@ -105,14 +110,14 @@ jobs:
           path: ~/.cache/commandsspy-e2e-jars
           key: e2e-jar-${{ matrix.mc }}-${{ inputs.loader }}
 
-      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ inputs.java }} (${{ inputs.loader }}${{ inputs.config-variant == '1' && ', config behaviors' || '' }}${{ inputs.fabric-expect-refused == '1' && ', out-of-range guard' || '' }})"
-        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ inputs.java }}" LOADER="${{ inputs.loader }}" CONFIG_VARIANT="${{ inputs.config-variant }}" FABRIC_EXPECT_REFUSED="${{ inputs.fabric-expect-refused }}" PARALLEL=1
+      - name: "E2E: Minecraft ${{ matrix.mc }} on Java ${{ inputs.java }} (${{ inputs.loader }}${{ inputs.config-variant == '1' && ', config behaviors' || '' }}${{ (inputs.fabric-expect-refused == '1' || inputs.forge-refusal-probe == '1') && ', out-of-range guard' || '' }})"
+        run: make e2e-ci VERSIONS="${{ matrix.mc }}" JAVA="${{ inputs.java }}" LOADER="${{ inputs.loader }}" CONFIG_VARIANT="${{ inputs.config-variant }}" FABRIC_EXPECT_REFUSED="${{ inputs.fabric-expect-refused }}" FORGE_REFUSAL_PROBE="${{ inputs.forge-refusal-probe }}" PARALLEL=1
 
       - name: "Upload e2e logs (Minecraft ${{ matrix.mc }}, Java ${{ inputs.java }}, ${{ inputs.loader }})"
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: e2e-logs-mc${{ matrix.mc }}-java${{ inputs.java }}-${{ inputs.loader }}${{ inputs.config-variant == '1' && '-cfgvar' || '' }}${{ inputs.fabric-expect-refused == '1' && '-refusal' || '' }}-${{ inputs.jar-sha }}
+          name: e2e-logs-mc${{ matrix.mc }}-java${{ inputs.java }}-${{ inputs.loader }}${{ inputs.config-variant == '1' && '-cfgvar' || '' }}${{ (inputs.fabric-expect-refused == '1' || inputs.forge-refusal-probe == '1') && '-refusal' || '' }}-${{ inputs.jar-sha }}
           path: |
             build/e2e-logs/
             build/e2e-results/
