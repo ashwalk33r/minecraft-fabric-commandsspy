@@ -3,7 +3,7 @@ A mod to log commands to the server console. Both existing and non-existing comm
 
 ## Installation
 Simply place the mod into the mods directory of your server, and it will start monitoring executed commands.
-On startup, the config file will be created automatically. (One exception: on Quilt Loader below Minecraft 1.18, Quilt never invokes the mod's entrypoint, so the file is written on the first command the server runs instead — see the [Compatibility](./README.md#compatibility) notes.)
+On startup, the config file will be created automatically.
 Pick the matching jar for your server from the Compatibility tables in the [README](./README.md#compatibility). The mod has no dependencies beyond your loader — Fabric API/QSL is NOT required, and neither is any Forge/NeoForge library.
 
 The same jar runs on Fabric Loader and Quilt Loader; when publishing a release, tag both loaders on Modrinth/CurseForge — the jar's `quilt.mod.json` makes the Quilt tag an accurate claim, not just a Fabric-compat assumption.

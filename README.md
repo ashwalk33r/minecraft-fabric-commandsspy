@@ -129,11 +129,10 @@ the identical assertion set. CI samples each range rather than enumerating it
 On Quilt below Minecraft 1.18 the startup banner never prints — Quilt Loader
 does not invoke the mod's entrypoint on dedicated servers there. Logging is
 unaffected: the mixin still applies, so console, RCON and player commands are
-captured exactly as on Fabric. One thing beyond the banner does move, though:
-`config/commands-spy.json` is written on the first executed command instead of
-at startup, so a server booted and stopped without a command having run has no
-config file to edit yet. Why the boundaries sit where they do, and the detail
-on that gap: [docs/version-matrix.md](docs/version-matrix.md).
+captured exactly as on Fabric. The missing banner is the only symptom: the
+config file is still written at startup, which the e2e harness asserts before
+any command runs. Why the boundaries sit where they do, and the detail on that
+gap: [docs/version-matrix.md](docs/version-matrix.md).
 
 ### Forge
 
