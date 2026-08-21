@@ -92,8 +92,10 @@ var expected = map[string]map[string]int{
 	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 7},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
 	"forge_eventbus7_java25": {"pull_request": 4, "workflow_dispatch": 4},
-	// The forward-JVM row (#58): the modern band's ceiling and the eventbus7
-	// band's ceiling, both on the newest JVM the harness has.
+	// The forward-JVM row (#58): the eventbus7 band's ceiling alone, on the
+	// newest JVM the harness has. The modern band is deliberately absent — its
+	// bootstrap cannot boot above its java-21 floor at all (issue #66), so
+	// there is no forward JVM to probe for it.
 	"forge_java26": {"pull_request": 1, "workflow_dispatch": 1},
 	// NeoForge: one band jar, so floor rows — band edges plus NeoForge's own
 	// three Java floors plus the 1.21.1 interior — and the one forward-JVM
@@ -125,7 +127,8 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		"forge_mc116_java8":      `["1.14.4","1.15.2","1.16.1","1.16.2","1.16.3","1.16.4","1.16.5"]`,
 		"forge_eventbus7_java21": `["1.21.6","1.21.7","1.21.8","1.21.9","1.21.10","1.21.11"]`,
 		"forge_eventbus7_java25": `["26.1","26.1.1","26.1.2","26.2"]`,
-		// The forward-JVM row: modern ceiling + eventbus7 ceiling on java 26.
+		// The forward-JVM row: the eventbus7 band's ceiling on java 26. Not the
+		// modern band's — it has no above-floor JVM (issue #66).
 		"forge_java26": `["26.2"]`,
 		// NeoForge band-jar legs: edges + the three NeoForge Java floors +
 		// 1.21.1. 1.21.11 and 26.2 are gate canaries on FABRIC only, so they
