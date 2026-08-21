@@ -203,6 +203,14 @@ if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
     # to --add-modules. The claim stays "java 21 only", never "<24".
     # FORGE_MODERN_JAVA_CEILING overrides the ceiling for re-probing the band
     # after an upstream Forge bootstrap fix, without editing this file.
+    # Keyed on FORGE_JAR_BAND, not on VERSION -- but the JDK-24 module failure
+    # is really a property of the SERVER's bootstrap, i.e. of the Minecraft
+    # version. The two coincide on every path CI or the Makefile can reach
+    # (FORGE_JAR_BAND is derived from VERSION, right above); they diverge only
+    # if someone hand-forces FORGE_JAR_BAND=legacy on a modern-band version,
+    # which also sets FORGE_EXPECT_REFUSED=1 and so skips this whole arm.
+    # Deliberate: keying on VERSION here would duplicate the range the band
+    # table above already carries.
     modern) FLOOR_JAVA=21; CEILING_JAVA="${FORGE_MODERN_JAVA_CEILING:-21}" ;;
   esac
 fi

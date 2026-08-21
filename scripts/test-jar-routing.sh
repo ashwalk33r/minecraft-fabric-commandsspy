@@ -467,10 +467,15 @@ for spec in "e2e-forge-java21 forge_java21 21" \
   check "$job skips an empty band" "1" \
         "$(ci_job_block "$job" | grep -cF "needs.contracts.outputs.$key != '[]'")"
 done
-# The modern band's leg is the java-21 one and there is no other: e2e-forge-
-# java21 references its own band key twice (the if-guard and versions:), so
-# 2 is the correct baseline. Any future leg pointing forge_java21's band at a
-# newer JVM adds a third reference and has to delete this line.
+# This pins the six GENERATED Forge legs only -- there are other, static
+# Forge legs in ci.yml (e2e-config-behaviors-forge, the e2e-gate canary) that
+# are not derived from the band tables above and so are out of scope here;
+# see the config-behaviors block below for the one of those that matters to
+# issue #66. Among the six, forge_java21 is the only key touching the modern
+# band, and it references its own band key twice (the if-guard and
+# versions:), so 2 is the correct baseline. Any future GENERATED leg pointing
+# forge_java21's band at a newer JVM adds a third reference and has to delete
+# this line.
 check "forge_java21 referenced exactly twice in ci.yml (if-guard + versions)" "2" \
       "$(grep -c 'needs.contracts.outputs.forge_java21' "$gate_yml")"
 
@@ -481,6 +486,17 @@ for loader in fabric quilt forge neoforge; do
 done
 check "config-behaviors legs pass config-variant: 1" "4" \
       "$(grep -cE '^      config-variant: "1"$' "$gate_yml")"
+# e2e-config-behaviors-forge is a static leg, not generated from the band
+# tables above, and it boots 1.21.1 -- the MODERN band. Nothing pinned its
+# java: before this; unpinned, a bump above 21 here would silently defeat
+# issue #66's ceiling (the run would still be refused at runtime, but nothing
+# would catch the regression before ci.yml ever ran).
+check "e2e-config-behaviors-forge versions" "'[\"1.21.1\"]'" \
+      "$(ci_job_field "e2e-config-behaviors-forge" versions)"
+check "e2e-config-behaviors-forge java"     '"21"' \
+      "$(ci_job_field "e2e-config-behaviors-forge" java)"
+check "e2e-config-behaviors-forge loader"   '"forge"' \
+      "$(ci_job_field "e2e-config-behaviors-forge" loader)"
 
 # The boot half of the out-of-range guard. Pinned here so deleting a leg from
 # ci.yml fails `contracts` loudly instead of quietly removing the only place
