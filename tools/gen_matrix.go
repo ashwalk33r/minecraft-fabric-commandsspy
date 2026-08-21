@@ -13,7 +13,9 @@ package main
 //     gate, never duplicated here — that is a FABRIC-loader rule; the gate
 //     runs those two versions on fabric/quilt only, so the forge and neoforge
 //     rows below list them without duplicating anything.
-//   - Forge and NeoForge bands emit floor rows only (see those stages below).
+//   - Forge and NeoForge bands emit floor rows plus ONE forward-JVM row each
+//     (forge_java26, neo_fwd_java25) — not the Fabric per-band coverage-row
+//     pattern; see those stages below for why the two are different things.
 //     A new such band is one range-key case in bandPresent, one emit here, and
 //     one uses: block in e2e.yml.
 //
@@ -203,14 +205,36 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	emit("mc114_java17", mc114j17)
 	emitCoverage("mc114_java21", mc114)
 
-	// FORGE — floor rows ONLY, no coverage rows, no lean/full split. The Forge
-	// jars' own bytecode floors are what matter (legacy = java-17 uniform
-	// across 1.17.1-1.20.4, modern = 21), NOT the per-MC-version fabric era
-	// table above; forward-JVM coverage rows (the mc114_java17/mc114_java21
-	// pattern) are a Fabric-jar concept and must not be reused with
-	// LOADER=forge (scripts/e2e-run-one.sh overrides FLOOR_JAVA for
-	// LOADER=forge for exactly this reason). This section is the single home
-	// of the Forge leg rationale (e2e.yml's jobs just point here):
+	// FORGE — floor rows plus ONE forward-JVM row, no lean/full split. The
+	// Forge jars' own bytecode floors are what decide the floor rows (legacy =
+	// java-17 uniform across 1.17.1-1.20.4, modern = 21), NOT the
+	// per-MC-version fabric era table above; scripts/e2e-run-one.sh overrides
+	// FLOOR_JAVA for LOADER=forge for exactly that reason, and the Fabric
+	// per-band coverage-row pattern (mc114_java17 -> mc114_java21, the whole
+	// band re-run one JVM up) still must not be reused here: it samples a jar
+	// family whose bytecode floor varies per Minecraft version, which is not
+	// how the Forge jars are cut.
+	//
+	// What DOES carry over is the reason those Fabric rows exist. Bytecode
+	// binds downward, so a java-21 jar on java 26 cannot fail to LINK — but
+	// bytecode is not the only thing a newer JVM changes, and this project has
+	// the scar to prove it: Forge 35.x cannot boot a stock current JDK 8 at
+	// all, because 8u321+ changed an internal
+	// sun.security.util.ManifestEntryVerifier constructor that 2020-era
+	// ModLauncher links against (docs/version-matrix.md; e2e-run-one.sh cures
+	// it with an install-time ModLauncher 8.1.3 drop-in). That is a
+	// forward-JVM failure with no mod and no bytecode in it, and it landed on
+	// the loader that had no forward-JVM row. So each mapping/EventBus era
+	// gets an above-floor data point instead of the two that used to fall out
+	// incidentally (1.20.4's legacy jar riding the java-21 job, and
+	// eventbus7's java-21 bytecode on the 26.x era's java 25): forge_java26
+	// boots 26.2 on the newest JVM the harness has. The MODERN band gets
+	// none, at any JVM: its bootstrap cannot resolve modules on java 24+
+	// (issue #66; see the row's comment below). One row, not a per-band pair,
+	// because what is being probed is the JVM.
+	//
+	// This section is the single home of the Forge leg rationale (e2e.yml's
+	// jobs just point here):
 	//
 	// Modern band: edges plus one interior line. 1.20.6 and 1.21.5 are the
 	// measured floor and ceiling, and the mapping regime and EventBus
@@ -272,8 +296,30 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"))
 	emit("forge_eventbus7_java25", band("forge_eventbus7",
 		"26.1", "26.1.1", "26.1.2", "26.2"))
+	// The forward-JVM row (issue #58). One version: 26.2, the eventbus7 band's
+	// ceiling, on the newest JVM the harness has. The modern band has no
+	// java-26 probe and cannot have one at any JVM: its bootstrap has ZERO
+	// forward headroom above its java-21 floor. nimbus-jose-jwt's module-info
+	// requires jdk.crypto.ec, a JDK module REMOVED in java 24 (EC folded into
+	// java.base), so net.minecraftforge.bootstrap 2.1.7 dies in module
+	// resolution before Minecraft starts — "FindException: Module
+	// jdk.crypto.ec not found, required by com.nimbusds.jose.jwt" — measured
+	// on java 25 and java 26 alike, and 21/25/26 is the whole ladder above its
+	// floor (issue #66, docs/version-matrix.md). That is upstream Forge's bug,
+	// not this mod's, and it is a compatibility fact for the version matrix
+	// rather than a leg: an inverted guard could never change state and would
+	// have to match a third party's stack trace to mean anything, since "the
+	// boot failed" goes green for any failure, including one this mod causes.
+	// What this row proves is the other half — the eventbus7 bootstrap does
+	// not have the problem. Keyed on the band so a tree without it emits an
+	// empty row instead of a leg with no jar. The plain forge_javaN name
+	// stands because Forge row names have never promised a floor (forge_java21
+	// already carries 1.20.4, whose Forge floor is 17); floors_test checks the
+	// row against --print-forge-routing.
+	emit("forge_java26", band("forge_eventbus7", "26.2"))
 
-	// NEOFORGE — floor rows only, like Forge, but for a different reason: ONE
+	// NEOFORGE — floor rows plus one forward-JVM row, like Forge, but the
+	// floor rows are floor rows for a different reason than Forge's: ONE
 	// band jar covers 1.20.2-26.2 (measured; the metadata seam — FML 1.x/2.x
 	// mods.toml+mandatory vs FML 3.x+ neoforge.mods.toml+type — is handled by
 	// shipping both files in the one jar). So these legs are NOT the
@@ -287,6 +333,20 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	emit("neo_java17", band("neo", "1.20.2", "1.20.4"))
 	emit("neo_java21", band("neo", "1.20.6", "1.21.1", "1.21.11"))
 	emit("neo_java25", band("neo", "26.2"))
+	// The forward-JVM row (issue #58): before it, EVERY NeoForge leg ran at
+	// exactly its floor, so the one band jar's "java-17 bytecode boots
+	// anywhere in 17/21/25" claim was asserted only at the three floors — and
+	// the ManifestEntryVerifier precedent above says the JVM can break a
+	// loader with no bytecode question involved. 1.21.1 is the interior line
+	// to spend it on: modpack-dominant, and its NeoForge floor is 21, so
+	// running it on 25 is a real step up. Deliberately NOT folded into
+	// neo_java25 and deliberately not named neo_java*: floors_test pins every
+	// neo_java<N> row to "every version's NeoForge floor is exactly N", which
+	// is the tripwire for an upstream floor moving, and folding would have
+	// meant weakening that equality on all three floor rows to buy one job
+	// block of YAML. This row gets the opposite assertion instead — its
+	// versions must sit strictly BELOW java 25, or it is not forward coverage.
+	emit("neo_fwd_java25", band("neo", "1.21.1"))
 
 	if emitErr != nil {
 		return emitErr

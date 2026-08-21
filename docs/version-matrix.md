@@ -782,6 +782,33 @@ jar without one, measured live; later Forges only warn. `make
 build-forge-mc116` builds it; `MOD_JAR_FORGE_MC116` in the Makefile names it
 (`commandsspy-<ver>+mc1.16.x-forge.jar`).
 
+### The same shape, at the other end: Forge modern on Java 24+
+
+Forge's **modern** band (1.20.6-1.21.5) is **Java 21 only** — it has no
+forward-JVM headroom at all, for a JVM-internals reason with no mod in it. `net.minecraftforge.bootstrap` 2.1.7
+fails module resolution because `com.nimbusds.jose.jwt` requires
+`jdk.crypto.ec`, a JDK module **removed in Java 24** (its EC support folded
+into `java.base`):
+
+```
+java.lang.module.FindException: Module jdk.crypto.ec not found, required by com.nimbusds.jose.jwt
+	at net.minecraftforge.bootstrap@2.1.7/net.minecraftforge.bootstrap.Bootstrap.moduleMain(Bootstrap.java:166)
+```
+
+| Minecraft / band | JVM | Result |
+|---|---|---|
+| 1.21.5, modern | Java 21 (the band's floor) | **PASS** — the `forge_java21` leg |
+| 1.21.5, modern | Java 25 | crash: `FindException: Module jdk.crypto.ec not found`, before Minecraft starts |
+| 1.21.5, modern | Java 26 | same crash, twice in CI |
+| 26.2, eventbus7 | Java 26 | **PASS** — upstream fixed it in a later Forge generation |
+
+So the modern band has **no forward-JVM headroom above its floor at all**, and
+CI's forward-JVM probe (`forge_java26`) covers the eventbus7 band only. Unlike
+the 1.16.4 case there is no install-time cure: you cannot `--add-modules` a
+module the JDK no longer contains. Tracked as issue #66. **Not yet reported
+upstream** — the fix belongs to MinecraftForge, in dropping or shading that
+module requirement.
+
 ### Gate 1: the 1.16.4 crash is the JDK's `ManifestEntryVerifier` change
 
 Reproduced, root-caused, and bounded — not fixable from this repo's jars,

@@ -112,28 +112,42 @@ before runner minutes are spent on the long tail.
    two canary pairs (1.21.11/java21, 26.2/java25), each
    crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
    four canary jobs run. `fail-fast` is off so all four always report.
-3. **Forge stages** — five caller jobs (`e2e-forge-java21`,
+3. **Forge stages** — six caller jobs (`e2e-forge-java21`,
    `e2e-forge-legacy-java17`, `e2e-forge-mc116-java8`,
-   `e2e-forge-eventbus7-java21`, `e2e-forge-eventbus7-java25`), each a normal
+   `e2e-forge-eventbus7-java21`, `e2e-forge-eventbus7-java25`,
+   `e2e-forge-java26`), each a normal
    `e2e-stage.yml` call with `loader: forge` reading its version list from a
    `tools/gen_matrix.go` output of the same name, like the Fabric/Quilt
-   bands. Forge's loader-awareness in the generator is floor rows only — no
-   newest-Java coverage rows, no lean/full split: the Forge jars' own
+   bands. Forge's loader-awareness in the generator is floor rows plus **one**
+   forward-JVM row, and no lean/full split: the Forge jars' own
    bytecode floors (mc116 = 8, legacy = 17 uniform, modern/eventbus7 = 21,
    with eventbus7's 26.x half running 25 because those servers require it)
-   are what matter, and the forward-JVM coverage-row pattern is a Fabric-jar
-   concept that must not be reused with `loader: forge`. Per-leg rationale
+   are what decide the floor rows, and the Fabric per-band coverage-row
+   pattern — a whole band re-run one JVM up — still must not be reused with
+   `loader: forge`. What `forge_java26` adds is narrower: one above-floor
+   boot for the eventbus7 era (26.2 on java 26). The modern band gets none:
+   its bootstrap cannot start on **java 24+** at all (measured boot-failed on
+   both 25 and 26), because `nimbus-jose-jwt` requires `jdk.crypto.ec`,
+   removed from the JDK in 24 (issue #66) — the same class of JVM-internals
+   breakage as the
+   `ManifestEntryVerifier` case, found by the row added to look for it.
+   Bytecode binds downward but JVM *internals* do not: Forge 35.x cannot boot
+   a stock current JDK 8 at all (issue #58, the `ManifestEntryVerifier` case
+   in [version-matrix.md](version-matrix.md)). Per-leg rationale
    (why the modern band is the two edges plus 1.21.1 and nothing else, why
    the legacy/mc116/eventbus7 bands list every measured version, how 1.16.4
    rides the mc116 leg via the install-time ModLauncher drop-in) lives in
    the generator's Forge stage comment.
-4. **NeoForge stages** — three jobs (`e2e-neoforge-java17`,
-   `e2e-neoforge-java21`, `e2e-neoforge-java25`), each a normal
+4. **NeoForge stages** — four jobs (`e2e-neoforge-java17`,
+   `e2e-neoforge-java21`, `e2e-neoforge-java25`, `e2e-neoforge-fwd-java25`),
+   each a normal
    `e2e-stage.yml` call with `loader: neoforge` reading its version list from
    the `tools/gen_matrix.go` output of the same name. One band jar serves all
-   three; they split on NeoForge's **own** Java floor (17 up to line 20.4, 21
-   through 21.11, 25 on 26.x — `scripts/e2e-run-one.sh --print-neo-routing`,
-   not the Fabric era table). See "The NeoForge stages" below.
+   four; the first three split on NeoForge's **own** Java floor (17 up to line
+   20.4, 21 through 21.11, 25 on 26.x — `scripts/e2e-run-one.sh
+   --print-neo-routing`, not the Fabric era table) and the fourth boots
+   1.21.1, a java-21 line, on java 25 — the loader's only above-floor leg
+   (#58). See "The NeoForge stages" below.
 5. **Band stages** — one reusable submatrix call (`e2e-stage.yml`) per
    {band, Java, loader} triple: mc121, mc26, T0 (1.20.3-1.20.6), mc1192,
    mc114. Loader is a `uses:`-time input, not a dimension inside
@@ -175,13 +189,20 @@ differs, sourced from `tools/gen_matrix.go`.
 ## The NeoForge stages
 
 The legs are **generated**, exactly like the Forge bands: `neo_java17`,
-`neo_java21` and `neo_java25` come out of `tools/gen_matrix.go`, keyed on the
+`neo_java21`, `neo_java25` and `neo_fwd_java25` come out of
+`tools/gen_matrix.go`, keyed on the
 `minecraft_range_neo_all` line in `neoforge/gradle.properties`, and each leg is
-an ordinary `e2e-stage.yml` call reading `needs.contracts.outputs.*`. They are
+an ordinary `e2e-stage.yml` call reading `needs.contracts.outputs.*`. The first
+three are
 floor rows, not a cross-jar stability proof: one band jar covers 1.20.2-26.2, so
-there is no second jar whose overlap could drift. What the three lists sample is
+there is no second jar whose overlap could drift. What those three lists sample
+is
 the band's edges (1.20.2, 26.2), the three Java floors NeoForge itself changes
-at, and 1.21.1 as the modpack-dominant interior line. Per-row rationale lives in
+at, and 1.21.1 as the modpack-dominant interior line. `neo_fwd_java25` is the
+one above-floor leg (#58): 1.21.1, a java-21 line, booted on java 25, because
+until it existed the band jar's "java-17 bytecode boots anywhere across the
+17/21/25 spread" claim was asserted only at the floors themselves. Per-row
+rationale lives in
 the generator's NeoForge stage comment. They carry the standard band `if:`
 guard including the `!= '[]'` clause and need no `github.event_name != 'push'`
 guard — a generated list is already `[]` on push.
@@ -256,10 +277,17 @@ Two non-obvious rules it must keep:
   hard-error the run. The `[]` literal keeps the `!= '[]'` skip guard honest.
 - **The gate canaries are moved to the gate, never duplicated** in the band
   lists.
-- **Forge and NeoForge bands emit floor rows only** (`forge_java21`,
+- **Forge and NeoForge bands emit floor rows** (`forge_java21`,
   `forge_legacy_java17`, `forge_mc116_java8`, `forge_eventbus7_java21`,
-  `forge_eventbus7_java25`, `neo_java17`, `neo_java21`, `neo_java25`) — no
-  coverage rows, no lean/full split. Presence is keyed off the
+  `forge_eventbus7_java25`, `neo_java17`, `neo_java21`, `neo_java25`) **plus
+  one forward-JVM row each** (`forge_java26`, `neo_fwd_java25`) — no per-band
+  coverage rows, no lean/full split: the above-floor rows run on every event,
+  because the drift they catch comes from the JVM, not from the PR under
+  test. `neo_fwd_java25` is deliberately outside the `neo_java<N>` naming, so
+  that `tools/floors_test.go` can keep pinning every `neo_java<N>` row to
+  "every version here has NeoForge floor exactly N" while asserting the
+  opposite — a floor strictly below 25 — for the forward row.
+  Presence is keyed off the
   `minecraft_range_modern`/`_legacy`/`_mc116`/`_eventbus7` lines in
   `forge/gradle.properties` and `minecraft_range_neo_all` in
   `neoforge/gradle.properties`; another band is one more

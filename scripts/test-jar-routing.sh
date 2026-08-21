@@ -373,7 +373,7 @@ for era in mc1.14.x mc1.19-1.20.2 mc1.21.x mc26.x; do
         "${fabric_mc:-<no-fabric-range>}" "${quilt_mc:-<no-quilt-range>}"
 done
 
-# Probe 3c — the three generated NeoForge e2e legs in ci.yml. Every field is
+# Probe 3c — the four generated NeoForge e2e legs in ci.yml. Every field is
 # read out of the SAME job block as the job name, so a crossed-over pair (the
 # java 25 leg wired to the java 17 band) fails here instead of booting a 26.2
 # server on a JVM that cannot start it. The lists themselves are gen_matrix's
@@ -383,9 +383,13 @@ ci_job_block() {
   awk -v job="  $1:" '$0 == job { inb = 1; next } inb && /^  [^ ]/ { exit } inb' "$gate_yml"
 }
 ci_job_field() { ci_job_block "$1" | sed -n "s/^      $2: //p"; }
+# The fwd leg (#58) is the forward-JVM one: same java 25, but its band is the
+# separate neo_fwd_java25 row, so a crossed-over wiring here would silently
+# turn forward coverage back into a duplicate of the java-25 floor leg.
 for spec in "e2e-neoforge-java17 neo_java17 17" \
             "e2e-neoforge-java21 neo_java21 21" \
-            "e2e-neoforge-java25 neo_java25 25"; do
+            "e2e-neoforge-java25 neo_java25 25" \
+            "e2e-neoforge-fwd-java25 neo_fwd_java25 25"; do
   read -r job key java <<< "$spec"
   check "$job versions" "\${{ needs.contracts.outputs.$key }}" "$(ci_job_field "$job" versions)"
   check "$job java"     "\"$java\""  "$(ci_job_field "$job" java)"
