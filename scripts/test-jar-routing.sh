@@ -432,6 +432,85 @@ check "refusal guard legs pass fabric-expect-refused: 1" "2" \
 check "refusal guard legs run the uncovered version" "2" \
       "$(grep -cF "versions: '[\"1.19\"]'" "$gate_yml")"
 
+# Probe 5 — THE SAMPLING RULE (issue #59). Two halves.
+#
+# Half one: the coverage table in tools/gen_matrix.go says which declared
+# versions CI deliberately never boots, and gives a reason for each. Most of
+# those reasons are claims about the world that go stale on their own -- "this
+# NeoForge line only has a beta build", "Forge refuses this version". They are
+# re-probed here, read out of the table itself rather than restated, so the day
+# NeoForge promotes 21.9.16-beta the exclusion fails instead of quietly
+# outliving its reason.
+echo "== sampling rule: every exclusion still deserves its reason"
+coverage_tsv="$(cd "$repo_root/tools" && go run . gen-matrix --coverage)"
+excluded_of() {
+  printf '%s\n' "$coverage_tsv" | awk -F'\t' -v b="$1" '$1 == b && $2 == "excluded" { print $3 }'
+}
+# NeoForge: excluded because the line's newest build is a prerelease. Field 1 of
+# --print-neo-routing is that build.
+for v in $(excluded_of neo); do
+  build="$(neo_route "$v" | cut -d' ' -f1)"
+  case "$build" in
+    *-beta) got="beta" ;;
+    *)      got="STABLE ($build) -- promote it into the band's deep list" ;;
+  esac
+  check "neo exclusion $v is still beta-only" "beta" "$got"
+done
+# Forge: excluded because the harness refuses the version -- either the era gate
+# rejects it outright (exit != 0) or the routing probe raises the refusal flag.
+# A refusal leg is the absence of coverage, so it belongs to #56, not here.
+forge_refusal_state() {
+  local out
+  if ! out="$("$script_dir/e2e-run-one.sh" --print-forge-routing "$1" 2>/dev/null)"; then
+    echo "refused"
+  elif [ "${out##* }" = "1" ]; then
+    echo "refused"
+  else
+    echo "in-range ($out) -- promote it into the band's deep list"
+  fi
+}
+for band in forge forge_legacy forge_mc116 forge_eventbus7; do
+  for v in $(excluded_of "$band"); do
+    check "$band exclusion $v is still a refusal, not coverage" "refused" "$(forge_refusal_state "$v")"
+  done
+done
+# mc26's two exclusions (26.1.1/26.1.2) are the one case with no executable
+# probe: they route fine and are skipped for a mappings reason that only a human
+# can retire (docs/version-matrix.md). tools/gen_matrix_test.go asserts the
+# reason is present; nothing here can assert it is still true.
+
+# Half two: the DENOMINATOR. "Covered" is measured against the versions this
+# repo NAMES -- not against every Minecraft release Mojang ever shipped inside a
+# declared range, which no offline check could enumerate and which would decay
+# without a commit. See "What 'covered' means" in docs/version-matrix.md. The
+# standing invariant: every version named anywhere in this repo is booted by
+# some CI leg on some event, or carries a written waiver here.
+echo "== sampling rule: every named version is booted or waived"
+# Waived, with reasons. These are the versions no minecraft_range_* covers: the
+# crack between the mc114 ceiling (<1.19) and the mc1192 floor (>=1.19.1). The
+# two refusal-guard legs in ci.yml do boot 1.19, but they assert the loader
+# REFUSES the mod, which is the absence of coverage rather than coverage.
+WAIVED="1.19 1.19.0"
+# shellcheck disable=SC2086 # word splitting is the point: one version per line
+named="$(printf '%s\n' "${!EXPECTED[@]}" \
+  $ALL_VERSIONS $BOUNDARY_EXTRAS $UNSUPPORTED \
+  $FORGE_MC116_VERSIONS $FORGE_LEGACY_VERSIONS $FORGE_MODERN_VERSIONS \
+  $FORGE_EB7_VERSIONS $FORGE_OUT_OF_RANGE_VERSIONS \
+  $FABRIC_114_VERSIONS $FABRIC_1192_VERSIONS $FABRIC_121_VERSIONS \
+  $FABRIC_26_VERSIONS $FABRIC_OUT_OF_RANGE_VERSIONS \
+  "$(make -s -C "$repo_root" print-e2e-versions)" | tr ' ' '\n' | grep -v '^$' | sort -u)"
+# Booted = every version in the deep (workflow_dispatch) grid, plus the literal
+# legs ci.yml pins by hand: the four gate canary rows and every `versions:` list
+# a caller job passes.
+booted="$( { printf '%s\n' "$grid_output" | cut -d= -f2- | grep -oE '"[^"]+"' | tr -d '"'
+            grep -oE 'mc: "[^"]+"' "$gate_yml" | cut -d'"' -f2
+            grep -oE "^      versions: '\[[^]]*\]'" "$gate_yml" | grep -oE '"[^"]+"' | tr -d '"'
+          } | sort -u)"
+# shellcheck disable=SC2086 # ditto for $WAIVED
+unaccounted="$(printf '%s\n' "$named" \
+  | grep -vxF -f <(printf '%s\n' "$booted"; printf '%s\n' $WAIVED) | tr '\n' ' ')"
+check "named versions with no CI leg and no waiver" "" "${unaccounted% }"
+
 # Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the two
 # `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.
 echo "== e2e-entrypoint.sh era literals (RCON source name, player /list form)"

@@ -18,6 +18,11 @@ package main
 //     pattern; see those stages below for why the two are different things.
 //     A new such band is one range-key case in bandPresent, one emit here, and
 //     one uses: block in e2e.yml.
+//   - Which VERSIONS a row lists is not decided at the emit call: it comes from
+//     the coverage table below, which states each band's declared range, the
+//     sample every event boots, the deep list workflow_dispatch boots, and the
+//     reason for every declared version booted by neither. See THE SAMPLING
+//     RULE below and "What 'covered' means" in docs/version-matrix.md.
 //
 import (
 	"encoding/json"
@@ -26,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -83,7 +89,265 @@ func ends(list []string) []string {
 	return []string{list[0], list[len(list)-1]}
 }
 
+// The 1.21 line in release order. 1.21.11 is the java-21 gate canary: it is
+// dropped from the FLOOR row below, never from the band's coverage.
+var all121 = []string{"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5",
+	"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"}
+
+// ---------------------------------------------------------------------------
+// THE SAMPLING RULE (issue #59)
+//
+// A jar's minecraft_range_* is what the LOADER accepts. It is deliberately
+// wider than what CI proves, and until this table the difference was
+// invisible: the grid booted a sample of each range, the sample's rationale
+// lived only in prose comments, and nothing failed when a version quietly fell
+// out of one. The "full" workflow_dispatch grid did not close that gap either
+// — emitCoverage widened only the newest-Java rows, so the per-loader
+// Minecraft version SET was byte-identical on both events and 50
+// (loader, version) pairs sat inside a declared range that no CI event of any
+// kind booted.
+//
+// Each band now states its version contract as data:
+//
+//	declared — every release on the axis this repo names (see "What 'covered'
+//	           means" in docs/version-matrix.md) that this band's declared
+//	           minecraft_range_* covers. Restated here INDEPENDENTLY of the
+//	           emit calls below; that independence is what makes the invariant
+//	           bite.
+//	sampled  — booted on every e2e event. The rows below split it by Java floor.
+//	deep     — booted on workflow_dispatch, which is now the deep sweep its
+//	           name always implied. Always a superset of sampled.
+//	excluded — declared, and booted by nothing on any event, each with the
+//	           reason it is not.
+//
+// The invariant gen_matrix_test.go asserts is `deep + excluded == declared`,
+// exactly, per band. A version therefore cannot leave the grid by being
+// deleted from a list; it can only leave by acquiring a written reason.
+//
+// minecraft_range_121 (>=1.20.3 <1.22) is split across two entries, t0 and
+// mc121, because the grid splits that one jar's range into two bands that
+// sample differently.
+type bandCoverage struct {
+	declared []string
+	sampled  []string
+	deep     []string
+	excluded map[string]string
+}
+
+var coverage = map[string]bandCoverage{
+	// Exhaustive already: every 1.21 patch is booted, 1.21.11 by the gate and
+	// the rest by the floor row, so the deep sweep adds nothing here.
+	"mc121": {declared: all121, sampled: all121, deep: all121},
+
+	// >=26.1 <26.3. The two patch releases are the only Fabric-side exclusion
+	// with a technical cause rather than a budget one.
+	"mc26": {
+		declared: []string{"26.1", "26.1.1", "26.1.2", "26.2"},
+		sampled:  []string{"26.1", "26.2"},
+		deep:     []string{"26.1", "26.2"},
+		excluded: map[string]string{
+			"26.1.1": "26.x mapping breaks land on the MINOR boundaries, not the patch releases, and each extra version costs a full server download (docs/version-matrix.md, \"Default e2e version list\")",
+			"26.1.2": "same as 26.1.1 — and the Forge eventbus7 band boots both, so a patch-level break would still surface there",
+		},
+	},
+
+	// The 1.20.x half of minecraft_range_121: four versions, all booted.
+	"t0": {
+		declared: []string{"1.20.3", "1.20.4", "1.20.5", "1.20.6"},
+		sampled:  []string{"1.20.3", "1.20.4", "1.20.5", "1.20.6"},
+		deep:     []string{"1.20.3", "1.20.4", "1.20.5", "1.20.6"},
+	},
+
+	// >=1.19.1 <1.20.3. The sample is both ends of the 1.19 line, the
+	// most-run legacy version and the 1.20.2/1.20.3 boundary; the deep sweep
+	// adds the three the sample skips, 1.19.1 among them — the jar's own
+	// floor, named in scripts/test-jar-routing.sh as a boundary probe and
+	// until now booted by nothing.
+	"mc1192": {
+		declared: []string{"1.19.1", "1.19.2", "1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2"},
+		sampled:  []string{"1.19.2", "1.19.4", "1.20.1", "1.20.2"},
+		deep:     []string{"1.19.1", "1.19.2", "1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2"},
+	},
+
+	// >=1.14 <1.19. 1.16 is on the axis for the reason it is in
+	// test-jar-routing.sh's EXPECTED table: 1.15.2|1.16 is the exact edge
+	// where the RCON source name flips from Recon to Rcon. It was named there
+	// and booted nowhere; the deep sweep is where it now boots.
+	"mc114": {
+		declared: []string{"1.14", "1.14.4", "1.15.2", "1.16", "1.16.1", "1.16.2",
+			"1.16.3", "1.16.4", "1.16.5", "1.17", "1.17.1", "1.18", "1.18.1", "1.18.2"},
+		sampled: []string{"1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2"},
+		deep: []string{"1.14", "1.14.4", "1.15.2", "1.16", "1.16.1", "1.16.2",
+			"1.16.3", "1.16.4", "1.16.5", "1.17", "1.17.1", "1.18", "1.18.1", "1.18.2"},
+	},
+
+	// Forge modern, [1.20.6,1.21.6). The sample is the measured floor and
+	// ceiling; the interior is uniform in mapping regime and EventBus
+	// generation, which is why the sample stops there and why the deep sweep
+	// is the right place for the other five. (1.20.4 rides in the same job but
+	// belongs to forge_legacy — see the FORGE section below.)
+	"forge": {
+		declared: []string{"1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5"},
+		sampled:  []string{"1.20.6", "1.21.1", "1.21.5"},
+		deep:     []string{"1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5"},
+	},
+
+	// Forge legacy, [1.17.1,1.20.5). Every MEASURED version is sampled, since
+	// the proof is SRG member-id stability across Forge majors 37-49; the deep
+	// sweep adds the three in-range versions the measurement never covered.
+	"forge_legacy": {
+		declared: []string{"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19", "1.19.1", "1.19.2",
+			"1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2", "1.20.3", "1.20.4"},
+		sampled: []string{"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
+			"1.20.1", "1.20.2", "1.20.3", "1.20.4"},
+		deep: []string{"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
+			"1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2", "1.20.3", "1.20.4"},
+		excluded: map[string]string{
+			"1.19": "the shared era-routing gate in scripts/e2e-run-one.sh rejects 1.19 before any loader probe runs (1.19.0's execute() lacks the ParseResults overload the jar hooks), so a leg here would be a REFUSAL leg, not coverage — issue #56 owns it",
+		},
+	},
+
+	// Forge mc116, [1.14,1.17). Every measured version is sampled, same
+	// cross-major reasoning as legacy. The two exclusions are not budget
+	// calls: FORGE_KNOWN_GOOD_MC116 in scripts/e2e-run-one.sh does not list
+	// them, so the harness itself expects a refusal.
+	"forge_mc116": {
+		declared: []string{"1.14", "1.14.4", "1.15.2", "1.16", "1.16.1", "1.16.2",
+			"1.16.3", "1.16.4", "1.16.5"},
+		sampled: []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
+		deep:    []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
+		excluded: map[string]string{
+			"1.14": "--print-forge-routing 1.14 reports \"mc116 1\": absent from FORGE_KNOWN_GOOD_MC116, so a leg would be a REFUSAL leg, not coverage — issue #56 owns it",
+			"1.16": "--print-forge-routing 1.16 reports \"mc116 1\" for the same reason; the Fabric mc114 band boots 1.16 in the deep sweep, so the RCON-name edge is proven on the loader whose jar declares it",
+		},
+	},
+
+	// Forge eventbus7, [1.21.6,26.3). Every measured version is sampled — the
+	// proof is that one official-name jar fires across Forge majors 56-65 —
+	// so the deep sweep adds nothing.
+	"forge_eventbus7": {
+		declared: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
+			"26.1", "26.1.1", "26.1.2", "26.2"},
+		sampled: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
+			"26.1", "26.1.1", "26.1.2", "26.2"},
+		deep: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
+			"26.1", "26.1.1", "26.1.2", "26.2"},
+	},
+
+	// NeoForge, [1.20.2,26.3) — one band jar, so the sample is the band edges
+	// plus NeoForge's own three Java floors plus the modpack-dominant 1.21.1.
+	// The eight exclusions are the lines whose newest NeoForge build is a
+	// BETA: booting a beta build would make CI's green depend on prerelease
+	// loader code, which is a different claim from the one this repo makes.
+	// Verified with --print-neo-routing, and asserted in
+	// scripts/test-jar-routing.sh so the list cannot go stale when NeoForge
+	// promotes one of them.
+	"neo": {
+		declared: []string{"1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6",
+			"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6",
+			"1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
+			"26.1", "26.1.1", "26.1.2", "26.2"},
+		sampled: []string{"1.20.2", "1.20.4", "1.20.6", "1.21.1", "1.21.11", "26.2"},
+		deep: []string{"1.20.2", "1.20.4", "1.20.6", "1.21", "1.21.1", "1.21.3",
+			"1.21.4", "1.21.5", "1.21.8", "1.21.10", "1.21.11", "26.1.2", "26.2"},
+		excluded: map[string]string{
+			"1.20.3": "newest NeoForge build for this line is 20.3.8-beta",
+			"1.20.5": "newest NeoForge build for this line is 20.5.21-beta",
+			"1.21.2": "newest NeoForge build for this line is 21.2.1-beta",
+			"1.21.6": "newest NeoForge build for this line is 21.6.20-beta",
+			"1.21.7": "newest NeoForge build for this line is 21.7.25-beta",
+			"1.21.9": "newest NeoForge build for this line is 21.9.16-beta",
+			"26.1":   "newest NeoForge build for this line is 26.1.0.19-beta",
+			"26.1.1": "newest NeoForge build for this line is 26.1.1.15-beta",
+		},
+	},
+}
+
+// booted returns the band's version list for this event: the sample on every
+// event, the wider deep-sweep list on workflow_dispatch. An unknown name is a
+// programming error, not a data condition — every caller passes a literal.
+func booted(name string, full bool) []string {
+	c, ok := coverage[name]
+	if !ok {
+		panic("gen-matrix: no coverage entry for band " + name)
+	}
+	if full {
+		return c.deep
+	}
+	return c.sampled
+}
+
+// neoFloor is NeoForge's OWN Java floor for a Minecraft version, i.e. which of
+// the three neo_java* rows a version belongs in. It mirrors the neo routing
+// table in scripts/e2e-run-one.sh (NOT the Fabric era table, which reports 21
+// for 1.20.4); floors_test.go checks every emitted row against
+// --print-neo-routing, so a drift here fails offline.
+func neoFloor(v string) string {
+	switch {
+	case is26(v):
+		return "25"
+	case v == "1.20.2", v == "1.20.3", v == "1.20.4":
+		return "17"
+	default:
+		return "21"
+	}
+}
+
+// pick returns the members of list for which keep reports true, in order.
+func pick(list []string, keep func(string) bool) []string {
+	var out []string
+	for _, v := range list {
+		if keep(v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func is26(v string) bool { return strings.HasPrefix(v, "26.") }
+
+// printCoverage dumps the coverage table as `band<TAB>state<TAB>version<TAB>reason`
+// so scripts/test-jar-routing.sh can probe it instead of restating it. The
+// exclusions in particular carry claims about the world — "this NeoForge line
+// only has a beta build", "Forge refuses this version" — and a claim nobody
+// re-checks is how the table goes stale the day NeoForge promotes a build.
+func printCoverage(w io.Writer) error {
+	for _, name := range sortedKeys(coverage) {
+		c := coverage[name]
+		for _, s := range []struct {
+			state    string
+			versions []string
+		}{{"declared", c.declared}, {"sampled", c.sampled}, {"deep", c.deep}} {
+			for _, v := range s.versions {
+				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t\n", name, s.state, v); err != nil {
+					return err
+				}
+			}
+		}
+		for _, v := range sortedKeys(c.excluded) {
+			if _, err := fmt.Fprintf(w, "%s\texcluded\t%s\t%s\n", name, v, c.excluded[v]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func runGenMatrix(args []string) error {
+	for _, a := range args {
+		if a == "--coverage" {
+			return printCoverage(os.Stdout)
+		}
+	}
 	var ghOut io.Writer
 	if path := os.Getenv("GITHUB_OUTPUT"); path != "" {
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
@@ -108,6 +372,12 @@ func runGenMatrix(args []string) error {
 // genMatrix computes and emits the grid: `name=json` lines appended to ghOut
 // (when non-nil) and the human summary on stdout.
 func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) error {
+	// workflow_dispatch is the DEEP SWEEP: it boots each band's `deep` list
+	// instead of its `sampled` one, and widens the newest-Java coverage rows
+	// from the band ends to the whole sample. Before issue #59 it did only the
+	// second of those, which made its per-loader Minecraft version set
+	// byte-identical to the pull_request grid's — the name promised a full
+	// grid and delivered extra Java legs over the same versions.
 	full := eventName == "workflow_dispatch"
 	// push-to-main builds and publishes jars but runs no e2e; FORCE_BANDS
 	// included — an empty grid is the contract ci.yml relies on.
@@ -158,52 +428,53 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		return nil
 	}
 
+	// Every version list below comes from the coverage table above: floor rows
+	// take booted(band, full) — the sample, or the deep list on
+	// workflow_dispatch — and the newest-Java coverage rows deliberately keep
+	// taking the SAMPLE, so the deep sweep's delta is new Minecraft versions
+	// and nothing else.
+	sampledOf := func(name string) []string { return coverage[name].sampled }
+
 	// STAGE 2 — current mainstream (1.21.x floor 21, 26.x floor 25).
-	all121 := []string{"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5",
-		"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"}
 	// 1.21.11 is the java-21 gate canary and must not appear in the j21 list.
-	floor121 := all121[:len(all121)-1]
+	mc121 := booted("mc121", full)
+	floor121 := mc121[:len(mc121)-1]
 
 	emit("mc121_java21", floor121)
 	if full {
-		emit("mc121_java25", all121)
-		emit("mc121_java26", all121)
+		emit("mc121_java25", mc121)
+		emit("mc121_java26", mc121)
 	} else {
-		emit("mc121_java25", []string{"1.21", "1.21.11"})
-		emit("mc121_java26", []string{"1.21", "1.21.11"})
+		emit("mc121_java25", ends(mc121))
+		emit("mc121_java26", ends(mc121))
 	}
 
 	// 26.2 is the java-25 gate canary and must not appear in the java-25 list.
-	emit("mc26_java25", []string{"26.1"})
-	emit("mc26_java26", []string{"26.1", "26.2"})
+	mc26 := booted("mc26", full)
+	emit("mc26_java25", mc26[:len(mc26)-1])
+	emit("mc26_java26", mc26)
 
 	// STAGE 3 — t0 band (1.20.3-1.20.6): floor 21, coverage 25/26. 1.20.3-1.20.6
 	// run the mc121 jar, which is Java 21 bytecode, even though the vanilla
 	// floor is 17.
-	t0 := band("t0", "1.20.3", "1.20.4", "1.20.5", "1.20.6")
-	emit("t0_java21", t0)
-	emitCoverage("t0_java25", t0)
-	emitCoverage("t0_java26", t0)
+	emit("t0_java21", band("t0", booted("t0", full)...))
+	t0Sample := band("t0", sampledOf("t0")...)
+	emitCoverage("t0_java25", t0Sample)
+	emitCoverage("t0_java26", t0Sample)
 
 	// STAGE 4 — mc1192 band (1.19-1.20.2): floor 17, coverage 21 only.
-	mc1192 := band("mc1192", "1.19.2", "1.19.4", "1.20.1", "1.20.2")
-	emit("mc1192_java17", mc1192)
-	emitCoverage("mc1192_java21", mc1192)
+	emit("mc1192_java17", band("mc1192", booted("mc1192", full)...))
+	emitCoverage("mc1192_java21", band("mc1192", sampledOf("mc1192")...))
 
 	// STAGE 5 — mc114 band (1.14-1.18): split floors 8 / 17, coverage 21.
 	// 1.17 floor is 17: no Temurin 16 jre image exists.
-	mc114 := band("mc114", "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2")
-	var mc114j8, mc114j17 []string
-	for _, v := range mc114 {
-		if strings.HasPrefix(v, "1.14") || strings.HasPrefix(v, "1.15") || strings.HasPrefix(v, "1.16") {
-			mc114j8 = append(mc114j8, v)
-		} else {
-			mc114j17 = append(mc114j17, v)
-		}
+	mc114j8 := func(v string) bool {
+		return strings.HasPrefix(v, "1.14") || strings.HasPrefix(v, "1.15") || strings.HasPrefix(v, "1.16")
 	}
-	emit("mc114_java8", mc114j8)
-	emit("mc114_java17", mc114j17)
-	emitCoverage("mc114_java21", mc114)
+	mc114 := band("mc114", booted("mc114", full)...)
+	emit("mc114_java8", pick(mc114, mc114j8))
+	emit("mc114_java17", pick(mc114, func(v string) bool { return !mc114j8(v) }))
+	emitCoverage("mc114_java21", band("mc114", sampledOf("mc114")...))
 
 	// FORGE — floor rows plus ONE forward-JVM row, no lean/full split. The
 	// Forge jars' own bytecode floors are what decide the floor rows (legacy =
@@ -236,18 +507,21 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// This section is the single home of the Forge leg rationale (e2e.yml's
 	// jobs just point here):
 	//
-	// Modern band: edges plus one interior line. 1.20.6 and 1.21.5 are the
-	// measured floor and ceiling, and the mapping regime and EventBus
-	// generation are uniform across the range, so as a MAPPING-REGIME probe
-	// the edges alone would do — nothing can fail in the middle while both
-	// edges pass. 1.21.1 is not here as such a probe and must not be tidied
-	// back out on the grounds that both edges already pass (issue #57): it
-	// is the modpack-dominant Forge line, the version a real server operator
-	// is most likely to run, so its proof should be a band row rather than a
-	// side effect of e2e-config-behaviors-forge, whose versions: literal
-	// happens to be ["1.21.1"] but whose job is blacklist suppression and
-	// logArguments. Same reasoning as the 1.21.1 row in the NeoForge stage
-	// below. 1.20.4 rides in this java-21 job but routes to the LEGACY jar
+	// Modern band: the sample is the two edges plus one interior line.
+	// 1.20.6 and 1.21.5 are the measured floor and ceiling, and the mapping
+	// regime and EventBus generation are uniform across the range, so as a
+	// MAPPING-REGIME probe the edges alone would do — nothing can fail in the
+	// middle while both edges pass. That argues for not paying for the middle
+	// on every pull request, not for never checking it, so the deep sweep
+	// boots it. 1.21.1 is sampled on EVERY event and is not there as a
+	// mapping-regime probe: it must not be tidied back out on the grounds
+	// that both edges already pass (issue #57). It is the modpack-dominant
+	// Forge line, the version a real server operator is most likely to run,
+	// so its proof should be a band row rather than a side effect of
+	// e2e-config-behaviors-forge, whose versions: literal happens to be
+	// ["1.21.1"] but whose job is blacklist suppression and logArguments.
+	// Same reasoning as the 1.21.1 row in the NeoForge stage below.
+	// 1.20.4 rides in this java-21 job but routes to the LEGACY jar
 	// in-range (--print-forge-routing 1.20.4 = "legacy 0"): it boots the
 	// legacy jar's ceiling on a modern JVM — so it is keyed on the LEGACY
 	// band's presence, not the modern one's; a modern-only tree has no
@@ -282,20 +556,16 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// not exercise the thing being proven. Split by the era Java floor the
 	// generic table already assigns: 1.21.x on 21, 26.x (including the
 	// 26.1.1/26.1.2 patch releases — each its own Forge major, 63/64) on 25.
-	forgeModern := band("forge", "1.20.6", "1.21.1", "1.21.5")
+	forgeModern := band("forge", booted("forge", full)...)
 	if len(forgeModern) > 0 {
 		forgeModern = append(band("forge_legacy", "1.20.4"), forgeModern...)
 	}
 	emit("forge_java21", forgeModern)
-	emit("forge_legacy_java17", band("forge_legacy",
-		"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
-		"1.20.1", "1.20.2", "1.20.3", "1.20.4"))
-	emit("forge_mc116_java8", band("forge_mc116",
-		"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"))
-	emit("forge_eventbus7_java21", band("forge_eventbus7",
-		"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"))
-	emit("forge_eventbus7_java25", band("forge_eventbus7",
-		"26.1", "26.1.1", "26.1.2", "26.2"))
+	emit("forge_legacy_java17", band("forge_legacy", booted("forge_legacy", full)...))
+	emit("forge_mc116_java8", band("forge_mc116", booted("forge_mc116", full)...))
+	eb7 := band("forge_eventbus7", booted("forge_eventbus7", full)...)
+	emit("forge_eventbus7_java21", pick(eb7, func(v string) bool { return !is26(v) }))
+	emit("forge_eventbus7_java25", pick(eb7, is26))
 	// The forward-JVM row (issue #58). One version: 26.2, the eventbus7 band's
 	// ceiling, on the newest JVM the harness has. The modern band has no
 	// java-26 probe and cannot have one at any JVM: its bootstrap has ZERO
@@ -330,9 +600,18 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// Fabric era table, which reports 21 for 1.20.4), plus 1.21.1, the
 	// modpack-dominant interior line. Single-loader rows: LOADER=neoforge has
 	// no quilt twin, which the job count at the bottom depends on.
-	emit("neo_java17", band("neo", "1.20.2", "1.20.4"))
-	emit("neo_java21", band("neo", "1.20.6", "1.21.1", "1.21.11"))
-	emit("neo_java25", band("neo", "26.2"))
+	//
+	// The deep sweep adds the seven stable interior lines. It does NOT add the
+	// eight whose newest NeoForge build is a BETA — booting those would make a
+	// green CI run depend on prerelease loader code, which is a different claim
+	// from the one this repo makes. Which eight is not a guess: the coverage
+	// table names each with its beta build, and scripts/test-jar-routing.sh
+	// re-probes them, so the list cannot go stale the day NeoForge promotes
+	// one.
+	neo := band("neo", booted("neo", full)...)
+	for _, floor := range []string{"17", "21", "25"} {
+		emit("neo_java"+floor, pick(neo, func(v string) bool { return neoFloor(v) == floor }))
+	}
 	// The forward-JVM row (issue #58): before it, EVERY NeoForge leg ran at
 	// exactly its floor, so the one band jar's "java-17 bytecode boots
 	// anywhere in 17/21/25" claim was asserted only at the three floors — and
