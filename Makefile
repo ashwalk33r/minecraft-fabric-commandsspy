@@ -75,6 +75,14 @@ _loader_suffix := $(if $(filter fabric,$(LOADER)),,-$(LOADER))
 CONFIG_VARIANT ?= 0
 _cfgvar_suffix := $(if $(filter 1,$(CONFIG_VARIANT)),-cfgvar,)
 
+# 1 = the out-of-range refusal guard leg: run a Minecraft version that NO
+# declared minecraft_range_* covers and assert the Fabric/Quilt loader refuses
+# the mod. Read from the environment by scripts/e2e-run-one.sh; declared here so
+# `make e2e FABRIC_EXPECT_REFUSED=1` works alongside the env form. No KEY suffix:
+# the guard version (1.19.0) is never in the default matrix, so it cannot
+# collide. See docs/e2e-harness.md.
+FABRIC_EXPECT_REFUSED ?= 0
+
 # Only LOADER=forge needs the Forge jars built; a Fabric/Quilt/NeoForge run
 # must not pay for ForgeGradle's decompile pipeline. All four Forge jars are
 # built for any forge e2e run -- scripts/e2e-run-one.sh routes per version

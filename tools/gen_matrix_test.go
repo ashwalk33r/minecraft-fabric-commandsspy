@@ -147,14 +147,15 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 func TestSubmatrixCountsAndTotals(t *testing.T) {
 	totals := map[string]int{"pull_request": 75, "workflow_dispatch": 104}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
-	// caller job) + forge and neo pairs (single-loader) plus 22 fixed jobs
+	// caller job) + forge and neo pairs (single-loader) plus 24 fixed jobs
 	// (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
-	// Build aggregator, the 4 e2e-gate canaries and the 4 config-behaviors
-	// legs (#34, one per loader); on push only 15 of these run — gate and
-	// config-behaviors are event-skipped). The NeoForge legs are generated
-	// now, not fixed jobs.
-	// PR: 2*39 + 30 + 6 + 22 = 136. Dispatch: 2*68 + 30 + 6 + 22 = 194.
-	jobTotals := map[string]int{"pull_request": 136, "workflow_dispatch": 194}
+	// Build aggregator, the 4 e2e-gate canaries, the 4 config-behaviors legs
+	// (#34, one per loader) and the 2 out-of-range refusal guards (fabric +
+	// quilt); on push only 14 of these run — gate, config-behaviors and the
+	// refusal guards are event-skipped). The NeoForge legs are generated now,
+	// not fixed jobs.
+	// PR: 2*39 + 30 + 6 + 24 = 138. Dispatch: 2*68 + 30 + 6 + 24 = 196.
+	jobTotals := map[string]int{"pull_request": 138, "workflow_dispatch": 196}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -183,10 +184,11 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 // 3. every option combination, both triggers
 // Totals are GATED PAIRS; TOTAL_JOBS is what the workflow spawns: 2 caller
 // jobs per fabric pair (-fabric/-quilt), 1 per forge or neo pair
-// (single-loader), plus 22 fixed jobs (contracts, go-quality, lint-java,
+// (single-loader), plus 24 fixed jobs (contracts, go-quality, lint-java,
 // unit-tests, the 10 build jobs, the Build aggregator, the 4 e2e-gate
-// canaries and the 4 config-behaviors legs (#34, one per loader); on push
-// only 15 of these run — gate and config-behaviors are event-skipped). Run
+// canaries, the 4 config-behaviors legs (#34, one per loader) and the 2
+// out-of-range refusal guards (fabric + quilt); on push only 14 of these run
+// — gate, config-behaviors and the refusal guards are event-skipped). Run
 // against an empty fixture root so FORCE_BANDS alone decides. The forge-less
 // cases double as proof that absent Forge bands emit [] and add zero pairs.
 // Note the forge-without-forge_legacy case: forge_java21 drops to 2 pairs
@@ -199,15 +201,15 @@ func TestOptionCombinationTotals(t *testing.T) {
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 38, 58, 98},
-		{"t0", 26, 50, 74, 122},
-		{"t0 mc1192", 32, 58, 86, 138},
-		{"t0 mc1192 mc114", 39, 68, 100, 158},
-		{"t0 mc1192 mc114 forge", 41, 70, 102, 160},
-		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 113, 171},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 123, 181},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 130, 188},
-		{allBands, 75, 104, 136, 194},
+		{"", 18, 38, 60, 100},
+		{"t0", 26, 50, 76, 124},
+		{"t0 mc1192", 32, 58, 88, 140},
+		{"t0 mc1192 mc114", 39, 68, 102, 160},
+		{"t0 mc1192 mc114 forge", 41, 70, 104, 162},
+		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 115, 173},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 125, 183},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 132, 190},
+		{allBands, 75, 104, 138, 196},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -402,8 +404,9 @@ func TestBandDetection(t *testing.T) {
 
 // push-to-main builds jars but runs ZERO e2e: every band emits the literal
 // [], even when FORCE_BANDS would force it present, and TOTAL_JOBS counts
-// only the 15 fixed jobs that actually run on push (the 4 e2e-gate canaries
-// and the 4 config-behaviors legs are event-skipped in ci.yml). The NeoForge
+// only the 14 fixed jobs that actually run on push (the 4 e2e-gate canaries,
+// the 4 config-behaviors legs and the 2 out-of-range refusal guards are all
+// event-skipped in ci.yml). The NeoForge
 // legs are generated rows now, so push zeroes them like every other band
 // instead of them riding in the fixed count.
 func TestPushEmitsEmptyBands(t *testing.T) {

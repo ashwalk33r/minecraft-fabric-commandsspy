@@ -375,6 +375,19 @@ done
 check "config-behaviors legs pass config-variant: 1" "4" \
       "$(grep -cE '^      config-variant: "1"$' "$gate_yml")"
 
+# The boot half of the out-of-range guard. Pinned here so deleting a leg from
+# ci.yml fails `contracts` loudly instead of quietly removing the only place
+# that proves the loader actually refuses the mod.
+echo "== out-of-range refusal guard legs in ci.yml"
+for loader in fabric quilt; do
+  check "refusal guard leg present ($loader)" "1" \
+        "$(grep -cE "^  e2e-${loader}-refusal-guard:$" "$gate_yml")"
+done
+check "refusal guard legs pass fabric-expect-refused: 1" "2" \
+      "$(grep -cE '^      fabric-expect-refused: "1"$' "$gate_yml")"
+check "refusal guard legs run the uncovered version" "2" \
+      "$(grep -cF "versions: '[\"1.19\"]'" "$gate_yml")"
+
 # Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the two
 # `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.
 echo "== e2e-entrypoint.sh era literals (RCON source name, player /list form)"

@@ -717,6 +717,50 @@ jobs:
       config-variant: "1"
       jar-sha: ${{ github.sha }}
 
+  # Out-of-range refusal guard: Minecraft 1.19.0 falls in the crack between the
+  # mc114 ceiling (<1.19) and the mc1192 floor (>=1.19.1), so no jar claims it.
+  # These two legs boot a real server there and assert the LOADER refuses the
+  # mod, rather than the harness merely declining to run. Without them, widening
+  # any minecraft_range_* in gradle.properties would let the jar load where its
+  # mixin cannot apply — commandsspy.mixins.json is "required": true, so that is
+  # a hard crash at server start. The offline half lives in
+  # scripts/test-jar-routing.sh and fails in `contracts` before anything builds.
+  e2e-fabric-refusal-guard:
+    name: "e2e out-of-range refusal (fabric)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.19"]'
+      java: "17"
+      loader: "fabric"
+      fabric-expect-refused: "1"
+      jar-sha: ${{ github.sha }}
+
+  e2e-quilt-refusal-guard:
+    name: "e2e out-of-range refusal (quilt)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && github.event_name != 'push' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: '["1.19"]'
+      java: "17"
+      loader: "quilt"
+      fabric-expect-refused: "1"
+      jar-sha: ${{ github.sha }}
+
   # Stage 2 — current mainstream (1.21.x, 26.x). The `if:` used on every stage job:
   # !cancelled() lets an upstream SKIP pass through, !contains(...'failure') still
   # stops on a real failure, and != '[]' skips an empty band (GitHub errors on a
