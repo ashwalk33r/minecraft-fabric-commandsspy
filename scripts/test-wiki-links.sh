@@ -197,8 +197,19 @@ else
   fi
   shallow="$(git -C "$repo_root" rev-parse --is-shallow-repository)"
   if [[ -z "$base" ]]; then
-    # An unresolvable base is a fact about the checkout, not about the wiki.
-    # It must never be reported as a bad citation.
+    # FAILS, deliberately — do not "improve" this into a skip. A check that
+    # skips silently is unfalsifiable exactly where you most need to know it
+    # did not run: a green from a skipped check reads identically to a green
+    # from a passed one, which is the extension-filtered completeness grep
+    # above in a new costume. The friendly objection ("be kind to shallow or
+    # offline checkouts") does not apply: with the fetch rung above, no base
+    # means no refs AND no network, i.e. a broken runner, not a normal state.
+    # See the rejected tip-equality argument above for the same trade.
+    #
+    # The wording is not the point; the ATTRIBUTION is. This accuses the
+    # checkout, never the citation. A gate that misattributes its own failure
+    # is worse than one that stays quiet — it sends someone to fix a file that
+    # was never wrong. Reword freely, keep that property.
     check "provenance base ref" "ok" \
           "ENVIRONMENT ERROR: cannot resolve a base ref to check ancestry against (tried origin/main, \$GITHUB_BASE_REF, main, and a fetch)"
   else
