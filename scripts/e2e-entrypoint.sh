@@ -175,6 +175,13 @@ timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS $SERVER_LAUNCH_ARGS nogui <&3 > server.
 SERVER_PID=$!
 
 BOOTED=0
+CONFIG_FILE="config/commands-spy.json"
+# MOD.md: "On startup, the config file will be created automatically." Sampled
+# once, at boot, before any command runs — the only moment in this script where
+# "on startup" is still measurable. The end-of-run check below tests the file's
+# CONTENT and structurally cannot test its TIMING: by then four commands have
+# executed, and on every loader the first one alone would have created it.
+CONFIG_AT_BOOT=0
 for _ in $(seq 1 "$BOOT_TIMEOUT"); do
   if grep -q 'Done (' server.log 2>/dev/null; then
     BOOTED=1
@@ -195,6 +202,7 @@ done
 
 if [ "$BOOTED" -eq 1 ]; then
   echo "[e2e] Server booted, sending console command..."
+  if [ -f "$CONFIG_FILE" ]; then CONFIG_AT_BOOT=1; fi
   echo "list" > console.in
   sleep 3
 
@@ -409,9 +417,19 @@ if ! grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; the
   FAILURES="${FAILURES}rcon-command-not-logged,"
 fi
 
-# MOD.md: "On startup, the config file will be created automatically." Asserted
-# on disk, not in the log — the mod prints nothing when it writes the file.
-CONFIG_FILE="config/commands-spy.json"
+# MOD.md's "On startup" half, sampled at boot before any command ran.
+# Unconditional on purpose: every loader's entrypoint touches CommandsSpy before
+# the server is ready — Fabric/Quilt via the preLaunch entrypoint (measured, incl.
+# quilt below 1.18 where "main" never fires), Forge/NeoForge via the @Mod
+# constructor's CommandsSpy.init(). A red leg here is a finding to investigate,
+# never a reason to narrow this check to a subset of loaders.
+if [ "$CONFIG_AT_BOOT" -ne 1 ]; then
+  FAILURES="${FAILURES}config-not-created-at-boot,"
+fi
+
+# The CONTENT half: the documented initial schema. Runs at end of run and says
+# nothing about WHEN the file appeared — the CONFIG_AT_BOOT check above is what
+# asserts MOD.md's "On startup".
 if [ -f "$CONFIG_FILE" ] \
    && grep -q '"blacklist": \[\]' "$CONFIG_FILE" \
    && grep -q '"logArguments": false' "$CONFIG_FILE"; then
@@ -459,6 +477,7 @@ elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; t
 if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
 if grep -q '\[CommandsSpy\] \[Server\] notacommand' "$LOG_FILE"; then echo "  [PASS] non-existing command logged"; else echo "  [FAIL] non-existing command not logged"; fi
 if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
+if [ "$CONFIG_AT_BOOT" -eq 1 ]; then echo "  [PASS] config/commands-spy.json existed at boot, before any command ran"; else echo "  [FAIL] config/commands-spy.json did NOT exist at boot — MOD.md's \"On startup\" promise unmet on this leg"; fi
 if [ -f "$CONFIG_FILE" ] && grep -q '"blacklist": \[\]' "$CONFIG_FILE" && grep -q '"logArguments": false' "$CONFIG_FILE"; then echo "  [PASS] config/commands-spy.json auto-created with the documented initial schema"; else echo "  [FAIL] config/commands-spy.json missing or not the documented initial schema"; cat "$CONFIG_FILE" 2>/dev/null || true; fi
 if grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE" && ! grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then echo "  [PASS] logArguments=false (default): 'say e2e-args-probe' logged as bare 'say'"; else echo "  [FAIL] logArguments=false (default) not honoured for 'say e2e-args-probe'"; fi
 if [ "$PLAYER_PHASE" = "1" ]; then
