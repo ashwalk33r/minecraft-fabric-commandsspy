@@ -6,7 +6,6 @@ root="$(cd "$script_dir/.." && pwd)"
 files=(
   "$root/.github/workflows/ci.yml"
   "$root/.github/workflows/e2e-stage.yml"
-  "$root/.github/workflows/wiki-links.yml"
 )
 actions=(
   "actions/cache"
