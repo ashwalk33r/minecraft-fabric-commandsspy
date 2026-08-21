@@ -331,6 +331,24 @@ for era in mc1.14.x mc1.19-1.20.2 mc1.21.x mc26.x; do
   quilt_eps="$(unzip -p "$era_jar" quilt.mod.json 2>/dev/null | grep -o 'pl\.m2x\.commandsspy\.[A-Za-z0-9_$]*' | sort -u | tr '\n' ' ')"
   check "$era names the same entrypoints in both" \
         "${fabric_eps:-<no-fabric-entrypoints>}" "${quilt_eps:-<no-quilt-entrypoints>}"
+  # Both files must declare the SAME Minecraft range, or the jar advertises one
+  # supported range to Fabric and another to Quilt — silently, since the e2e
+  # matrix only boots versions that are supposed to work. They express it in
+  # different shapes on purpose (Fabric a space-separated string, Quilt a JSON
+  # array), so nothing textual about them can be compared; parse both and
+  # normalise to a sorted list of constraint terms. Splitting the Fabric string
+  # on whitespace runs mirrors build.gradle's own reshape, `.trim().split(/\s+/)`
+  # — the trim half is already guaranteed by the declared-ranges block above,
+  # which pins each property literally. Distinct :- fallbacks again: two failed
+  # extractions must read FAIL, not an empty-equals-empty PASS, so both jq
+  # expressions must yield NOTHING (not "null") when the key is missing.
+  fabric_mc="$(unzip -p "$era_jar" fabric.mod.json 2>/dev/null \
+    | jq -r '.depends.minecraft // empty' | tr -s '[:space:]' '\n' | sort | tr '\n' ' ')"
+  quilt_mc="$(unzip -p "$era_jar" quilt.mod.json 2>/dev/null \
+    | jq -r '.quilt_loader.depends[] | select(.id == "minecraft") | .versions.all[]' \
+    | sort | tr '\n' ' ')"
+  check "$era declares the same minecraft range in both" \
+        "${fabric_mc:-<no-fabric-range>}" "${quilt_mc:-<no-quilt-range>}"
 done
 
 # Probe 3c — the three generated NeoForge e2e legs in ci.yml. Every field is
