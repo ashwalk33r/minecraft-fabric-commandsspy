@@ -192,6 +192,49 @@ for v in $FORGE_OUT_OF_RANGE_VERSIONS; do
   check "forge-routing $v refused" "1" "${got##* }"
 done
 
+# Probe 3a-bis — LOADER=fabric/quilt routing and the out-of-range refusal flag.
+# This is the always-on half of the Fabric guard: it fails in `contracts`,
+# before a single jar is built, whereas the boot leg in ci.yml proves the
+# refusal once on one version.
+echo "== LOADER=fabric routing (band + refusal flag)"
+FABRIC_114_VERSIONS="1.14.4 1.16.5 1.18.2"
+FABRIC_1192_VERSIONS="1.19.1 1.19.2 1.20.2"
+FABRIC_121_VERSIONS="1.20.3 1.21 1.21.11"
+FABRIC_26_VERSIONS="26.1 26.2"
+# The crack between the mc114 ceiling (<1.19) and the mc1192 floor (>=1.19.1).
+FABRIC_OUT_OF_RANGE_VERSIONS="1.19 1.19.0"
+for v in $FABRIC_114_VERSIONS; do
+  check "fabric-routing $v -> 114, not refused" "114 0"   "$("$script_dir/e2e-run-one.sh" --print-fabric-routing "$v")"
+done
+for v in $FABRIC_1192_VERSIONS; do
+  check "fabric-routing $v -> 1192, not refused" "1192 0" "$("$script_dir/e2e-run-one.sh" --print-fabric-routing "$v")"
+done
+for v in $FABRIC_121_VERSIONS; do
+  check "fabric-routing $v -> 121, not refused" "121 0"   "$("$script_dir/e2e-run-one.sh" --print-fabric-routing "$v")"
+done
+for v in $FABRIC_26_VERSIONS; do
+  check "fabric-routing $v -> 26, not refused" "26 0"     "$("$script_dir/e2e-run-one.sh" --print-fabric-routing "$v")"
+done
+for v in $FABRIC_OUT_OF_RANGE_VERSIONS; do
+  got="$("$script_dir/e2e-run-one.sh" --print-fabric-routing "$v")"
+  check "fabric-routing $v refused" "1" "${got##* }"
+done
+
+# ...and the four declared ranges the table above mirrors. e2e-run-one.sh's
+# routing case is a hand-maintained copy of these (exactly as the Forge bands
+# copy forge/gradle.properties), so the copy proves nothing on its own: without
+# this block, widening a range in gradle.properties would silently make the two
+# diverge and every check above would still pass. Pinning the literal strings is
+# deliberately conservative — ANY move fails here, forcing whoever moves one to
+# revisit whether 1.19.0 is still the version no jar claims.
+echo "== declared minecraft ranges (gradle.properties, the guard's source of truth)"
+gp="$repo_root/gradle.properties"
+declared_range() { sed -n "s/^minecraft_range_$1=//p" "$gp"; }
+check "minecraft_range_114"  ">=1.14 <1.19"     "$(declared_range 114)"
+check "minecraft_range_1192" ">=1.19.1 <1.20.3" "$(declared_range 1192)"
+check "minecraft_range_121"  ">=1.20.3 <1.22"   "$(declared_range 121)"
+check "minecraft_range_26"   ">=26.1 <26.3"     "$(declared_range 26)"
+
 # Probe 3b — LOADER=neoforge. ONE band jar spans every Minecraft version
 # NeoForge publishes for (1.20.2 up); what still varies per version is the
 # loader BUILD the installer fetches and NeoForge's own Java floor, both of
