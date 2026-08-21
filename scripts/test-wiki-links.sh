@@ -175,14 +175,48 @@ else
   shas="$(printf '%s' "$provenance" | grep -oE '`[0-9a-f]{7,40}`' | tr -d '`' | sort -u)"
   check "provenance line cites at least one sha" "yes" \
         "$([[ -n "$shas" ]] && echo yes || echo 'no sha in the Applies-to line')"
-  for sha in $shas; do
-    if git -C "$repo_root" merge-base --is-ancestor "$sha" origin/main 2>/dev/null; then
-      got="ok"
-    else
-      got="$sha is not a commit reachable from origin/main"
+  # The base ref is RESOLVED, never assumed. `actions/checkout` does not always
+  # leave refs/remotes/origin/main behind — on a pull_request run it checks out
+  # the merge ref, and fetch-depth: 0 does not promise the remote-tracking
+  # branch. Hardcoding origin/main made an absent ref look like a fabricated
+  # sha: a red gate on a PR whose base is fine and a wiki page nobody touched,
+  # which is the exact trade the comment above argues against. It cannot
+  # reproduce locally, where origin/main always exists.
+  base=""
+  for ref in origin/main "${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}" main; do
+    if [[ -n "$ref" ]] && git -C "$repo_root" rev-parse --verify --quiet "$ref" > /dev/null; then
+      base="$ref"
+      break
     fi
-    check "provenance sha $sha" "ok" "$got"
   done
+  if [[ -z "$base" ]]; then
+    git -C "$repo_root" fetch --quiet origin main 2>/dev/null || true
+    if git -C "$repo_root" rev-parse --verify --quiet FETCH_HEAD > /dev/null; then
+      base="FETCH_HEAD"
+    fi
+  fi
+  shallow="$(git -C "$repo_root" rev-parse --is-shallow-repository)"
+  if [[ -z "$base" ]]; then
+    # An unresolvable base is a fact about the checkout, not about the wiki.
+    # It must never be reported as a bad citation.
+    check "provenance base ref" "ok" \
+          "ENVIRONMENT ERROR: cannot resolve a base ref to check ancestry against (tried origin/main, \$GITHUB_BASE_REF, main, and a fetch)"
+  else
+    for sha in $shas; do
+      if ! git -C "$repo_root" cat-file -e "$sha^{commit}" 2>/dev/null; then
+        if [[ "$shallow" == "true" ]]; then
+          got="ENVIRONMENT ERROR: $sha is absent from a SHALLOW checkout; deepen it before believing this"
+        else
+          got="$sha does not resolve to a commit"
+        fi
+      elif git -C "$repo_root" merge-base --is-ancestor "$sha" "$base"; then
+        got="ok"
+      else
+        got="$sha is not an ancestor of $base"
+      fi
+      check "provenance sha $sha (vs $base)" "ok" "$got"
+    done
+  fi
 fi
 
 echo
