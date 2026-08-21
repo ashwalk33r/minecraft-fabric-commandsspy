@@ -194,7 +194,10 @@ var coverage = map[string]bandCoverage{
 	"forge": {
 		declared: []string{"1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5"},
 		sampled:  []string{"1.20.6", "1.21.1", "1.21.5"},
-		deep:     []string{"1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5"},
+		deep:     []string{"1.20.6", "1.21", "1.21.1", "1.21.3", "1.21.4", "1.21.5"},
+		excluded: map[string]string{
+			"1.21.2": "no Forge build published: the promotions feed goes 51.0.33 (1.21) -> 52.1.16 (1.21.1) -> 53.1.12 (1.21.3) with nothing for 1.21.2, so e2e-run-one.sh exits at no-forge-build-for-version before a container starts. Same situation as 1.14 and 1.16 in the mc116 band, found the same way: the first deep sweep on main booted it and it could not install",
+		},
 	},
 
 	// Forge legacy, [1.17.1,1.20.5). Every MEASURED version is sampled, since
