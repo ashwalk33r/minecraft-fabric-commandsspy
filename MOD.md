@@ -4,24 +4,23 @@ A mod to log commands to the server console. Both existing and non-existing comm
 ## Installation
 Simply place the mod into the mods directory of your server, and it will start monitoring executed commands.
 On startup, the config file will be created automatically.
-Pick the matching jar for your server from the Compatibility tables in the [README](./README.md#compatibility). The mod has no dependencies beyond your loader — Fabric API/QSL is NOT required, and neither is any Forge/NeoForge library.
+## Compatibility
 
-The same jar runs on Fabric Loader and Quilt Loader; when publishing a release, tag both loaders on Modrinth/CurseForge — the jar's `quilt.mod.json` makes the Quilt tag an accurate claim, not just a Fabric-compat assumption.
+The mod has no dependencies beyond your loader — Fabric API/QSL is NOT required,
+and neither is any Forge/NeoForge library.
 
-Four separate Forge jars are also available, together covering Minecraft
-1.14.4 through 26.2: `mc116` (1.14-1.16.5), `legacy` (1.17.1-1.20.4), `modern`
-(1.20.6-1.21.5) and `eventbus7` (1.21.6-26.2). Pick the matching jar for
-your server's Minecraft version from the Compatibility tables in the
-[README](./README.md#compatibility) — no single Forge jar covers the full
-range.
+Which jar to install for your Minecraft version and loader, the Java version each
+one needs, and which combinations are proven by a booted server in CI:
 
-NeoForge has its own single jar, covering Minecraft 1.20.2 through 26.2 — the
-whole range NeoForge publishes for. There is nothing to pick: unlike Forge, one
-NeoForge jar spans every line. On Minecraft 1.20.1 and below there is no
-NeoForge at all (that era is MinecraftForge — use the Forge jars), and the jar
-declares the range, so a server outside it refuses the mod with a clean
-dependency message instead of logging anything. The span is verified by booting
-real NeoForge servers across it, from 1.20.2 up to 26.2.
+**[Supported Versions](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions)** (wiki)
+
+That page is the single source of truth. It distinguishes what the jars *declare*
+from what CI has actually *booted*, and every figure on it carries the command that
+regenerates it.
+
+Short version: Fabric and Quilt share one jar per era, so a Quilt tag on a release
+listing is an accurate claim rather than a Fabric-compat assumption. Forge needs a
+different jar per mapping era. NeoForge takes a single jar across its whole history.
 
 ## Examples
 Player "Ultra_MC" executing "/gamemode creative" command is logged without arguments in server logs when using config `"logArguments": false` (default):
