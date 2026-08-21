@@ -368,6 +368,22 @@ elif ! grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
   FAILURES="${FAILURES}mod-not-loaded,"
 fi
 
+# The gap above is specific to the "main" entrypoint's call site. preLaunch is a
+# different one — Knot invokes it before the game's main class loads — and it fires
+# on EVERY version, quilt 1.14-1.17 included, where "main" never does. Measured on
+# quilt-loader 0.30.0: on 1.16.5 this line appears 25s before "Done (" while the
+# "main" banner never appears at all, in the same boot. That is what puts config
+# auto-creation back at boot time there. Deliberately its own gate and NOT
+# QUILT_ENTRYPOINT_GAP: same version boundary today, but two independent upstream
+# facts, and that flag's [FAIL] text tells whoever sees the "main" gap close to
+# delete it — which would silently invert this assertion. Forge and NeoForge ship
+# neither manifest and could never emit the string.
+if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
+  if ! grep -q 'CommandsSpy preLaunch: config loaded\.' "$LOG_FILE"; then
+    FAILURES="${FAILURES}prelaunch-entrypoint-not-invoked,"
+  fi
+fi
+
 # Two phrasings, era-exact: older Mixin says "was not found", modern Mixin
 # "could not find any targets matching". Fabric/Quilt only: neither Forge nor
 # NeoForge ships a mixin — both hook their platform's native CommandEvent — so
@@ -434,6 +450,9 @@ echo "[e2e] Assertion results:"
 if [ "$QUILT_ENTRYPOINT_GAP" = "1" ]; then
   if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18 entrypoint gap has closed upstream — update docs/version-matrix.md and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18: entrypoint banner absent as expected (mixins still asserted below)"; fi
 elif grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [PASS] mod loaded (Loading CommandsSpy)"; else echo "  [FAIL] mod not loaded (Loading CommandsSpy)"; fi
+if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
+  if grep -q 'CommandsSpy preLaunch: config loaded\.' "$LOG_FILE"; then echo "  [PASS] preLaunch entrypoint invoked (config pulled up to boot)"; else echo "  [FAIL] preLaunch entrypoint NOT invoked — the preLaunch call site regressed"; fi
+fi
 if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandEvent, no Mixin to apply";
 elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoForge jar has no mixin (it hooks CommandEvent)";
 elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
