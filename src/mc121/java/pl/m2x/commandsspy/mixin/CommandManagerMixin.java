@@ -13,7 +13,7 @@ import pl.m2x.commandsspy.CommandsSpy;
 
 /**
  * Hook for MC 1.20.3 - 1.21.x: {@code execute} takes {@code ParseResults} and
- * returns {@code void}. See docs/version-matrix.md.
+ * returns {@code void}. See the wiki, Supported-Versions.
  */
 @Mixin(CommandManager.class)
 public class CommandManagerMixin {

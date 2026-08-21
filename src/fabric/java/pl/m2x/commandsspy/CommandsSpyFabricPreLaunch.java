@@ -8,7 +8,7 @@ import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
  * "main" entrypoint. Knot runs preLaunch before the game's main class is loaded — a
  * different call site from the EntrypointPatch-injected Hooks.startServer path that
  * the "main" gap lives on, so the gap does not necessarily extend to it. See
- * docs/version-matrix.md.
+ * the wiki, Version-Boundaries-And-Root-Causes.
  *
  * <p>This logs its OWN string, never {@link CommandsSpy#init()}'s banner. That banner
  * literal is scripts/e2e-entrypoint.sh's expected-absent tripwire for the "main" gap

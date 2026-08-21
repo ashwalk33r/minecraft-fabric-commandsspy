@@ -13,7 +13,7 @@ import pl.m2x.commandsspy.CommandsSpy;
 /**
  * Hook for MC 1.14.4 - 1.18.2: {@code execute} takes {@code ServerCommandSource}
  * directly and returns {@code int}. Compiled at {@code --release 8}, hence
- * instanceof + cast. See docs/version-matrix.md.
+ * instanceof + cast. See the wiki, Version-Boundaries-And-Root-Causes.
  */
 @Mixin(CommandManager.class)
 public class CommandManagerMixin {

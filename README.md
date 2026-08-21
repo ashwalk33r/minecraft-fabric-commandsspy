@@ -107,7 +107,8 @@ make clean-e2e                      # remove logs, results, containers, images
 ```
 
 Knobs: `VERSIONS`, `PARALLEL` (alias `J`), `BOOT_TIMEOUT` (default 180s),
-`JAVA` (override JVM; a version has a Java floor, not a pin), `LOADER`
+`JAVA` (override JVM; a version has a Java floor, not a pin — except the Forge
+`modern` band, java 21 only, [#66](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/issues/66)), `LOADER`
 (`fabric` | `quilt` | `forge` | `neoforge`). Output:
 `build/e2e-logs/<key>.log` and `build/e2e-results/<key>.result`; any failure
 makes the run exit non-zero. Harness internals and verdict codes:

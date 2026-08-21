@@ -12,7 +12,7 @@ help: ## list every documented target with its description
 
 
 .PHONY: e2e e2e-ci
-# Default matrix: sampled per band — rationale in docs/version-matrix.md.
+# Default matrix: sampled per band — rationale in the wiki, Supported-Versions.
 # Suspect versions can be run explicitly, e.g.:
 #   make e2e VERSIONS="26.1 26.1.1 26.1.2 26.2"
 #   make e2e VERSIONS="1.19.1 1.19.3 1.20 1.14.4 1.15.2"
@@ -39,19 +39,22 @@ MOD_JAR_1192 := build/libs/commandsspy-$(MOD_VERSION)+mc1.19-1.20.2.jar
 MOD_JAR_114 := build/libs/commandsspy-$(MOD_VERSION)+mc1.14.x.jar
 MOD_JAR_26 := build/libs/commandsspy-$(MOD_VERSION)+mc26.x.jar
 # Four Forge jars, built by the separate forge/ Gradle build via -PforgeTarget
-# (default 'modern'). See docs/version-matrix.md.
+# (default 'modern'). See the wiki, Supported-Versions.
 MOD_JAR_FORGE := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x-forge.jar
 MOD_JAR_FORGE_LEGACY := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.17-1.20.4-forge.jar
 MOD_JAR_FORGE_EB7 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.6-26.2-forge.jar
 MOD_JAR_FORGE_MC116 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.16.x-forge.jar
 # NeoForge band jar: ONE jar spanning the measured range, built by the
 # standalone neoforge/ Gradle build. NeoForge has no SRG era, so the range is
-# bounded by what booted, not by mappings; see docs/version-matrix.md.
+# bounded by what booted, not by mappings; see the wiki,
+# Version-Boundaries-And-Root-Causes -> "Why one jar spans the whole NeoForge history".
 MOD_JAR_NEO := build/libs/commandsspy-$(MOD_VERSION)+mc1.20.2-26.2-neoforge.jar
 
 # Optional Java override applied to EVERY version in this run:
 #   make e2e VERSIONS="1.21.11" JAVA=25
-# Empty = each version's floor. A version has a Java floor, not a pin.
+# Empty = each version's floor. A version has a Java floor, not a pin -- with
+# one exception: the Forge modern band (1.20.6-1.21.5) is java 21 ONLY, and a
+# higher JVM is refused with above-java-ceiling-21 (issue #66).
 JAVA ?=
 
 # Each must exist as eclipse-temurin:<n>-jre-jammy; check the tag before
@@ -120,7 +123,7 @@ E2E_KEYS := $(addsuffix $(_cfgvar_suffix),$(if $(JAVA),$(addsuffix -java$(JAVA),
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
 # writing the same tag race, so the parallel phase only ever runs containers.
 # Floors come from `scripts/e2e-run-one.sh --print-java` — the table's single
-# home. See docs/version-matrix.md.
+# home. See the wiki, Supported-Versions.
 # Offline probe used by scripts/test-jar-routing.sh: the default list is part
 # of the routing surface.
 .PHONY: print-e2e-versions
@@ -207,6 +210,7 @@ _e2e-fanout:
 	@echo "[e2e] Testing Minecraft versions: $(VERSIONS)"
 	@echo "[e2e] Loader: $(LOADER)"
 	@echo "[e2e] Java: $(if $(JAVA),$(JAVA) (override),per-version era floor (1.14-1.16=8, 1.17-1.20.2=17, 1.20.3-1.21.x=21, 26.x=25))"
+	@if [ "$(LOADER)" = "forge" ]; then echo "[e2e] Note: the Forge modern band (1.20.6-1.21.5) is java 21 only (issue #66)"; fi
 	@echo "[e2e] Concurrency: $(PARALLEL)"
 	@mkdir -p $(E2E_LOG_DIR) $(E2E_RESULT_DIR)
 	@printf '%s\n' $(VERSIONS) | \
