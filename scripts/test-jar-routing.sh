@@ -263,6 +263,33 @@ else
   echo "  [SKIP] band jar not built (run: make build-neo)"
 fi
 
+# Both metadata files must ship in every Fabric/Quilt era jar. Quilt Loader
+# reads quilt.mod.json and does not fall back to fabric.mod.json for a jar that
+# has one, so the Quilt platform badge rests on this file being present — and
+# no e2e leg can catch its absence, because Quilt's fabric-compat layer would
+# silently load a fabric.mod.json-only jar and every assertion would still pass.
+echo "== fabric/quilt jar metadata"
+# The entrypoint check compares the actual class lists, not counts: both files
+# now declare main AND preLaunch, and CommandsSpyFabricPreLaunch contains the
+# substring CommandsSpyFabric, so any count-based proxy is either blind to
+# preLaunch or trivially equal. Empty extraction is a failure, not a pass —
+# hence the distinct :- fallbacks, which can never compare equal.
+for era in mc1.14.x mc1.19-1.20.2 mc1.21.x mc26.x; do
+  era_jar="$(find build/libs -maxdepth 1 -name "commandsspy-*+${era}.jar" 2>/dev/null | head -1)"
+  if [ -z "$era_jar" ]; then
+    echo "  [SKIP] $era jar not built (run: make build)"
+    continue
+  fi
+  check "$era has fabric.mod.json" "present" \
+        "$(unzip -l "$era_jar" | grep -q 'fabric\.mod\.json' && echo present || echo absent)"
+  check "$era has quilt.mod.json" "present" \
+        "$(unzip -l "$era_jar" | grep -q 'quilt\.mod\.json' && echo present || echo absent)"
+  fabric_eps="$(unzip -p "$era_jar" fabric.mod.json 2>/dev/null | grep -o 'pl\.m2x\.commandsspy\.[A-Za-z0-9_$]*' | sort -u | tr '\n' ' ')"
+  quilt_eps="$(unzip -p "$era_jar" quilt.mod.json 2>/dev/null | grep -o 'pl\.m2x\.commandsspy\.[A-Za-z0-9_$]*' | sort -u | tr '\n' ' ')"
+  check "$era names the same entrypoints in both" \
+        "${fabric_eps:-<no-fabric-entrypoints>}" "${quilt_eps:-<no-quilt-entrypoints>}"
+done
+
 # Probe 3c — the three generated NeoForge e2e legs in ci.yml. Every field is
 # read out of the SAME job block as the job name, so a crossed-over pair (the
 # java 25 leg wired to the java 17 band) fails here instead of booting a 26.2
