@@ -48,7 +48,8 @@ must route "legacy 0"; `forge_java21` versions route "modern 0" except
 `forge_eventbus7_java21`/`forge_eventbus7_java25` versions route
 "eventbus7 0"; `forge_mc116_java8` versions route "mc116 0" — 1.16.4
 included, made known-good by `e2e-run-one.sh`'s install-time ModLauncher
-8.1.3 drop-in (see docs/version-matrix.md). `forge_java26`, the forward-JVM
+8.1.3 drop-in (see the wiki,
+[Gate 1](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes#gate-1-the-1164-crash-is-the-jdks-manifestentryverifier-change)). `forge_java26`, the forward-JVM
 row, spans two bands on purpose (one above-floor boot per mapping/EventBus
 era), so it is checked per version: 26.x routes "eventbus7 0", everything
 else "modern 0". All six rows must be non-empty.

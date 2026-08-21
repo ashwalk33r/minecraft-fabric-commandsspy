@@ -116,7 +116,7 @@ The serverbound command packet's shape:
 | Range | Packet | Fields |
 |---|---|---|
 | 1.14.4–1.18.2 | `chat` | `String message` — leading `/` **included** in the string |
-| 1.19 (759) | `chat_command` | command, i64 timestamp, i64 salt, signature array, bool signedPreview — 1.19.0 itself is unsupported by the mod (see [version-matrix.md](version-matrix.md)), so this row is live-untested |
+| 1.19 (759) | `chat_command` | command, i64 timestamp, i64 salt, signature array, bool signedPreview — 1.19.0 itself is unsupported by the mod (see the wiki's [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes)), so this row is live-untested |
 | 1.19.1/1.19.2 (760) | `chat_command` | the above + previousMessages array + `Option<lastRejectedMessage>` — the "era-760" mode above |
 | 1.19.3–1.20.4 (761–765) | `chat_command` | command, timestamp, salt, sig array, VarInt messageCount, 3-byte acknowledged bitset — "era-761" |
 | **1.20.5+ (766+)** | `chat_command` | **`String command` — the whole packet.** Signing moved to a separate `chat_command_signed` |

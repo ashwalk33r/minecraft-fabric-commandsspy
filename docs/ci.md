@@ -134,7 +134,7 @@ before runner minutes are spent on the long tail.
    `ManifestEntryVerifier` case, found by the row added to look for it.
    Bytecode binds downward but JVM *internals* do not: Forge 35.x cannot boot
    a stock current JDK 8 at all (issue #58, the `ManifestEntryVerifier` case
-   in [version-matrix.md](version-matrix.md)). Per-leg rationale
+   in the wiki, [Forge `modern` is Java 21 only](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions#forge-modern-is-java-21-only)). Per-leg rationale
    (why the modern band is the two edges plus 1.21.1 and nothing else, why
    the legacy/mc116/eventbus7 bands list every measured version, how 1.16.4
    rides the mc116 leg via the install-time ModLauncher drop-in) lives in
@@ -185,7 +185,7 @@ coverage rows widen to the whole sample). Rationale: Minecraft breaks are
 per-patch, JVM breaks are per-JVM, so a band's ends cover the real variable on
 higher JVMs. Which versions are in the sample, which are deep-only, and why a
 declared version is in neither, are data in `tools/gen_matrix.go`'s coverage
-table — see ["What 'covered' means"](version-matrix.md#what-covered-means).
+table — see the wiki, ["The denominator, settled"](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions#the-denominator-settled).
 
 Stages chain via `needs:`. Each stage's job body is defined once, in
 `e2e-stage.yml`, and reused by every stage — only the version list per stage
@@ -336,8 +336,8 @@ the band's ends on `pull_request` (lean) and the whole sample on
 `workflow_dispatch` (deep). The floor rows differ by event too: the sample on
 `pull_request`, the band's whole declared range minus its written exclusions on
 `workflow_dispatch`. Floors and full rationale:
-[version-matrix.md](version-matrix.md), and
-["What 'covered' means"](version-matrix.md#what-covered-means) for the
+the wiki's [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes), and
+["The denominator, settled"](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions#the-denominator-settled) for the
 declared-versus-proven distinction and the offline checks that enforce it.
 
 There is deliberately no `schedule:` trigger. A cron sweep would need someone

@@ -21,7 +21,7 @@ a row lists. Each band states its `declared` range, its `sampled` list, its
 `deep` list and a reason for every declared version booted by neither;
 `gen_matrix_test.go` asserts `deep + excluded == declared` exactly, so a
 version can only leave the grid by acquiring a reason. Background:
-["What 'covered' means"](../docs/version-matrix.md#what-covered-means).
+["The denominator, settled"](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions#the-denominator-settled).
 
 Second contract: every output name is written on every run, even as a literal
 `[]`. A missing output becomes `''` in GitHub expressions and `fromJSON('')`
@@ -84,4 +84,5 @@ here.
 `tools/` is one Go binary with subcommands (`bot`, `rcon`, `gen-matrix`);
 `main.go` dispatches to `runGenMatrix`. Expected job counts are pinned in
 `gen_matrix_test.go`; `floors_test.go` cross-checks Java floors. Policy and
-rationale live in `docs/ci.md` and `docs/version-matrix.md`.
+rationale live in `docs/ci.md` and the wiki's
+[Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes).

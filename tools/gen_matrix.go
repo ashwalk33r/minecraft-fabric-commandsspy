@@ -22,7 +22,8 @@ package main
 //     the coverage table below, which states each band's declared range, the
 //     sample every event boots, the deep list workflow_dispatch boots, and the
 //     reason for every declared version booted by neither. See THE SAMPLING
-//     RULE below and "What 'covered' means" in docs/version-matrix.md.
+//     RULE below and "The denominator, settled" in the wiki's
+//     Supported-Versions page.
 //
 import (
 	"encoding/json"
@@ -120,7 +121,7 @@ var all121 = []string{"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5",
 // Each band now states its version contract as data:
 //
 //	declared — every release on the axis this repo names (see "What 'covered'
-//	           means" in docs/version-matrix.md) that this band's declared
+//	           settled" in the wiki's Supported-Versions) that this band's declared
 //	           minecraft_range_* covers. Restated here INDEPENDENTLY of the
 //	           emit calls below; that independence is what makes the invariant
 //	           bite.
@@ -161,7 +162,7 @@ var coverage = map[string]bandCoverage{
 		sampled:  []string{"26.1", "26.2"},
 		deep:     []string{"26.1", "26.2"},
 		excluded: map[string]string{
-			"26.1.1": "26.x mapping breaks land on the MINOR boundaries, not the patch releases, and each extra version costs a full server download (docs/version-matrix.md, \"Default e2e version list\")",
+			"26.1.1": "26.x mapping breaks land on the MINOR boundaries, not the patch releases, and each extra version costs a full server download (the wiki, Supported-Versions -> \"The Makefile's default version list\")",
 			"26.1.2": "same as 26.1.1 — and the Forge eventbus7 band boots both, so a patch-level break would still surface there",
 		},
 	},
@@ -526,7 +527,8 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// the scar to prove it: Forge 35.x cannot boot a stock current JDK 8 at
 	// all, because 8u321+ changed an internal
 	// sun.security.util.ManifestEntryVerifier constructor that 2020-era
-	// ModLauncher links against (docs/version-matrix.md; e2e-run-one.sh cures
+	// ModLauncher links against (the wiki, Version-Boundaries-And-Root-Causes;
+	// e2e-run-one.sh cures
 	// it with an install-time ModLauncher 8.1.3 drop-in). That is a
 	// forward-JVM failure with no mod and no bytecode in it, and it landed on
 	// the loader that had no forward-JVM row. So each mapping/EventBus era
@@ -577,7 +579,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// predates the ModLauncher fix for the JDK 8u321+ ManifestEntryVerifier
 	// change and cannot boot a STOCK current JDK 8, so e2e-run-one.sh drops
 	// the fixed ModLauncher 8.1.3 (sha256-pinned) into the server install
-	// at install time (see docs/version-matrix.md).
+	// at install time (see the wiki, Version-Boundaries-And-Root-Causes).
 	// No sub-floor refusal guard leg exists either: Forge's next line down
 	// (1.13.2) is below the harness's own 1.14 floor. The old
 	// forge_legacy_guard_java8 leg (1.16.5 expected REFUSED) flipped to an
@@ -609,7 +611,8 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// resolution before Minecraft starts — "FindException: Module
 	// jdk.crypto.ec not found, required by com.nimbusds.jose.jwt" — measured
 	// on java 25 and java 26 alike, and 21/25/26 is the whole ladder above its
-	// floor (issue #66, docs/version-matrix.md). That is upstream Forge's bug,
+	// floor (issue #66, and the wiki's Supported-Versions -> "Forge modern is
+	// Java 21 only"). That is upstream Forge's bug,
 	// not this mod's, and it is a compatibility fact for the version matrix
 	// rather than a leg: an inverted guard could never change state and would
 	// have to match a third party's stack trace to mean anything, since "the
