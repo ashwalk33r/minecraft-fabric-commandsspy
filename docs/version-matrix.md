@@ -672,8 +672,8 @@ range: the fix is a fourth compile target, not a wider range on this one.
 
 `.github/workflows/ci.yml`'s `e2e-forge-legacy-java17` job reads every
 measured PASS version above from `tools/gen_matrix.go`'s
-`forge_legacy_java17` output — unlike the modern
-jar's edges-only job, the whole point of this range was
+`forge_legacy_java17` output — unlike the modern jar's job, which lists
+only the two edges plus 1.21.1, the whole point of this range was
 proving SRG member-id stability *across* seven Forge major branches, so a
 floor+ceiling-only gate would not exercise the thing being measured.
 `scripts/e2e-run-one.sh` routes each Minecraft version to the mc116, legacy,

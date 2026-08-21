@@ -123,10 +123,10 @@ before runner minutes are spent on the long tail.
    with eventbus7's 26.x half running 25 because those servers require it)
    are what matter, and the forward-JVM coverage-row pattern is a Fabric-jar
    concept that must not be reused with `loader: forge`. Per-leg rationale
-   (why the modern band is edges-only, why the legacy/mc116/eventbus7 bands
-   list every measured version, how 1.16.4 rides the mc116 leg via the
-   install-time ModLauncher drop-in) lives in the generator's Forge stage
-   comment.
+   (why the modern band is the two edges plus 1.21.1 and nothing else, why
+   the legacy/mc116/eventbus7 bands list every measured version, how 1.16.4
+   rides the mc116 leg via the install-time ModLauncher drop-in) lives in
+   the generator's Forge stage comment.
 4. **NeoForge stages** — three jobs (`e2e-neoforge-java17`,
    `e2e-neoforge-java21`, `e2e-neoforge-java25`), each a normal
    `e2e-stage.yml` call with `loader: neoforge` reading its version list from
@@ -275,22 +275,15 @@ Job counts per band and trigger are pinned in `tools/gen_matrix_test.go`;
 `tools/floors_test.go` pins the Java floors against
 `scripts/e2e-run-one.sh` (and the Forge rows against
 `--print-forge-routing`). Change the grid → those tests name the new numbers.
-`TOTAL_JOBS = 2 x fabric pairs + forge pairs + neo pairs + 22`: every fabric
-band key feeds two caller jobs (`-fabric` and `-quilt`), Forge and NeoForge
-keys feed one (single-loader — neither has a Quilt twin), and the 22 fixed
-jobs are contracts, go-quality, lint-java, unit-tests, the nine build jobs,
-the `Build` aggregator, the 4 e2e-gate canaries (2 versions x fabric/quilt)
-and the 4 config-behaviors legs (#34, one per loader: fabric, quilt, forge,
-neoforge). The NeoForge legs are no longer among them — they are generated
-pairs now. On `pull_request` that is 2x39 + 30 + 6 + 22 = 136 jobs; on
-`workflow_dispatch` that is 2x68 + 30 + 6 + 22 = 194 jobs; on push only 14
-of the fixed jobs run (the gate and config-behaviors legs are event-skipped)
-and every band, NeoForge included, is empty.
-
-The fixed count moved 25 -> 22 with this change and is worth spelling out,
-because two separate things shrank it: the two per-version NeoForge build
-jobs collapsed into the one `build-neo` band job (-1), and the two literal
-NeoForge e2e jobs became generated pairs counted in the grid instead (-2).
+`TOTAL_JOBS = 2 x fabric pairs + forge pairs + neo pairs + a fixed-job
+constant`: every fabric band key feeds two caller jobs (`-fabric` and
+`-quilt`), Forge and NeoForge keys feed one (single-loader — neither has a
+Quilt twin). The NeoForge e2e legs are not among the fixed jobs — they are
+generated pairs. The constant, its per-job breakdown and the smaller count
+left on push (where the gate canaries, the config-behaviors legs and the
+refusal guards are event-skipped, and every band is empty) are enumerated in
+the comment above `fixedJobs` in `gen_matrix.go`; the totals themselves are
+the pins in `gen_matrix_test.go`. Run the generator for the current numbers.
 
 Grid policy: every version runs on its own floor JVM. Newest-Java coverage
 rows sample only the band's ends on `pull_request` (lean) and the whole band

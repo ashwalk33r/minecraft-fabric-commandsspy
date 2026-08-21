@@ -80,7 +80,7 @@ var expected = map[string]map[string]int{
 	"mc114_java17": {"pull_request": 2, "workflow_dispatch": 2},
 	"mc114_java21": {"pull_request": 2, "workflow_dispatch": 5},
 	// Forge bands: floor rows only, no coverage rows, no lean/full split.
-	"forge_java21":           {"pull_request": 3, "workflow_dispatch": 3},
+	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 4},
 	"forge_legacy_java17":    {"pull_request": 10, "workflow_dispatch": 10},
 	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 7},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
@@ -108,7 +108,7 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		"mc114_java17":  `["1.17.1","1.18.2"]`,
 		// Forge literals, formerly hand-listed in e2e.yml — byte-pinned so a
 		// coverage change is a deliberate edit here, not drift.
-		"forge_java21":           `["1.20.4","1.20.6","1.21.5"]`,
+		"forge_java21":           `["1.20.4","1.20.6","1.21.1","1.21.5"]`,
 		"forge_legacy_java17":    `["1.17.1","1.18","1.18.1","1.18.2","1.19.1","1.19.2","1.20.1","1.20.2","1.20.3","1.20.4"]`,
 		"forge_mc116_java8":      `["1.14.4","1.15.2","1.16.1","1.16.2","1.16.3","1.16.4","1.16.5"]`,
 		"forge_eventbus7_java21": `["1.21.6","1.21.7","1.21.8","1.21.9","1.21.10","1.21.11"]`,
@@ -145,7 +145,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 75, "workflow_dispatch": 104}
+	totals := map[string]int{"pull_request": 76, "workflow_dispatch": 105}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge and neo pairs (single-loader) plus 24 fixed jobs
 	// (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -154,8 +154,8 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt); on push only 14 of these run — gate, config-behaviors and the
 	// refusal guards are event-skipped). The NeoForge legs are generated now,
 	// not fixed jobs.
-	// PR: 2*39 + 30 + 6 + 24 = 138. Dispatch: 2*68 + 30 + 6 + 24 = 196.
-	jobTotals := map[string]int{"pull_request": 138, "workflow_dispatch": 196}
+	// PR: 2*39 + 31 + 6 + 24 = 139. Dispatch: 2*68 + 31 + 6 + 24 = 197.
+	jobTotals := map[string]int{"pull_request": 139, "workflow_dispatch": 197}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -205,11 +205,11 @@ func TestOptionCombinationTotals(t *testing.T) {
 		{"t0", 26, 50, 76, 124},
 		{"t0 mc1192", 32, 58, 88, 140},
 		{"t0 mc1192 mc114", 39, 68, 102, 160},
-		{"t0 mc1192 mc114 forge", 41, 70, 104, 162},
-		{"t0 mc1192 mc114 forge forge_legacy", 52, 81, 115, 173},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 62, 91, 125, 183},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 69, 98, 132, 190},
-		{allBands, 75, 104, 138, 196},
+		{"t0 mc1192 mc114 forge", 42, 71, 105, 163},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 82, 116, 174},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 63, 92, 126, 184},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 70, 99, 133, 191},
+		{allBands, 76, 105, 139, 197},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -306,7 +306,7 @@ func TestBandDetection(t *testing.T) {
 		write(t, root, "forge/gradle.properties",
 			"minecraft_range_modern=[1.20.6,1.21.6)\nminecraft_range_legacy=[1.17.1,1.20.5)\n")
 		_, out := runGrid(t, root, "pull_request", "")
-		if want := `["1.20.4","1.20.6","1.21.5"]`; out["forge_java21"] != want {
+		if want := `["1.20.4","1.20.6","1.21.1","1.21.5"]`; out["forge_java21"] != want {
 			t.Errorf("forge_java21 = %s, want %s", out["forge_java21"], want)
 		}
 		if got := versionsOf(t, out["forge_legacy_java17"]); len(got) != 10 {
@@ -359,7 +359,7 @@ func TestBandDetection(t *testing.T) {
 		_, out := runGrid(t, root, "pull_request", "")
 		// 1.20.4 boots the legacy jar, so it must NOT appear without the
 		// legacy band.
-		if want := `["1.20.6","1.21.5"]`; out["forge_java21"] != want {
+		if want := `["1.20.6","1.21.1","1.21.5"]`; out["forge_java21"] != want {
 			t.Errorf("forge_java21 = %s, want %s", out["forge_java21"], want)
 		}
 		for _, name := range []string{"forge_legacy_java17", "forge_mc116_java8"} {

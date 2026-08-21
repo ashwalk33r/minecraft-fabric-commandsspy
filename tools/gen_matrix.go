@@ -212,10 +212,18 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// LOADER=forge for exactly this reason). This section is the single home
 	// of the Forge leg rationale (e2e.yml's jobs just point here):
 	//
-	// Modern band: edges only — 1.20.6 and 1.21.5 are the measured floor and
-	// ceiling, and the mapping regime and EventBus generation are uniform
-	// across the range, so nothing can fail in the middle while both edges
-	// pass. 1.20.4 rides in this java-21 job but routes to the LEGACY jar
+	// Modern band: edges plus one interior line. 1.20.6 and 1.21.5 are the
+	// measured floor and ceiling, and the mapping regime and EventBus
+	// generation are uniform across the range, so as a MAPPING-REGIME probe
+	// the edges alone would do — nothing can fail in the middle while both
+	// edges pass. 1.21.1 is not here as such a probe and must not be tidied
+	// back out on the grounds that both edges already pass (issue #57): it
+	// is the modpack-dominant Forge line, the version a real server operator
+	// is most likely to run, so its proof should be a band row rather than a
+	// side effect of e2e-config-behaviors-forge, whose versions: literal
+	// happens to be ["1.21.1"] but whose job is blacklist suppression and
+	// logArguments. Same reasoning as the 1.21.1 row in the NeoForge stage
+	// below. 1.20.4 rides in this java-21 job but routes to the LEGACY jar
 	// in-range (--print-forge-routing 1.20.4 = "legacy 0"): it boots the
 	// legacy jar's ceiling on a modern JVM — so it is keyed on the LEGACY
 	// band's presence, not the modern one's; a modern-only tree has no
@@ -250,7 +258,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// not exercise the thing being proven. Split by the era Java floor the
 	// generic table already assigns: 1.21.x on 21, 26.x (including the
 	// 26.1.1/26.1.2 patch releases — each its own Forge major, 63/64) on 25.
-	forgeModern := band("forge", "1.20.6", "1.21.5")
+	forgeModern := band("forge", "1.20.6", "1.21.1", "1.21.5")
 	if len(forgeModern) > 0 {
 		forgeModern = append(band("forge_legacy", "1.20.4"), forgeModern...)
 	}
