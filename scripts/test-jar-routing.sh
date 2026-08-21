@@ -465,7 +465,7 @@ done
 # java21 references its own band key twice (the if-guard and versions:), so
 # 2 is the correct baseline. Any future leg pointing forge_java21's band at a
 # newer JVM adds a third reference and has to delete this line.
-check "no forge leg above java 21 carries the modern band" "2" \
+check "forge_java21 referenced exactly twice in ci.yml (if-guard + versions)" "2" \
       "$(grep -c 'needs.contracts.outputs.forge_java21' "$gate_yml")"
 
 echo "== config-behaviors legs in ci.yml (#34)"
