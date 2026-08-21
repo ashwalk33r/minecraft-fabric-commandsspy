@@ -243,7 +243,18 @@ fi
 : "${E2E_LOG_DIR:=build/e2e-logs}"
 : "${E2E_RESULT_DIR:=build/e2e-results}"
 : "${E2E_RUN_ID:=manual}"
-: "${BOOT_TIMEOUT:=180}"
+# 1.18 and 1.18.1 need longer than the rest: Caves & Cliffs Part II replaced
+# the world generator, and first-boot terrain generation on these two lines
+# runs well past the 180s that every other version clears easily. Measured on
+# the deep sweep: fabric 1.18 reported "Done (158.784s)" and still lost the
+# player phase, and both quilt legs were killed mid "Preparing start region".
+# 1.17.1 and 1.18.2 are unaffected, which is why the sampled grid never saw
+# this. Per-version rather than a global raise: a bigger number everywhere
+# would delay the verdict on every genuinely hung server by the same amount.
+case "$VERSION" in
+  1.18|1.18.1) : "${BOOT_TIMEOUT:=420}" ;;
+  *)           : "${BOOT_TIMEOUT:=180}" ;;
+esac
 
 : "${JAVA_OVERRIDE:=}"
 

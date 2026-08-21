@@ -17,7 +17,7 @@ var allKeys = []string{
 	"mc121_java21", "mc121_java25", "mc121_java26", "mc26_java25", "mc26_java26",
 	"t0_java21", "t0_java25", "t0_java26",
 	"mc1192_java17", "mc1192_java21",
-	"mc114_java8", "mc114_java17", "mc114_java21",
+	"mc114_java8", "mc114_java8_fabric", "mc114_java17", "mc114_java21",
 	"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
 	"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26",
 	"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25",
@@ -79,9 +79,12 @@ var expected = map[string]map[string]int{
 	"mc1192_java21": {"pull_request": 2, "workflow_dispatch": 4},
 	// mc114 = 1.14.4 1.15.2 1.16.5 | 1.17.1 1.18.2: split floors
 	// 8 / 17, coverage 21 across the whole band.
-	"mc114_java8":  {"pull_request": 3, "workflow_dispatch": 9},
-	"mc114_java17": {"pull_request": 2, "workflow_dispatch": 5},
-	"mc114_java21": {"pull_request": 2, "workflow_dispatch": 5},
+	"mc114_java8": {"pull_request": 3, "workflow_dispatch": 8},
+	// Versions Quilt Loader has no build for, so they get a fabric-only leg
+	// (issue #69). Empty on pull_request: 1.14 is deep-only.
+	"mc114_java8_fabric": {"pull_request": 0, "workflow_dispatch": 1},
+	"mc114_java17":       {"pull_request": 2, "workflow_dispatch": 5},
+	"mc114_java21":       {"pull_request": 2, "workflow_dispatch": 5},
 	// Forge bands: floor rows plus the one forward-JVM row, no lean/full split
 	// except where the deep sweep widens the band's own version list.
 	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 7},
@@ -147,7 +150,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 		_, out := runGrid(t, emptyRoot(t), event, "")
 		for _, name := range []string{"t0_java21", "t0_java25", "t0_java26",
 			"mc1192_java17", "mc1192_java21",
-			"mc114_java8", "mc114_java17", "mc114_java21",
+			"mc114_java8", "mc114_java8_fabric", "mc114_java17", "mc114_java21",
 			"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
 			"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26",
 			"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25"} {
@@ -168,11 +171,11 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*39 + 32 + 7 + 25 = 142. Dispatch: 2*80 + 38 + 14 + 25 = 237 — the
+	// PR: 2*39 + 32 + 7 + 25 = 142. Dispatch: 2*79 + 38 + 14 + 25 + 1 = 236 — the
 	// deep sweep's whole delta is Minecraft versions the PR grid never boots.
 	// The forge and neo terms carry the #58 forward-JVM rows: forge_java26 (1)
 	// and neo_fwd_java25 (1), the same on every event.
-	jobTotals := map[string]int{"pull_request": 142, "workflow_dispatch": 237}
+	jobTotals := map[string]int{"pull_request": 142, "workflow_dispatch": 236}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -225,12 +228,12 @@ func TestOptionCombinationTotals(t *testing.T) {
 		{"", 18, 38, 61, 101},
 		{"t0", 26, 50, 77, 125},
 		{"t0 mc1192", 32, 61, 89, 147},
-		{"t0 mc1192 mc114", 39, 80, 103, 185},
-		{"t0 mc1192 mc114 forge", 42, 86, 106, 191},
-		{"t0 mc1192 mc114 forge forge_legacy", 53, 100, 117, 205},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 111, 128, 216},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 118, 135, 223},
-		{allBands, 78, 132, 142, 237},
+		{"t0 mc1192 mc114", 39, 80, 103, 184},
+		{"t0 mc1192 mc114 forge", 42, 86, 106, 190},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 100, 117, 204},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 111, 128, 215},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 118, 135, 222},
+		{allBands, 78, 132, 142, 236},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -524,7 +527,7 @@ var bandRows = map[string][]string{
 	"mc26":            {"mc26_java25", "mc26_java26"},
 	"t0":              {"t0_java21", "t0_java25", "t0_java26"},
 	"mc1192":          {"mc1192_java17", "mc1192_java21"},
-	"mc114":           {"mc114_java8", "mc114_java17", "mc114_java21"},
+	"mc114":           {"mc114_java8", "mc114_java8_fabric", "mc114_java17", "mc114_java21"},
 	"forge":           {"forge_java21"},
 	"forge_legacy":    {"forge_legacy_java17"},
 	"forge_mc116":     {"forge_mc116_java8"},
@@ -650,5 +653,49 @@ func TestEveryRowBelongsToABand(t *testing.T) {
 	}
 	for r := range seen {
 		t.Errorf("bandRows names %s, which the grid does not emit", r)
+	}
+}
+
+// quiltUnavailable names versions Quilt Loader has no build for (issue #69).
+// Whether that is TRUE of the world is a network fact and contracts cannot
+// check it. What contracts can check, and this does, is that the grid obeys the
+// set: every version in it must leave the shared row -- which feeds a quilt
+// caller job that could only ever fail -- and appear in the fabric-only row
+// instead. Without this, adding a version to the set and forgetting the row, or
+// deleting the row and leaving the set, both pass silently.
+func TestQuiltUnavailableVersionsRunFabricOnly(t *testing.T) {
+	if len(quiltUnavailable) == 0 {
+		t.Skip("no quilt-unavailable versions declared")
+	}
+	for _, event := range []string{"pull_request", "workflow_dispatch"} {
+		_, out := runGrid(t, emptyRoot(t), event, allBands)
+		for _, name := range allKeys {
+			fabricOnly := strings.HasSuffix(name, "_fabric")
+			for _, v := range versionsOf(t, out[name]) {
+				if !quiltUnavailable[v] {
+					continue
+				}
+				if !fabricOnly {
+					t.Errorf("[%s] %s emits %s, which Quilt cannot boot: it belongs in a _fabric row",
+						event, name, v)
+				}
+			}
+		}
+	}
+	// And the fabric-only row is not merely absent-by-accident: on the event
+	// that boots the deep list, every declared quilt-unavailable version the
+	// band covers must actually appear somewhere.
+	_, out := runGrid(t, emptyRoot(t), "workflow_dispatch", allBands)
+	seen := map[string]bool{}
+	for _, name := range allKeys {
+		for _, v := range versionsOf(t, out[name]) {
+			seen[v] = true
+		}
+	}
+	for v := range quiltUnavailable {
+		if !seen[v] {
+			t.Errorf("workflow_dispatch: %s is quilt-unavailable but booted by no row at all; "+
+				"it should still run on fabric", v)
+		}
 	}
 }
