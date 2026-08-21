@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -57,7 +58,9 @@ func versionsOf(t *testing.T, jsonVal string) []string {
 
 // Expected per-submatrix job counts (band forced present): each version on
 // its own floor JVM, plus newest-Java coverage rows — band ends when lean,
-// whole band when full.
+// whole SAMPLE when full. On workflow_dispatch the FLOOR rows widen too, from
+// each band's `sampled` list to its `deep` one (issue #59): before that, the
+// full grid added Java legs over the very same Minecraft versions.
 var expected = map[string]map[string]int{
 	// mainstream: 1.21.x floor 21 (canary 1.21.11 moved to gate), coverage 25/26
 	"mc121_java21": {"pull_request": 11, "workflow_dispatch": 11},
@@ -72,16 +75,17 @@ var expected = map[string]map[string]int{
 	"t0_java26": {"pull_request": 2, "workflow_dispatch": 4},
 	// mc1192 = 1.19.2 1.19.4 1.20.1 1.20.2: floor 17, coverage 21
 	// only (pre-1.20.3 bands have no 25/26 rows).
-	"mc1192_java17": {"pull_request": 4, "workflow_dispatch": 4},
+	"mc1192_java17": {"pull_request": 4, "workflow_dispatch": 7},
 	"mc1192_java21": {"pull_request": 2, "workflow_dispatch": 4},
 	// mc114 = 1.14.4 1.15.2 1.16.5 | 1.17.1 1.18.2: split floors
 	// 8 / 17, coverage 21 across the whole band.
-	"mc114_java8":  {"pull_request": 3, "workflow_dispatch": 3},
-	"mc114_java17": {"pull_request": 2, "workflow_dispatch": 2},
+	"mc114_java8":  {"pull_request": 3, "workflow_dispatch": 9},
+	"mc114_java17": {"pull_request": 2, "workflow_dispatch": 5},
 	"mc114_java21": {"pull_request": 2, "workflow_dispatch": 5},
-	// Forge bands: floor rows plus the one forward-JVM row, no lean/full split.
-	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 4},
-	"forge_legacy_java17":    {"pull_request": 10, "workflow_dispatch": 10},
+	// Forge bands: floor rows plus the one forward-JVM row, no lean/full split
+	// except where the deep sweep widens the band's own version list.
+	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 8},
+	"forge_legacy_java17":    {"pull_request": 10, "workflow_dispatch": 13},
 	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 7},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
 	"forge_eventbus7_java25": {"pull_request": 4, "workflow_dispatch": 4},
@@ -90,10 +94,10 @@ var expected = map[string]map[string]int{
 	"forge_java26": {"pull_request": 1, "workflow_dispatch": 1},
 	// NeoForge: one band jar, so floor rows — band edges plus NeoForge's own
 	// three Java floors plus the 1.21.1 interior — and the one forward-JVM
-	// row (#58), 1.21.1 (floor 21) booted on 25. No lean/full split.
+	// row (#58), 1.21.1 (floor 21) booted on 25.
 	"neo_java17":     {"pull_request": 2, "workflow_dispatch": 2},
-	"neo_java21":     {"pull_request": 3, "workflow_dispatch": 3},
-	"neo_java25":     {"pull_request": 1, "workflow_dispatch": 1},
+	"neo_java21":     {"pull_request": 3, "workflow_dispatch": 9},
+	"neo_java25":     {"pull_request": 1, "workflow_dispatch": 2},
 	"neo_fwd_java25": {"pull_request": 1, "workflow_dispatch": 1},
 }
 
@@ -155,7 +159,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 78, "workflow_dispatch": 107}
+	totals := map[string]int{"pull_request": 78, "workflow_dispatch": 133}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge and neo pairs (single-loader) plus 25 fixed jobs
 	// (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -164,10 +168,11 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*39 + 32 + 7 + 25 = 142. Dispatch: 2*68 + 32 + 7 + 25 = 200. The
-	// forge and neo terms carry the #58 forward-JVM rows: forge_java26 (1) and
-	// neo_fwd_java25 (1), the same on every event — no lean/full split.
-	jobTotals := map[string]int{"pull_request": 142, "workflow_dispatch": 200}
+	// PR: 2*39 + 32 + 7 + 25 = 142. Dispatch: 2*80 + 39 + 14 + 25 = 238 — the
+	// deep sweep's whole delta is Minecraft versions the PR grid never boots.
+	// The forge and neo terms carry the #58 forward-JVM rows: forge_java26 (1)
+	// and neo_fwd_java25 (1), the same on every event.
+	jobTotals := map[string]int{"pull_request": 142, "workflow_dispatch": 238}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -219,13 +224,13 @@ func TestOptionCombinationTotals(t *testing.T) {
 	}{
 		{"", 18, 38, 61, 101},
 		{"t0", 26, 50, 77, 125},
-		{"t0 mc1192", 32, 58, 89, 141},
-		{"t0 mc1192 mc114", 39, 68, 103, 161},
-		{"t0 mc1192 mc114 forge", 42, 71, 106, 164},
-		{"t0 mc1192 mc114 forge forge_legacy", 53, 82, 117, 175},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 93, 128, 186},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 100, 135, 193},
-		{allBands, 78, 107, 142, 200},
+		{"t0 mc1192", 32, 61, 89, 147},
+		{"t0 mc1192 mc114", 39, 80, 103, 185},
+		{"t0 mc1192 mc114 forge", 42, 87, 106, 192},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 101, 117, 206},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 112, 128, 217},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 119, 135, 224},
+		{allBands, 78, 133, 142, 238},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -438,7 +443,8 @@ func TestBandDetection(t *testing.T) {
 // the 4 config-behaviors legs and the 3 out-of-range refusal guards are all
 // event-skipped in ci.yml). The NeoForge
 // legs are generated rows now, so push zeroes them like every other band
-// instead of them riding in the fixed count.
+// instead of them riding in the fixed count. The deep sweep does not reach
+// push either: `full` and `push` are different events, and push wins.
 func TestPushEmitsEmptyBands(t *testing.T) {
 	stdout, out := runGrid(t, emptyRoot(t), "push", allBands)
 	for _, name := range allKeys {
@@ -504,5 +510,145 @@ func TestSummaryLineFormat(t *testing.T) {
 	want = "neo_fwd_java25:    1  [\"1.21.1\"]\n"
 	if !strings.Contains(stdout, want) {
 		t.Errorf("summary missing the %%-16s %%3d line %q in:\n%s", want, stdout)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The sampling rule (issue #59).
+
+// bandRows maps each coverage-table band to the emitted rows that boot it.
+// Every row in allKeys appears exactly once here — TestEveryRowBelongsToABand
+// is the tripwire for a new row added without a band.
+var bandRows = map[string][]string{
+	"mc121":           {"mc121_java21", "mc121_java25", "mc121_java26"},
+	"mc26":            {"mc26_java25", "mc26_java26"},
+	"t0":              {"t0_java21", "t0_java25", "t0_java26"},
+	"mc1192":          {"mc1192_java17", "mc1192_java21"},
+	"mc114":           {"mc114_java8", "mc114_java17", "mc114_java21"},
+	"forge":           {"forge_java21"},
+	"forge_legacy":    {"forge_legacy_java17"},
+	"forge_mc116":     {"forge_mc116_java8"},
+	"forge_eventbus7": {"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26"},
+	"neo":             {"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25"},
+}
+
+func setOf(list []string) map[string]bool {
+	s := map[string]bool{}
+	for _, v := range list {
+		s[v] = true
+	}
+	return s
+}
+
+// diffSets reports what is in a but not b, and what is in b but not a.
+func diffSets(a, b map[string]bool) (onlyA, onlyB []string) {
+	for v := range a {
+		if !b[v] {
+			onlyA = append(onlyA, v)
+		}
+	}
+	for v := range b {
+		if !a[v] {
+			onlyB = append(onlyB, v)
+		}
+	}
+	sort.Strings(onlyA)
+	sort.Strings(onlyB)
+	return onlyA, onlyB
+}
+
+// THE anti-drift assertion. Every version a band DECLARES is either booted by
+// the deep sweep or excluded with a written reason, and nothing is both. That
+// is what stops the gap the issue found from re-opening quietly: a version
+// cannot leave the grid by being deleted from a list, only by acquiring a
+// reason someone had to type.
+func TestCoverageTableAccountsForEveryDeclaredVersion(t *testing.T) {
+	for name, c := range coverage {
+		declared := setOf(c.declared)
+		if len(declared) != len(c.declared) {
+			t.Errorf("%s: declared list has duplicates: %v", name, c.declared)
+		}
+		deep := setOf(c.deep)
+		for _, v := range c.sampled {
+			if !deep[v] {
+				t.Errorf("%s: %s is sampled but absent from deep — deep must be a superset", name, v)
+			}
+		}
+		for _, v := range c.deep {
+			if !declared[v] {
+				t.Errorf("%s: %s is booted but is not in the band's declared range", name, v)
+			}
+		}
+		accounted := setOf(c.deep)
+		for v, reason := range c.excluded {
+			if strings.TrimSpace(reason) == "" {
+				t.Errorf("%s: %s is excluded with an empty reason", name, v)
+			}
+			if accounted[v] {
+				t.Errorf("%s: %s is both booted and excluded", name, v)
+			}
+			accounted[v] = true
+		}
+		unaccounted, undeclared := diffSets(declared, accounted)
+		if len(unaccounted) > 0 {
+			t.Errorf("%s: declared but neither booted nor excluded with a reason: %v", name, unaccounted)
+		}
+		if len(undeclared) > 0 {
+			t.Errorf("%s: booted or excluded but not declared: %v", name, undeclared)
+		}
+	}
+}
+
+// The table is only worth anything if the grid obeys it: pull_request boots
+// exactly each band's sample, workflow_dispatch boots exactly its deep list.
+// Without this, the table above is decoration and the emit calls could say
+// something else entirely.
+func TestGridBootsTheSampleThenTheDeepList(t *testing.T) {
+	for _, tc := range []struct {
+		event string
+		want  func(bandCoverage) []string
+	}{
+		{"pull_request", func(c bandCoverage) []string { return c.sampled }},
+		{"workflow_dispatch", func(c bandCoverage) []string { return c.deep }},
+	} {
+		_, out := runGrid(t, emptyRoot(t), tc.event, allBands)
+		for name, rows := range bandRows {
+			got := map[string]bool{}
+			for _, r := range rows {
+				for _, v := range versionsOf(t, out[r]) {
+					got[v] = true
+				}
+			}
+			// forge_java21 also carries 1.20.4, which is keyed on the LEGACY
+			// band (it boots the legacy jar on a modern JVM) — see gen_matrix.go.
+			if name == "forge" {
+				delete(got, "1.20.4")
+			}
+			missing, extra := diffSets(setOf(tc.want(coverage[name])), got)
+			if len(missing) > 0 {
+				t.Errorf("[%s] band %s: %v are in the table but booted by no row", tc.event, name, missing)
+			}
+			if len(extra) > 0 {
+				t.Errorf("[%s] band %s: rows boot %v, which the table does not list", tc.event, name, extra)
+			}
+		}
+	}
+}
+
+func TestEveryRowBelongsToABand(t *testing.T) {
+	seen := map[string]int{}
+	for _, rows := range bandRows {
+		for _, r := range rows {
+			seen[r]++
+		}
+	}
+	for _, k := range allKeys {
+		if seen[k] != 1 {
+			t.Errorf("%s appears in bandRows %d times, want exactly 1", k, seen[k])
+		}
+		delete(seen, k)
+	}
+	for r := range seen {
+		t.Errorf("bandRows names %s, which the grid does not emit", r)
 	}
 }
