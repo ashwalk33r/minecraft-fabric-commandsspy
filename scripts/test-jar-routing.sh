@@ -442,6 +442,32 @@ check "one NeoForge build job" "1" "$(grep -cE '^  build-neo:$' "$gate_yml")"
 check "band jar uploaded under one artifact name" "1" \
       "$(grep -cF 'name: commandsspy-jar-neoforge-${{ github.sha }}' "$gate_yml")"
 
+# Probe 3e — the six generated Forge e2e legs in ci.yml. Same wiring check as
+# the NeoForge legs above, and the one that keeps issue #66 honest: nothing
+# else asserts that no MODERN-band leg is scheduled above java 21. The
+# forward-JVM leg (forge_java26) is eventbus7-only for that reason, and
+# floors_test.go pins its band membership; what is pinned here is its JVM.
+echo "== Forge e2e legs in ci.yml"
+for spec in "e2e-forge-java21 forge_java21 21" \
+            "e2e-forge-legacy-java17 forge_legacy_java17 17" \
+            "e2e-forge-mc116-java8 forge_mc116_java8 8" \
+            "e2e-forge-eventbus7-java21 forge_eventbus7_java21 21" \
+            "e2e-forge-eventbus7-java25 forge_eventbus7_java25 25" \
+            "e2e-forge-java26 forge_java26 26"; do
+  read -r job key java <<< "$spec"
+  check "$job versions" "\${{ needs.contracts.outputs.$key }}" "$(ci_job_field "$job" versions)"
+  check "$job java"     "\"$java\""  "$(ci_job_field "$job" java)"
+  check "$job loader"   '"forge"'    "$(ci_job_field "$job" loader)"
+  check "$job skips an empty band" "1" \
+        "$(ci_job_block "$job" | grep -cF "needs.contracts.outputs.$key != '[]'")"
+done
+# The modern band's leg is the java-21 one and there is no other: e2e-forge-
+# java21 references its own band key twice (the if-guard and versions:), so
+# 2 is the correct baseline. Any future leg pointing forge_java21's band at a
+# newer JVM adds a third reference and has to delete this line.
+check "no forge leg above java 21 carries the modern band" "2" \
+      "$(grep -c 'needs.contracts.outputs.forge_java21' "$gate_yml")"
+
 echo "== config-behaviors legs in ci.yml (#34)"
 for loader in fabric quilt forge neoforge; do
   check "config-behaviors leg present ($loader)" "1" \
