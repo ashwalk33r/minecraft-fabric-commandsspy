@@ -144,6 +144,15 @@ done < <(cd "$repo_root" && git ls-files -z \
 # run time rather than swallowed, because a skip you cannot see is the defect
 # this script exists to retire. Widening the grammar to catch them is a
 # separate change; do not widen it by loosening the page-slug requirement.
+#
+# STATED LIMIT, so the boundary is read rather than inferred from the filename:
+# this checks `page-name -> "Quoted Heading"` shape and nothing else. A BARE
+# mention —
+# `see the wiki, Version-Boundaries-And-Root-Causes`, with no quoted heading — is NOT
+# checked. Catching those needs either a looser page-slug rule, which hands back
+# the false positives this grammar eliminates structurally, or a page-name
+# allowlist nobody has agreed to maintain. The corpus under this grammar is 20
+# citations, not the whole set of wiki mentions in the tree.
 CITATION_RE='[A-Z][A-Za-z0-9]*(-[A-Za-z0-9]+)+ *-> *\\?"[^"]+\\?"'
 echo "== repo -> wiki prose citations (page-slug -> \"Heading\")"
 while IFS= read -r hit; do

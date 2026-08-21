@@ -611,8 +611,8 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// resolution before Minecraft starts — "FindException: Module
 	// jdk.crypto.ec not found, required by com.nimbusds.jose.jwt" — measured
 	// on java 25 and java 26 alike, and 21/25/26 is the whole ladder above its
-	// floor (issue #66, and the wiki's Supported-Versions -> "Forge modern is
-	// Java 21 only"). That is upstream Forge's bug,
+	// floor (issue #66, and the wiki's Supported-Versions -> "Forge modern is Java 21 only").
+	// That is upstream Forge's bug,
 	// not this mod's, and it is a compatibility fact for the version matrix
 	// rather than a leg: an inverted guard could never change state and would
 	// have to match a third party's stack trace to mean anything, since "the

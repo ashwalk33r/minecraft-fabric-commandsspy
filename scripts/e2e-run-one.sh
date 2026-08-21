@@ -193,8 +193,8 @@ if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
   case "$FORGE_JAR_BAND" in
     mc116)  FLOOR_JAVA=8 ;;
     legacy) FLOOR_JAVA=17 ;;
-    # Java 21 only (issue #66; the wiki, Supported-Versions -> "Forge modern
-    # is Java 21 only"). Ceiling, not just a floor: this band is the one place
+    # Java 21 only (issue #66; the wiki, Supported-Versions -> "Forge modern is Java 21 only").
+    # Ceiling, not just a floor: this band is the one place
     # where a NEWER JVM is a downgrade.
     # Measured by this harness: java 21 boots, java 25 and 26 both boot-fail.
     # There is no java-22/23 image here, so the JDK-24 boundary itself is NOT
