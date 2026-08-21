@@ -206,14 +206,14 @@ done
 # before Docker is touched, which is what makes this cheap enough to pin here.
 echo "== Forge modern java ceiling (issue #66)"
 ceiling_probe() {
-  local java="$1" version="$2" tmp
+  local java="$1" version="$2" ceiling_override="${3:-}" tmp
   tmp="$(mktemp -d)"
   REPO_ROOT="$tmp" \
   E2E_LOG_DIR="logs" E2E_RESULT_DIR="results" \
   MOD_JAR_121="x.jar" MOD_JAR_1192="x.jar" MOD_JAR_114="x.jar" MOD_JAR_26="x.jar" \
   MOD_JAR_FORGE="x.jar" MOD_JAR_FORGE_LEGACY="x.jar" \
   MOD_JAR_FORGE_EB7="x.jar" MOD_JAR_FORGE_MC116="x.jar" \
-  LOADER=forge JAVA_OVERRIDE="$java" \
+  LOADER=forge JAVA_OVERRIDE="$java" FORGE_MODERN_JAVA_CEILING="$ceiling_override" \
     bash "$repo_root/scripts/e2e-run-one.sh" "$version" >/dev/null 2>&1 || true
   cat "$tmp"/results/*.result 2>/dev/null | tr -d '\n'
   rm -rf "$tmp"
@@ -228,6 +228,12 @@ check "modern 1.21.5 on java 21 is not refused by the ceiling" \
       "E2E 1.21.5 java21 FAIL mod-jar-missing" "$(ceiling_probe 21 1.21.5)"
 check "eventbus7 26.2 on java 26 is not refused by the ceiling" \
       "E2E 26.2 java26 FAIL mod-jar-missing" "$(ceiling_probe 26 26.2)"
+# FORGE_MODERN_JAVA_CEILING keeps the java-21-only claim falsifiable: raise it
+# and the same java-25 run that was refused above now gets past the guard
+# (proving the override reaches the guard, not that java 25 actually boots --
+# it fails later, on the absent jar, same as the unset-case checks above).
+check "FORGE_MODERN_JAVA_CEILING=26 lets modern 1.21.5 on java 25 past the guard" \
+      "E2E 1.21.5 java25 FAIL mod-jar-missing" "$(ceiling_probe 25 1.21.5 26)"
 
 # ...and the four declared ranges the band table above mirrors, exactly as the
 # Fabric block near the bottom of this file pins gradle.properties. The band

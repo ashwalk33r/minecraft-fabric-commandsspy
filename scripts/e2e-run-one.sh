@@ -192,13 +192,18 @@ if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
   case "$FORGE_JAR_BAND" in
     mc116)  FLOOR_JAVA=8 ;;
     legacy) FLOOR_JAVA=17 ;;
-    # Java 21 only: net.minecraftforge.bootstrap dies in module resolution on
-    # java 24+ because nimbus-jose-jwt requires jdk.crypto.ec, a module REMOVED
-    # in JDK 24 -- so there is nothing to --add-modules. Measured boot-failed on
-    # java 25 and 26 alike (issue #66; the wiki, Supported-Versions ->
-    # "Forge modern is Java 21 only"). Ceiling, not just a floor: this band is
-    # the one place where a NEWER JVM is a downgrade.
-    modern) FLOOR_JAVA=21; CEILING_JAVA=21 ;;
+    # Java 21 only (issue #66; the wiki, Supported-Versions -> "Forge modern
+    # is Java 21 only"). Ceiling, not just a floor: this band is the one place
+    # where a NEWER JVM is a downgrade.
+    # Measured by this harness: java 21 boots, java 25 and 26 both boot-fail.
+    # There is no java-22/23 image here, so the JDK-24 boundary itself is NOT
+    # measured -- it is cited from upstream's own release note: JDK 24 removed
+    # the jdk.crypto.ec module that nimbus-jose-jwt (a net.minecraftforge.
+    # bootstrap dependency) needs for module resolution, so there is nothing
+    # to --add-modules. The claim stays "java 21 only", never "<24".
+    # FORGE_MODERN_JAVA_CEILING overrides the ceiling for re-probing the band
+    # after an upstream Forge bootstrap fix, without editing this file.
+    modern) FLOOR_JAVA=21; CEILING_JAVA="${FORGE_MODERN_JAVA_CEILING:-21}" ;;
   esac
 fi
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
