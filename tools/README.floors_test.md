@@ -48,7 +48,10 @@ must route "legacy 0"; `forge_java21` versions route "modern 0" except
 `forge_eventbus7_java21`/`forge_eventbus7_java25` versions route
 "eventbus7 0"; `forge_mc116_java8` versions route "mc116 0" — 1.16.4
 included, made known-good by `e2e-run-one.sh`'s install-time ModLauncher
-8.1.3 drop-in (see docs/version-matrix.md).
+8.1.3 drop-in (see docs/version-matrix.md). `forge_java26`, the forward-JVM
+row, spans two bands on purpose (one above-floor boot per mapping/EventBus
+era), so it is checked per version: 26.x routes "eventbus7 0", everything
+else "modern 0". All six rows must be non-empty.
 
 ### TestGenMatrixNeoRowsAgreeWithNeoRouting
 
@@ -60,6 +63,12 @@ floors, which differ from the Fabric table (1.20.4 is `--print-java` 21 but a
 NeoForge Java-17 line). All three rows must be non-empty, and there must be
 exactly three; only floors are checked, since the one band jar serves them
 all.
+
+The forward-JVM row `neo_fwd_java25` gets the mirror-image assertion in the
+same test: its versions must report a floor strictly **below** 25, or it is
+not forward coverage at all. That is why it is named outside the
+`neo_java<N>` shape — the equality above stays strict for the floor rows,
+which is the tripwire for an upstream NeoForge floor moving.
 
 ## How to run
 

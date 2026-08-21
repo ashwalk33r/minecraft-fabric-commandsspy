@@ -9,6 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -148,8 +149,16 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 			}
 		}
 	}
+	// The forward-JVM row (#58) probes the eventbus7 era only — Forge's
+	// modern-era bootstrap cannot boot java 26, or java 25 (issue #66; see
+	// gen_matrix.go), so the modern band has no above-floor probe to check.
+	for _, v := range rows["forge_java26"] {
+		if got, want := printForgeRouting(v), "eventbus7 0"; got != want {
+			t.Errorf("forge_java26 contains %s, routing = %q, want %q", v, got, want)
+		}
+	}
 	for _, name := range []string{"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
-		"forge_eventbus7_java21", "forge_eventbus7_java25"} {
+		"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26"} {
 		if len(rows[name]) == 0 {
 			t.Errorf("%s: no versions emitted (band missing from the real tree?)", name)
 		}
@@ -207,5 +216,41 @@ func TestGenMatrixNeoRowsAgreeWithNeoRouting(t *testing.T) {
 	}
 	if seen != 3 {
 		t.Errorf("saw %d neo_java rows in gen-matrix output, want 3", seen)
+	}
+
+	// The forward-JVM row (#58) is the mirror image of the three above: it
+	// exists precisely because its versions sit BELOW the JVM it boots them
+	// on, so the equality just applied would be exactly the wrong assertion.
+	// Naming it outside the neo_java<N> shape is what lets both checks stay
+	// strict — the floor rows keep proving "this row IS the floor", and this
+	// one proves "this row is ABOVE the floor", which is the whole point.
+	const fwdRow, fwdJava = "neo_fwd_java25", 25
+	fwdSeen := false
+	for _, line := range strings.Split(gh.String(), "\n") {
+		name, j, ok := strings.Cut(line, "=")
+		if !ok || name != fwdRow {
+			continue
+		}
+		fwdSeen = true
+		var versions []string
+		if err := json.Unmarshal([]byte(j), &versions); err != nil {
+			t.Fatalf("%s: bad JSON %q: %v", name, j, err)
+		}
+		if len(versions) == 0 {
+			t.Errorf("%s: no versions emitted (neoforge/gradle.properties missing its band range?)", name)
+		}
+		for _, v := range versions {
+			floor, err := strconv.Atoi(printNeoFloor(v))
+			if err != nil {
+				t.Fatalf("%s: --print-neo-routing %s floor %q is not a number: %v", name, v, printNeoFloor(v), err)
+			}
+			if floor >= fwdJava {
+				t.Errorf("%s contains %s, whose NeoForge floor is %d — that is not forward coverage; this row must boot versions whose floor is below java %d",
+					name, v, floor, fwdJava)
+			}
+		}
+	}
+	if !fwdSeen {
+		t.Errorf("%s is missing from the gen-matrix output entirely", fwdRow)
 	}
 }

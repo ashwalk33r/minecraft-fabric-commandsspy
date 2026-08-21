@@ -47,9 +47,11 @@ jobs:
       forge_mc116_java8: ${{ steps.grid.outputs.forge_mc116_java8 }}
       forge_eventbus7_java21: ${{ steps.grid.outputs.forge_eventbus7_java21 }}
       forge_eventbus7_java25: ${{ steps.grid.outputs.forge_eventbus7_java25 }}
+      forge_java26: ${{ steps.grid.outputs.forge_java26 }}
       neo_java17: ${{ steps.grid.outputs.neo_java17 }}
       neo_java21: ${{ steps.grid.outputs.neo_java21 }}
       neo_java25: ${{ steps.grid.outputs.neo_java25 }}
+      neo_fwd_java25: ${{ steps.grid.outputs.neo_fwd_java25 }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: "Verify action pins"
@@ -580,8 +582,9 @@ jobs:
   # not a reason to withhold that coverage, so NeoForge runs alongside the gate
   # instead of in front of it.
   #
-  # One band jar spans 1.20.2-26.2, so these three legs split on NeoForge's own
-  # Java floor (17 up to 1.20.4, 21 through 1.21.11, 25 on 26.x) — not on jars.
+  # One band jar spans 1.20.2-26.2, so the three floor legs split on NeoForge's
+  # own Java floor (17 up to 1.20.4, 21 through 1.21.11, 25 on 26.x) — not on
+  # jars — and a fourth leg boots one of them a JVM above its floor (#58).
   # Version lists come from tools/gen_matrix.go, hence the `!= '[]'` clause and
   # no `github.event_name != 'push'` guard: a generated band is already [] on
   # push, and each leg is its own job group for the Actions-UI reason the Quilt
@@ -633,6 +636,28 @@ jobs:
     uses: ./.github/workflows/e2e-stage.yml
     with:
       versions: ${{ needs.contracts.outputs.neo_java25 }}
+      java: "25"
+      loader: "neoforge"
+      jar-sha: ${{ github.sha }}
+
+  # The NeoForge forward-JVM leg (#58): the same band jar, one JVM above the
+  # floor its Minecraft line declares. Its own output rather than an extra
+  # version in neo_java25, because the neo_java<N> rows are pinned to "every
+  # version's NeoForge floor IS N" (tools/floors_test.go) and that equality is
+  # the tripwire for an upstream floor moving.
+  e2e-neoforge-fwd-java25:
+    name: "e2e 1.21.1 java 25 (neoforge, above floor)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.contracts.outputs.neo_fwd_java25 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.contracts.outputs.neo_fwd_java25 }}
       java: "25"
       loader: "neoforge"
       jar-sha: ${{ github.sha }}
@@ -843,10 +868,12 @@ jobs:
       loader: "quilt"
       jar-sha: ${{ github.sha }}
 
-  # Forge: five generated jobs (modern band, legacy band, mc116 band, and
-  # the EventBus-7 band split across its two era Java floors).
+  # Forge: six generated jobs (modern band, legacy band, mc116 band, the
+  # EventBus-7 band split across its two era Java floors, and one forward-JVM
+  # leg on java 26 covering the modern and EventBus-7 eras).
   # Version lists and the full per-leg rationale live in tools/gen_matrix.go's
-  # Forge stage — floor rows only, no coverage rows, by design.
+  # Forge stage — floor rows plus that one above-floor row, by design; the
+  # Fabric per-band coverage-row pattern is still not reused here.
   e2e-forge-java21:
     name: "e2e 1.20.6-1.21.5 java 21 (forge)"
     needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
@@ -932,6 +959,32 @@ jobs:
     with:
       versions: ${{ needs.contracts.outputs.forge_eventbus7_java25 }}
       java: "25"
+      loader: "forge"
+      jar-sha: ${{ github.sha }}
+
+  # The Forge forward-JVM leg (#58): one above-floor data point for the
+  # eventbus7 era — 26.2 on the newest JVM the harness has. The modern band
+  # cannot have one: its bootstrap fails module resolution on java 26 AND on
+  # java 25, because nimbus-jose-jwt requires jdk.crypto.ec, removed from the
+  # JDK in 24 (issue #66). Bytecode binds downward,
+  # but JVM internals do not: Forge 35.x cannot boot a stock current JDK 8 at
+  # all (the 8u321+ ManifestEntryVerifier change, docs/version-matrix.md), and
+  # that landed on the loader with no forward-JVM leg. Rationale in
+  # tools/gen_matrix.go's Forge stage, like every other Forge leg.
+  e2e-forge-java26:
+    name: "e2e 26.2 java 26 (forge, above floor)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.contracts.outputs.forge_java26 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.contracts.outputs.forge_java26 }}
+      java: "26"
       loader: "forge"
       jar-sha: ${{ github.sha }}
 
