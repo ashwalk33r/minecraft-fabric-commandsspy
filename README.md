@@ -21,6 +21,9 @@ User documentation: [MOD.md](./MOD.md). Official releases:
 - [docs/ci.md](docs/ci.md) — `make ci` gate, workflows, staged e2e grid.
 - [docs/protocol-table.md](docs/protocol-table.md) — the Go bot's per-version
   protocol reference.
+- [docs/quilt-entrypoint-gap-upstream.md](docs/quilt-entrypoint-gap-upstream.md)
+  — an unfiled, paste-ready bug report for quilt-loader's pre-1.18 entrypoint
+  gap, with two reproduction recipes.
 
 ## Build
 

@@ -153,6 +153,12 @@ only through this injection, while `preLaunch` bypasses it entirely — and
 entrypoint / legacy / 1.16 / 1.17 / onInitialize), and quilt-loader publishes no
 minimum-supported-Minecraft table.
 
+A bug report for quilt-loader, written to be pasted into QuiltMC's tracker, is
+kept at [docs/quilt-entrypoint-gap-upstream.md](quilt-entrypoint-gap-upstream.md).
+**It has not been filed.** Nothing has been sent to QuiltMC or to any
+maintainer; whether to file it is a human decision, and the file carries a
+pre-filing checklist because every fact in it goes stale.
+
 These versions stay in the Quilt e2e matrix with every functional assertion
 intact. `scripts/e2e-entrypoint.sh` asserts the banner **expected-absent** on
 `LOADER=quilt` below 1.18 (`QUILT_ENTRYPOINT_GAP`), so CI fails and tells us to
