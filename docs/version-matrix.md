@@ -9,6 +9,10 @@ Forge jars — mc116, legacy, modern and eventbus7 — built from the same core
 against a third loader (see [Forge](#forge-four-jars-narrower-by-construction)
 below).
 
+What each jar *declares* and what CI has *proven* are different claims:
+[What "covered" means](#what-covered-means) is where that distinction is
+written down and says which check enforces it.
+
 ## The four Fabric/Quilt jars
 
 | Source set | Jar covers | Mappings | Bytecode | Mixin compat | Hooked method |
@@ -490,6 +494,55 @@ version installs, and NeoForge's own Java floor for it, come from the routing
 table in `scripts/e2e-run-one.sh` (`--print-neo-routing <mcver>`), not from
 `neoforge/gradle.properties`, which pins only the band's compile anchor and
 metadata ranges; `scripts/test-jar-routing.sh` fails if the table drifts.
+
+## What "covered" means
+
+A jar's `minecraft_range_*` is what the **loader** accepts. It is deliberately
+wider than what CI proves, and the two must not be read as the same claim. CI
+boots a *sample* of each range; a version being in-range and absent from a boot
+table means untested, not broken.
+
+**The denominator is repo-local.** "Every version this repo names" is the set
+coverage is measured against — not "every Minecraft release Mojang ever shipped
+inside the interval". A denominator that grows when Mojang publishes a jar, with
+no commit here, cannot be asserted offline, cannot be reviewed in a diff, and
+turns a green build red for a reason nobody in this repo caused. A version is
+named when it appears in any of four places:
+
+- a band list in `tools/gen_matrix.go`,
+- the `EXPECTED` table or `BOUNDARY_EXTRAS` in `scripts/test-jar-routing.sh`,
+- the Makefile's default `VERSIONS`,
+- a literal leg in `.github/workflows/ci.yml`.
+
+**Mojang's release list governs admission, not the denominator.** A version
+*earns a name* when it is an era boundary — mappings, the RCON source name, the
+`/list` form, a Java floor, an EventBus generation — or when a new Mojang release
+lands inside an open-ended interval (`>=1.20.3 <1.22`, `[1.21.6,26.3)`) and
+becomes a band's new ceiling. That is a review habit, not a check: no assertion
+here will ever call the Mojang version manifest, because `contracts` is offline
+by construction.
+
+**The standing invariant**, asserted by `scripts/test-jar-routing.sh`: every
+version this repo names is booted by some CI leg on some event, or carries a
+written waiver in that script. Today exactly two are waived — `1.19` and
+`1.19.0`, which no `minecraft_range_*` covers.
+
+**Where the sample stops is data, not prose.** `tools/gen_matrix.go` carries a
+coverage table stating, per band, its `declared` range on that axis, the
+`sampled` list every event boots, the `deep` list `workflow_dispatch` boots, and
+a written reason for every declared version booted by neither.
+`tools/gen_matrix_test.go` asserts `deep + excluded == declared` exactly, so a
+version cannot leave the grid by being deleted from a list — only by acquiring a
+reason someone had to type. `scripts/test-jar-routing.sh` re-probes the reasons
+that are claims about the world (a NeoForge line whose newest build is a beta, a
+Forge version the harness refuses), so an exclusion cannot outlive its cause.
+
+**`workflow_dispatch` is the deep sweep.** It boots each band's `deep` list —
+every declared version except the excluded ones — at zero cost to the pull-request
+grid, which still boots only the sample. Before this, the full grid added Java
+legs over the very same Minecraft versions, so 50 in-range (loader, version) pairs
+were booted by no CI event at all. Run it from the Actions tab; expect roughly
+1.7x the pull-request grid's job count.
 
 ## Default e2e version list
 
