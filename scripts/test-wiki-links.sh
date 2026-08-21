@@ -40,7 +40,24 @@ if [[ -n "${WIKI_DIR:-}" ]]; then
 else
   clone_dir="$(mktemp -d)"
   wiki_dir="$clone_dir"
-  git clone --depth 1 --quiet "$WIKI_URL" "$wiki_dir"
+  # Retried once, then fatal with its OWN exit code and message. A failed clone
+  # must never reach the link loop: zero links checked would otherwise print as
+  # "all assertions passed". Same attribution rule as the base-ref branch below
+  # — accuse the network, not the citations.
+  cloned=""
+  for attempt in 1 2; do
+    rm -rf "$clone_dir"
+    mkdir -p "$clone_dir"
+    if git clone --depth 1 --quiet "$WIKI_URL" "$clone_dir"; then cloned="yes"; break; fi
+    if [[ "$attempt" -eq 1 ]]; then
+      echo "wiki-links: clone attempt 1 failed, retrying" >&2
+    fi
+  done
+  if [[ -z "$cloned" ]]; then
+    echo "wiki-links: CANNOT REACH THE WIKI at $WIKI_URL after 2 attempts." >&2
+    echo "wiki-links: this is a network failure, NOT a broken citation. Nothing was checked." >&2
+    exit 2
+  fi
 fi
 
 # --- GitHub's heading -> anchor slug ---------------------------------------
@@ -109,6 +126,42 @@ while IFS= read -r hit; do
   check "$loc -> $target" "ok" "$(resolve "$page" "$anchor")"
 done < <(cd "$repo_root" && git ls-files -z \
   | xargs -0 grep -oaHnE "${WIKI_PREFIX//./\\.}[A-Za-z0-9._%#-]+" || true)
+
+# --- A2. repo -> wiki prose citations --------------------------------------
+# The unlinked half of the same corpus: a page slug, an arrow, a quoted
+# heading. Both halves are asserted — the page exists AND the heading exists on
+# it — reusing the same resolver and the same fenced-code-block exclusion.
+#
+# The page-slug shape is what makes this safe. Ordinary prose does not produce
+# Capitalized-Hyphenated-Token followed by an arrow and a quoted string;
+# matching the arrow alone would drag in this repo's own
+# `-> "family floor rcon slash"` comments. The optional backslash admits Go
+# string literals, which escape their quotes.
+#
+# DELIBERATE SKIP, and it is not small: anything outside that grammar is not
+# checked — a bare page name with no quoted heading, and a citation wrapped
+# across two comment lines (grep is line-based). The wrapped ones are LISTED at
+# run time rather than swallowed, because a skip you cannot see is the defect
+# this script exists to retire. Widening the grammar to catch them is a
+# separate change; do not widen it by loosening the page-slug requirement.
+CITATION_RE='[A-Z][A-Za-z0-9]*(-[A-Za-z0-9]+)+ *-> *\\?"[^"]+\\?"'
+echo "== repo -> wiki prose citations (page-slug -> \"Heading\")"
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] || continue
+  loc="${hit%%:*}"; rest="${hit#*:}"
+  loc="$loc:${rest%%:*}"; cite="${rest#*:}"
+  page="${cite%% *}"
+  heading="${cite#*\"}"; heading="${heading%\"}"; heading="${heading%\\}"
+  links=$((links + 1))
+  check "$loc -> $page \"$heading\"" "ok" "$(resolve "$page" "$(slug "$heading")")"
+done < <(cd "$repo_root" && git ls-files -z | xargs -0 grep -oaHnE "$CITATION_RE" || true)
+# Visible skips: a citation that opens its quote and never closes it on that
+# line. Reported, not asserted — the grammar cannot read the rest of it.
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] || continue
+  echo "  SKIP $hit"
+done < <(cd "$repo_root" && git ls-files -z \
+  | xargs -0 grep -oaHnE '[A-Z][A-Za-z0-9]*(-[A-Za-z0-9]+)+ *-> *\\?"[^"]*$' || true)
 
 # --- B. wiki -> wiki -------------------------------------------------------
 # ](Page), ](Page#anchor) and same-page ](#anchor). External links are somebody
@@ -237,4 +290,6 @@ if [[ "$failures" -eq 0 ]]; then
   exit 0
 fi
 echo "wiki-links: $failures assertion(s) failed"
+echo "wiki-links: the fix is EITHER the wiki page OR the citation in this repo — check which is wrong before editing."
+echo "wiki-links: reproduce offline against a local clone: WIKI_DIR=../wiki scripts/test-wiki-links.sh"
 exit 1
