@@ -24,7 +24,7 @@ esac
 
 # Era-correct routing — this case statement is the floor/jar table's SINGLE
 # HOME; consumers use the probe flags. 1.19.0 is unsupported (no ParseResults
-# overload). Rationale: docs/version-matrix.md.
+# overload). Rationale: the wiki, Version-Boundaries-And-Root-Causes.
 case "$VERSION" in
   26*)                 FLOOR_JAVA=25; JAR_FAMILY=26 ;;
   1.20.3|1.20.4|1.20.5|1.20.6|1.21*) FLOOR_JAVA=21; JAR_FAMILY=121 ;;
@@ -88,7 +88,8 @@ fi
 # 8u321+ ManifestEntryVerifier change and cannot boot a STOCK current JDK 8
 # (mod-independent) — the harness makes it known-good by dropping the fixed
 # ModLauncher 8.1.3 into the server install at install time; see the
-# LOADER=forge install block below and docs/version-matrix.md.
+# LOADER=forge install block below, and the wiki,
+# Version-Boundaries-And-Root-Causes -> "Forge: four jars, narrower by construction".
 FORGE_KNOWN_GOOD_MC116="${FORGE_KNOWN_GOOD_MC116:-1.14.4 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5}"
 FORGE_KNOWN_GOOD_LEGACY="${FORGE_KNOWN_GOOD_LEGACY:-1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4}"
 FORGE_KNOWN_GOOD_MODERN="${FORGE_KNOWN_GOOD_MODERN:-1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5}"
@@ -112,11 +113,12 @@ esac
 # per Minecraft version -- that part of the old two-jar story was always true,
 # it just never constrained the JAR), and NeoForge's OWN Java floor (17 up to
 # line 20.4, 21 through 21.11, 25 on 26.x), which is not the Fabric jar's
-# bytecode level. One band jar serves every row; see docs/version-matrix.md.
+# bytecode level. One band jar serves every row; see the wiki,
+# Version-Boundaries-And-Root-Causes -> "Why one jar spans the whole NeoForge history".
 #
 # Rows marked (beta) are lines that never published a stable build; the band's
 # compile anchor is never one of them. Keep this table in step with the boot
-# table in docs/version-matrix.md.
+# table in the wiki, Version-Boundaries-And-Root-Causes -> "Hard floors".
 NEOFORGE_VERSION=""
 NEO_FLOOR_JAVA=0
 case "$VERSION" in

@@ -136,7 +136,8 @@ func TestGenMatrixForgeRowsAgreeWithForgeRouting(t *testing.T) {
 	}
 	// mc116 band: every emitted version must route to the mc116 jar in-range —
 	// 1.16.4 included, now known-good via e2e-run-one.sh's install-time
-	// ModLauncher 8.1.3 drop-in (see docs/version-matrix.md).
+	// ModLauncher 8.1.3 drop-in (see the wiki, Version-Boundaries-And-Root-Causes,
+	// "Gate 1: the 1.16.4 crash is the JDK's ManifestEntryVerifier change").
 	for _, v := range rows["forge_mc116_java8"] {
 		if got := printForgeRouting(v); got != "mc116 0" {
 			t.Errorf("forge_mc116_java8 contains %s, routing = %q, want \"mc116 0\"", v, got)

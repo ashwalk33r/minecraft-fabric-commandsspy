@@ -969,7 +969,7 @@ jobs:
   # java 25, because nimbus-jose-jwt requires jdk.crypto.ec, removed from the
   # JDK in 24 (issue #66). Bytecode binds downward,
   # but JVM internals do not: Forge 35.x cannot boot a stock current JDK 8 at
-  # all (the 8u321+ ManifestEntryVerifier change, docs/version-matrix.md), and
+  # all (the 8u321+ ManifestEntryVerifier change, the wiki's Version-Boundaries-And-Root-Causes), and
   # that landed on the loader with no forward-JVM leg. Rationale in
   # tools/gen_matrix.go's Forge stage, like every other Forge leg.
   e2e-forge-java26:

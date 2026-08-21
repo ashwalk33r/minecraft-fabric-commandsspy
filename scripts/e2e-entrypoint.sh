@@ -413,7 +413,8 @@ esac
 # quilt-loader never invokes the ModInitializer "main" entrypoint on dedicated
 # servers below 1.18 — silently, no crash. Mixins still apply, so every
 # functional assertion below is unaffected; only the startup banner is missing.
-# See docs/version-matrix.md. Asserted as EXPECTED-ABSENT, not skipped, so CI
+# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18
+# entrypoint gap". Asserted as EXPECTED-ABSENT, not skipped, so CI
 # reports it the day upstream fixes this.
 QUILT_ENTRYPOINT_GAP=0
 if [ "$LOADER" = "quilt" ]; then
@@ -522,7 +523,7 @@ fi
 
 echo "[e2e] Assertion results:"
 if [ "$QUILT_ENTRYPOINT_GAP" = "1" ]; then
-  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18 entrypoint gap has closed upstream — update docs/version-matrix.md and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18: entrypoint banner absent as expected (mixins still asserted below)"; fi
+  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18 entrypoint gap has closed upstream — update the wiki's Version-Boundaries-And-Root-Causes and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18: entrypoint banner absent as expected (mixins still asserted below)"; fi
 elif grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [PASS] mod loaded (Loading CommandsSpy)"; else echo "  [FAIL] mod not loaded (Loading CommandsSpy)"; fi
 if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
   if grep -q 'CommandsSpy preLaunch: config loaded\.' "$LOG_FILE"; then echo "  [PASS] preLaunch entrypoint invoked (config pulled up to boot)"; else echo "  [FAIL] preLaunch entrypoint NOT invoked — the preLaunch call site regressed"; fi

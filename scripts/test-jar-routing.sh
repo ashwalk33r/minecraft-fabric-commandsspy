@@ -169,7 +169,8 @@ echo "== LOADER=forge routing (mc116/legacy/modern/eventbus7, refusal flag)"
 # 1.19 is excluded (like the Fabric EXPECTED table): the era case statement
 # treats it as globally unsupported before any probe runs, forge included.
 # 1.16.4 is in-range and known-good: e2e-run-one.sh's install-time ModLauncher
-# 8.1.3 drop-in cures the Forge 35.x JDK 8u321+ crash. See docs/version-matrix.md.
+# 8.1.3 drop-in cures the Forge 35.x JDK 8u321+ crash. See the wiki,
+# Version-Boundaries-And-Root-Causes -> "Gate 1".
 FORGE_MC116_VERSIONS="1.14.4 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5"
 FORGE_LEGACY_VERSIONS="1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4"
 FORGE_MODERN_VERSIONS="1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5"
@@ -493,13 +494,15 @@ for band in forge forge_legacy forge_mc116 forge_eventbus7; do
 done
 # mc26's two exclusions (26.1.1/26.1.2) are the one case with no executable
 # probe: they route fine and are skipped for a mappings reason that only a human
-# can retire (docs/version-matrix.md). tools/gen_matrix_test.go asserts the
+# can retire (the wiki, Version-Boundaries-And-Root-Causes).
+# tools/gen_matrix_test.go asserts the
 # reason is present; nothing here can assert it is still true.
 
 # Half two: the DENOMINATOR. "Covered" is measured against the versions this
 # repo NAMES -- not against every Minecraft release Mojang ever shipped inside a
 # declared range, which no offline check could enumerate and which would decay
-# without a commit. See "What 'covered' means" in docs/version-matrix.md. The
+# without a commit. See "The denominator, settled" in the wiki's
+# Supported-Versions page. The
 # standing invariant: every version named anywhere in this repo is booted by
 # some CI leg on some event, or carries a written waiver here.
 echo "== sampling rule: every named version is booted or waived"

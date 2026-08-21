@@ -13,7 +13,7 @@ User documentation: [MOD.md](./MOD.md). Official releases:
 
 ## Docs
 
-- [docs/version-matrix.md](docs/version-matrix.md) — the nine jars, the loader
+- [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes) — the nine jars, the loader
   seam in the shared core, version boundaries, Java floors, default e2e matrix.
 - [docs/testing.md](docs/testing.md) — unit suite: how it boots, isolation,
   known quirks, era-specific wiring.

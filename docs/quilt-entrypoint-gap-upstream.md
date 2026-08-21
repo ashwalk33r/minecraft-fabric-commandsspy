@@ -18,7 +18,7 @@ Everything from the next heading to the end of the file is the report. Select
 from there and paste; nothing above it is meant to travel.
 
 For this repo's own view of the same defect — what it costs us and how CI
-holds it — see `docs/version-matrix.md` → "Quilt: the pre-1.18 entrypoint gap", and its
+holds it — see the wiki, [Quilt: the pre-1.18 entrypoint gap](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes#quilt-the-pre-118-entrypoint-gap), and its
 two follow-on subsections, "The gap is specific to the `main` call site" and
 "Why a Quilt-native entrypoint cannot close this gap". That link is one-way:
 this file quotes the version matrix, the version matrix does not yet point
@@ -485,7 +485,7 @@ true when this was written and may not be true now.
 - [ ] **Re-test against the newest quilt-loader**, not 0.30.0. Recipe A takes
       about ten minutes. If it now passes, do not file — instead bump
       `QUILT_LOADER_VERSION` in `scripts/e2e-run-one.sh`, let the tripwire
-      fire, and update `docs/version-matrix.md`.
+      fire, and update the wiki's Version-Boundaries-And-Root-Causes.
 - [ ] **Check whether quilt-loader has since published a minimum-supported
       Minecraft version.** If it has, and 1.17.1 is below it, ask #2 is
       already answered and there may be nothing to file.

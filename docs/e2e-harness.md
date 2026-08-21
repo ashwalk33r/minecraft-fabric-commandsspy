@@ -15,7 +15,7 @@ Entry points:
   drives the phases, prints the verdict.
 
 The default version list and its sampling rationale live in
-[version-matrix.md](version-matrix.md).
+the wiki's [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes).
 
 ## Phases and assertions
 
@@ -250,7 +250,7 @@ Fabric era table's floor either; the era table reports 21 for 1.20.4).
 asserts it offline, and a version outside the table prints `unsupported 0`.
 Rows whose line never published a stable build carry a `-beta` version and are
 marked as such in the boot table in
-[version-matrix.md](version-matrix.md) — 1.20.3, 1.20.5, 1.21.2, 1.21.6,
+the wiki's [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes) — 1.20.3, 1.20.5, 1.21.2, 1.21.6,
 1.21.7, 1.21.9, 26.1 and 26.1.1. The band's compile anchor is never one of them.
 
 The pins are explicit on purpose. The Maven
