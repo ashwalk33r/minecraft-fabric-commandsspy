@@ -141,9 +141,14 @@ quilt-loader's `EntrypointPatch` bytecode-patches Minecraft's own main class to
 inject the entrypoint call, and its `EnvType.SERVER` path is byte-identical
 across every release from 0.23.0 to 0.30.1-beta.2 (only client/applet/
 pre-classic paths changed), and identical to Fabric Loader 0.19.2's — which
-works on these versions. Every in-patch failure mode throws loudly, so the hook
-is provably injected and `Hooks.startServer` provably reached; the defect lies
-further into quilt's mod-loading pipeline. No upstream issue reports it
+works on these versions. Every in-patch failure mode throws loudly and none did,
+which is consistent with the hook being injected and `Hooks.startServer`
+reached — but that is an inference from an absence of errors, read from the
+source, with no artifact retained and no debugger attached. It does not rule the
+injected path out, and the measurement in "Why a Quilt-native entrypoint cannot
+close this gap" below is a reason to suspect it: `main` reaches its call site
+only through this injection, while `preLaunch` bypasses it entirely — and
+`preLaunch` is the stage that works. No upstream issue reports it
 (https://github.com/QuiltMC/quilt-loader/issues, searched for EntrypointPatch /
 entrypoint / legacy / 1.16 / 1.17 / onInitialize), and quilt-loader publishes no
 minimum-supported-Minecraft table.
