@@ -153,6 +153,27 @@ check "grid 26.2 in mc26_java26 coverage" "true" "$(grid_has mc26_java26 26.2)"
 # other sources agree on, on both loaders.
 echo "== e2e-gate canary pairs in ci.yml"
 gate_yml="$repo_root/.github/workflows/ci.yml"
+
+# The deep sweep's concurrency group (#73, fixed in #75). Keyed on the EVENT as
+# well as the ref so a workflow_dispatch sweep and a push run on main do not
+# share a lane -- cancel-in-progress belongs to the ARRIVING run, so before this
+# every merge to main evicted any sweep already running, silently, as
+# `cancelled` rather than `failure`.
+#
+# Asserted here because the fix is a STRING with no behaviour a test can see:
+# reverting it breaks nothing any other check would notice, and the whole
+# matrix stays green. That is exactly how it nearly went: a link-checker branch
+# restored ci.yml wholesale from a copy predating #75 and silently reverted this
+# line, invisible in --stat, caught only by reading the diff. An unasserted
+# one-line fix in a file many branches touch is a fix waiting to be undone.
+# SC2016: the ${{ }} here is GitHub Actions template syntax being matched
+# LITERALLY by grep -F, not a shell expansion that was forgotten. Single quotes
+# are required; double quotes would let the shell eat it.
+# shellcheck disable=SC2016
+check "sweep concurrency group is event-keyed (#73)" "1" \
+      "$(grep -cF 'group: ci-${{ github.ref }}-${{ github.event_name }}' "$gate_yml")"
+check "no ref-only concurrency group survives" "0" \
+      "$(grep -cE '^  group: ci-\$\{\{ github\.ref \}\}$' "$gate_yml")"
 check "gate pair 1.21.11/java21/fabric" "1" \
       "$(grep -cF '{ mc: "1.21.11", java: "21", loader: "fabric" }' "$gate_yml")"
 check "gate pair 1.21.11/java21/quilt" "1" \
