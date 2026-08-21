@@ -57,11 +57,12 @@ here.
 - To stdout: aligned summary of each row, then `EVENT_NAME`, `GATED_PAIRS`
   (sum of all list lengths), and `TOTAL_JOBS` (what the workflow spawns:
   2 caller jobs per fabric pair — `-fabric` and `-quilt` — 1 per
-  single-loader `forge_*` or `neo_*` pair, plus 22 fixed jobs: contracts,
-  go-quality, lint-java, unit-tests, the 9 build jobs, the Build aggregator,
-  the 4 gate canaries and the 4 config-behaviors legs; on push only 15 of
-  those run — gate and config-behaviors are event-skipped). Against the real
-  tree today: 75 gated pairs / 136 jobs on a PR, 104 / 194 on dispatch.
+  single-loader `forge_*` or `neo_*` pair, plus a fixed-job constant that
+  shrinks on push, where the gate canaries, the config-behaviors legs and
+  the refusal guards are event-skipped). The constant and its per-job
+  breakdown are enumerated in the comment above `fixedJobs` in
+  `gen_matrix.go`; for the current totals, run the generator — the expected
+  values are pinned in `gen_matrix_test.go`.
 
 ## Place in the tools/ package
 
