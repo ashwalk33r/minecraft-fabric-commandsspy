@@ -9,13 +9,21 @@ from this program's output.
 
 1. Looks at the repo to see which compatibility "bands" exist (old-version
    source sets, version ranges in `gradle.properties`).
-2. Builds a version list per {band, Java} pair. Lean runs (pull requests) test
-   only each band's oldest and newest version; full runs (manual dispatch)
-   test everything.
+2. Builds a version list per {band, Java} pair from the coverage table — the
+   band's `sampled` list on a lean run (pull request), its `deep` list on the
+   deep sweep (manual dispatch), which is every version the band declares bar
+   the ones excluded with a written reason.
 3. Writes each list as a `name=["1.21", ...]` JSON line into `$GITHUB_OUTPUT`,
    plus a human-readable summary and job counts on stdout.
 
-Key contract: every output name is written on every run, even as a literal
+Key contract: the coverage table, not the emit calls, decides which versions
+a row lists. Each band states its `declared` range, its `sampled` list, its
+`deep` list and a reason for every declared version booted by neither;
+`gen_matrix_test.go` asserts `deep + excluded == declared` exactly, so a
+version can only leave the grid by acquiring a reason. Background:
+["What 'covered' means"](../docs/version-matrix.md#what-covered-means).
+
+Second contract: every output name is written on every run, even as a literal
 `[]`. A missing output becomes `''` in GitHub expressions and `fromJSON('')`
 breaks the workflow. Two "gate canary" versions (1.21.11/java21, 26.2/java25)
 live in the workflow's gate job and are deliberately excluded from the lists
@@ -40,12 +48,19 @@ here.
   `neoforge/gradle.properties` (one band jar, so one range key).
   `FORCE_BANDS` overrides for offline tests.
 - `ends(list)` — first and last element; the "lean" shrink.
+- `coverage` / `booted(band, full)` — the version contract per band, and the
+  list to boot for this event.
+- `printCoverage(w)` — `gen-matrix --coverage`, a `band<TAB>state<TAB>version<TAB>reason`
+  dump so `scripts/test-jar-routing.sh` can re-probe the exclusions rather
+  than restate them.
+- `neoFloor(v)` / `pick(list, keep)` — the row splits: NeoForge's own Java
+  floor per version, and a filter.
 
 ## Inputs (env vars)
 
 | Var | Meaning |
 |---|---|
-| `EVENT_NAME` | `pull_request` (lean, default) or `workflow_dispatch` (full) |
+| `EVENT_NAME` | `pull_request` (lean, default), `workflow_dispatch` (deep sweep) or `push` (all bands empty) |
 | `GITHUB_OUTPUT` | file to append `name=json` lines to (optional) |
 | `FORCE_BANDS` | space-separated band names to pretend exist (testing) |
 | `REPO_ROOT` | repo root, default `.` |

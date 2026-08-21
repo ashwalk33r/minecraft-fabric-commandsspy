@@ -46,7 +46,8 @@ NeoForge band jar, Minecraft 1.20.2-26.2); the Forge jars (a separate Gradle bui
 
 One workflow, `CI` (`ci.yml`), replaced the old `Build` (`gradle.yml`) +
 `E2E` (`e2e.yml`) pair, which duplicated `make test` and `make build` on
-every PR. Triggers: push to `main`, `pull_request`, `workflow_dispatch`; a
+every PR. Triggers: push to `main`, `pull_request`, `workflow_dispatch`
+(the deep sweep — see [Grid policy](#grid-policy) below); a
 new push to the same ref cancels the in-flight run. The reusable submatrix
 `e2e-stage.yml` is unchanged.
 
@@ -177,10 +178,14 @@ before runner minutes are spent on the long tail.
    (`E2E <version> PASS config-behaviors`, see [e2e-harness.md](e2e-harness.md))
    and skip the player-bot phase since no player assertion runs on this leg.
 
-Lean grid on `pull_request` (floor rows exhaustive, newest-Java coverage rows
-only at each band's ends), full cross-product on `workflow_dispatch`.
-Rationale: Minecraft breaks are per-patch, JVM breaks are per-JVM, so a
-band's ends cover the real variable on higher JVMs.
+Lean grid on `pull_request` (floor rows boot each band's sample, newest-Java
+coverage rows only that sample's ends), deep sweep on `workflow_dispatch`
+(floor rows boot each band's whole declared range bar the written exclusions;
+coverage rows widen to the whole sample). Rationale: Minecraft breaks are
+per-patch, JVM breaks are per-JVM, so a band's ends cover the real variable on
+higher JVMs. Which versions are in the sample, which are deep-only, and why a
+declared version is in neither, are data in `tools/gen_matrix.go`'s coverage
+table — see ["What 'covered' means"](version-matrix.md#what-covered-means).
 
 Stages chain via `needs:`. Each stage's job body is defined once, in
 `e2e-stage.yml`, and reused by every stage — only the version list per stage
@@ -313,16 +318,44 @@ refusal guards are event-skipped, and every band is empty) are enumerated in
 the comment above `fixedJobs` in `gen_matrix.go`; the totals themselves are
 the pins in `gen_matrix_test.go`. Run the generator for the current numbers.
 
-Grid policy: every version runs on its own floor JVM. Newest-Java coverage
-rows sample only the band's ends on `pull_request` (lean) and the whole band
-on `workflow_dispatch` (full) — floors and full rationale:
-[version-matrix.md](version-matrix.md).
+The dispatch figure jumped when `workflow_dispatch` became a real deep sweep.
+Every one of those extra jobs is a Minecraft version the pull-request grid
+never boots; the pull-request figure did not move.
+
+The fixed count went 25 -> 22 when the NeoForge legs were generated, and is
+worth spelling out because two separate things shrank it: the two per-version
+NeoForge build jobs collapsed into the one `build-neo` band job (-1), and the
+two literal NeoForge e2e jobs became generated pairs counted in the grid
+instead (-2). It went back to 24 when the two out-of-range refusal guards
+landed.
+
+## Grid policy
+
+Every version runs on its own floor JVM. Newest-Java coverage rows sample only
+the band's ends on `pull_request` (lean) and the whole sample on
+`workflow_dispatch` (deep). The floor rows differ by event too: the sample on
+`pull_request`, the band's whole declared range minus its written exclusions on
+`workflow_dispatch`. Floors and full rationale:
+[version-matrix.md](version-matrix.md), and
+["What 'covered' means"](version-matrix.md#what-covered-means) for the
+declared-versus-proven distinction and the offline checks that enforce it.
+
+There is deliberately no `schedule:` trigger. A cron sweep would need someone
+watching it: GitHub disables scheduled workflows after 60 days of repository
+inactivity, hobby-tier cron runs queue unpredictably, and an unattended sweep
+that fails with no alerting turns a known gap into a false green. The deep
+sweep is a button instead.
 
 `tools/gen_matrix.go` env vars:
 
 | Var | Meaning |
 |---|---|
-| `EVENT_NAME` | `push` \| `pull_request` \| `workflow_dispatch` (default: `pull_request`); `push` emits `[]` for every band |
+| `EVENT_NAME` | `push` \| `pull_request` \| `workflow_dispatch` (default: `pull_request`); `push` emits `[]` for every band, `workflow_dispatch` runs the deep sweep |
 | `GITHUB_OUTPUT` | file to append `name=json` lines to (optional) |
 | `FORCE_BANDS` | space-separated band names to treat as present (testing) |
 | `REPO_ROOT` | repo root (default: current working directory) |
+
+`go run . gen-matrix --coverage` dumps the coverage table itself as
+`band<TAB>state<TAB>version<TAB>reason`, which is how
+`scripts/test-jar-routing.sh` re-probes the exclusions instead of restating
+them.
