@@ -121,6 +121,8 @@ esac
 # table in the wiki, Version-Boundaries-And-Root-Causes -> "Hard floors".
 NEOFORGE_VERSION=""
 NEO_FLOOR_JAVA=0
+# 0 = no ceiling. Only one band has one: Forge modern, below.
+CEILING_JAVA=0
 case "$VERSION" in
   1.20.2)  NEOFORGE_VERSION="20.2.93";        NEO_FLOOR_JAVA=17 ;;
   1.20.3)  NEOFORGE_VERSION="20.3.8-beta";    NEO_FLOOR_JAVA=17 ;;
@@ -190,7 +192,13 @@ if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
   case "$FORGE_JAR_BAND" in
     mc116)  FLOOR_JAVA=8 ;;
     legacy) FLOOR_JAVA=17 ;;
-    modern) FLOOR_JAVA=21 ;;
+    # Java 21 only: net.minecraftforge.bootstrap dies in module resolution on
+    # java 24+ because nimbus-jose-jwt requires jdk.crypto.ec, a module REMOVED
+    # in JDK 24 -- so there is nothing to --add-modules. Measured boot-failed on
+    # java 25 and 26 alike (issue #66; the wiki, Supported-Versions ->
+    # "Forge modern is Java 21 only"). Ceiling, not just a floor: this band is
+    # the one place where a NEWER JVM is a downgrade.
+    modern) FLOOR_JAVA=21; CEILING_JAVA=21 ;;
   esac
 fi
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
@@ -310,6 +318,15 @@ mkdir -p "$(dirname "$RESULT_FILE")" "$(dirname "$LOG_FILE")"
 if [ "$JAVA_VERSION" -lt "$FLOOR_JAVA" ]; then
   printf 'E2E %s java%s FAIL below-java-floor-%s\n' "$VERSION" "$JAVA_VERSION" "$FLOOR_JAVA" > "$RESULT_FILE"
   echo "[e2e] <- FAIL Minecraft $VERSION on java $JAVA_VERSION (floor is java $FLOOR_JAVA)"
+  exit 1
+fi
+
+# The mirror image, for the one band that has a ceiling. Same reasoning as the
+# floor guard above: without it the run burns a full boot timeout and reports a
+# generic boot-failed, which reads like a mod bug and is not one.
+if [ "$CEILING_JAVA" -ne 0 ] && [ "$JAVA_VERSION" -gt "$CEILING_JAVA" ]; then
+  printf 'E2E %s java%s FAIL above-java-ceiling-%s\n' "$VERSION" "$JAVA_VERSION" "$CEILING_JAVA" > "$RESULT_FILE"
+  echo "[e2e] <- FAIL Minecraft $VERSION on java $JAVA_VERSION (ceiling is java $CEILING_JAVA; issue #66)"
   exit 1
 fi
 

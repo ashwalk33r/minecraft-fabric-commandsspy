@@ -199,6 +199,36 @@ for v in $FORGE_OUT_OF_RANGE_VERSIONS; do
   check "forge-routing $v refused" "1" "${got##* }"
 done
 
+# Probe 3d — the Forge modern band's Java CEILING (issue #66), asserted by
+# RUNNING the harness, not by reading its table. Forge's modern bootstrap
+# cannot resolve modules on java 24+ (nimbus-jose-jwt requires jdk.crypto.ec,
+# removed from the JDK in 24), so the band is java 21 only. The guard exits
+# before Docker is touched, which is what makes this cheap enough to pin here.
+echo "== Forge modern java ceiling (issue #66)"
+ceiling_probe() {
+  local java="$1" version="$2" tmp
+  tmp="$(mktemp -d)"
+  REPO_ROOT="$tmp" \
+  E2E_LOG_DIR="logs" E2E_RESULT_DIR="results" \
+  MOD_JAR_121="x.jar" MOD_JAR_1192="x.jar" MOD_JAR_114="x.jar" MOD_JAR_26="x.jar" \
+  MOD_JAR_FORGE="x.jar" MOD_JAR_FORGE_LEGACY="x.jar" \
+  MOD_JAR_FORGE_EB7="x.jar" MOD_JAR_FORGE_MC116="x.jar" \
+  LOADER=forge JAVA_OVERRIDE="$java" \
+    bash "$repo_root/scripts/e2e-run-one.sh" "$version" >/dev/null 2>&1 || true
+  cat "$tmp"/results/*.result 2>/dev/null | tr -d '\n'
+  rm -rf "$tmp"
+}
+check "modern 1.21.5 on java 25 is refused with a named verdict" \
+      "E2E 1.21.5 java25 FAIL above-java-ceiling-21" "$(ceiling_probe 25 1.21.5)"
+check "modern 1.20.6 on java 26 is refused with a named verdict" \
+      "E2E 1.20.6 java26 FAIL above-java-ceiling-21" "$(ceiling_probe 26 1.20.6)"
+# The ceiling must not swallow the band's own floor leg, nor any other band:
+# these get past the guard and fail later, on the absent jar.
+check "modern 1.21.5 on java 21 is not refused by the ceiling" \
+      "E2E 1.21.5 java21 FAIL mod-jar-missing" "$(ceiling_probe 21 1.21.5)"
+check "eventbus7 26.2 on java 26 is not refused by the ceiling" \
+      "E2E 26.2 java26 FAIL mod-jar-missing" "$(ceiling_probe 26 26.2)"
+
 # ...and the four declared ranges the band table above mirrors, exactly as the
 # Fabric block near the bottom of this file pins gradle.properties. The band
 # case statement in e2e-run-one.sh is a hand-maintained copy of these, so the

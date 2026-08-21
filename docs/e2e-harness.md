@@ -50,6 +50,8 @@ Verdict line grammar (the final line of container output is authoritative):
   `player-command-not-logged`, `player-misattributed`, `boot-failed`,
   `neoforge-install-failed`. `scripts/e2e-run-one.sh` adds
   `below-java-floor-<n>` for a JVM below the version's floor,
+  `above-java-ceiling-<n>` for a JVM above a band's ceiling — only the Forge
+  `modern` band has one (java 21; issue #66),
   `neoforge-unsupported-version` for a Minecraft version below 1.20.2, which
   is NeoForge's own floor, and `mod-jar-missing` when the jar under test does
   not exist
