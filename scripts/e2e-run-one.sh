@@ -185,9 +185,10 @@ fi
 # legacy jar, which is Java-17 bytecode uniformly across 1.17.1-1.20.4).
 # eventbus7 keeps the generic per-version floor: 21 for 1.21.x and 25 for
 # 26.x are both >= the jar's java-21 bytecode, and 26.x servers themselves
-# require 25. Guard-leg (out-of-range) probes are deliberately left alone
-# here -- they get their own override further down, once JAVA_VERSION is
-# resolved.
+# require 25. Guard-leg (out-of-range) probes are excluded from this whole
+# arm by the FORGE_EXPECT_REFUSED != "1" condition below, so they keep the
+# generic per-version floor and never get a band floor or ceiling -- correct,
+# since a refusal probe asserts the mods.toml range gate, not a boot.
 if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
   case "$FORGE_JAR_BAND" in
     mc116)  FLOOR_JAVA=8 ;;
