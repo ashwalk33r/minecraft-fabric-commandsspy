@@ -77,17 +77,64 @@ output jar.
 
 ## Quilt: the pre-1.18 entrypoint gap
 
-On Quilt Loader, `CommandsSpy.onInitialize()` is **never invoked on dedicated
-servers below Minecraft 1.18** — silently, with no crash and no exception.
-e2e-proven with quilt-loader 0.30.0: 1.14.4, 1.16.5 and 1.17.1 fail; 1.18.2,
-1.19.2, 1.19.4, 1.20.2, 1.21.11 pass. The boundary is a Minecraft version, not
-a jar boundary — 1.17.1 and 1.18.2 are served by the same mc114 jar and the
-same Java 17 floor.
+On Quilt Loader, `CommandsSpyFabric.onInitialize()` is **never invoked on
+dedicated servers below Minecraft 1.18** — silently, no crash, no exception.
+e2e-proven with quilt-loader 0.30.0: **four** versions fail — 1.14.4, 1.15.2,
+1.16.5 and 1.17.1; 1.18.2, 1.19.2, 1.19.4, 1.20.2, 1.21.11 pass. All four are
+booted on Quilt in CI and gap-gated there: `scripts/e2e-entrypoint.sh:357`
+matches `1.14*`/`1.15*`/`1.16*`/`1.17*`, and the versions come from
+`tools/gen_matrix.go`'s `mc114_java8` (1.14.4, 1.15.2, 1.16.5) and
+`mc114_java17` (1.17.1, 1.18.2) outputs, consumed by the `e2e 1.14-1.16 java 8
+(quilt)` and `e2e 1.17-1.18 java 17 (quilt)` jobs. The boundary is a Minecraft
+version, not a jar boundary — 1.17.1 and 1.18.2 are served by the same mc114
+jar and the same Java 17 floor.
 
-Nothing user-visible is lost. Mixins are applied by SpongePowered Mixin
-independently of the loader's entrypoint invocation, so the mod's entire
-function — console, RCON and player command logging — is asserted and passes
-on all three versions. The only missing artifact is the startup banner.
+Command logging is unaffected: mixins are applied by SpongePowered Mixin
+independently of the loader's entrypoint invocation, so console, RCON and
+player command logging is asserted and passes on all four versions. The banner
+is **not**, however, the only thing lost. `CONFIG` and `BLACKLIST` are
+`static final` fields, initialised by class initialisation
+(`CommandsSpy.java:13-14`), and `init()` exists for no other reason than to
+touch the class at boot — its own javadoc says so (`CommandsSpy.java:16-23`),
+as does [the loader seam](#the-loader-seam-in-the-shared-core) above. Nothing
+else in the mod references `CommandsSpy`; the only other call sites anywhere
+are the four mixins' `handleCommand`. So with the entrypoint never invoked, the
+class is first initialised by the mixin's first `handleCommand` — by the first
+command any source executes. Two user-facing consequences follow:
+
+- **Config auto-creation moves from boot to the first executed command.**
+  `CommandsSpyConfig.load()` writes the file only on the does-not-exist path
+  (`CommandsSpyConfig.java:27-42`), and that path now runs at first command
+  rather than at startup. An admin who boots a Quilt 1.16.5 server, stops it,
+  and opens `config/commands-spy.json` to set a blacklist finds **no file**.
+  That contradicts MOD.md's "On startup, the config file will be created
+  automatically" — on a stock install, with no malformed input needed.
+- **A malformed config fails late and silently instead of at boot.** A JSON
+  syntax error leaves `load()` as an uncaught `JsonSyntaxException` (pinned by
+  `CommandsSpyConfigTest.malformedJsonThrowsOnLoad`), which at the `static
+  final` call site becomes an `ExceptionInInitializerError` thrown from inside
+  the mixin injection on the first command, and a `NoClassDefFoundError` on
+  every command after it. The server is up and looks healthy, command
+  execution is broken, and there was no boot-time signal. On every loader where
+  the entrypoint does fire, the same file is a clean, immediate boot failure.
+
+Failing loud on a broken config is deliberate and stays that way: `blacklist`
+is a privacy control — MOD.md documents suppressing `tell`/`t` to keep player
+conversations out of the log — so defaulting silently would resume logging
+exactly what an admin configured hidden. Only the *timing* of the failure moves
+here, and that is a property of the loader, not something the mod chooses.
+
+The default e2e leg cannot see the first consequence. Its config assertion
+(`scripts/e2e-entrypoint.sh:396-405`) runs at the end of the run, after the
+console, unknown-command and RCON commands have already been sent, so on Quilt
+below 1.18 it passes because the first command created the file — not because
+boot did. The comment there cites MOD.md's "On startup" promise, but the check
+has never asserted the *startup* half of it, on any loader.
+
+The declaration quilt-loader fails to honour is `quilt_loader.entrypoints.main`
+in `src/main/resources/quilt.mod.json` (`pl.m2x.commandsspy.CommandsSpyFabric`)
+— Quilt reads that file for this jar, not `fabric.mod.json`, so
+`fabric.mod.json`'s identical `main` entrypoint is not the one being skipped.
 
 Upstream, not ours, and not fixable by choosing a different loader version:
 quilt-loader's `EntrypointPatch` bytecode-patches Minecraft's own main class to
@@ -333,9 +380,14 @@ Which floors get the alpine base image vs. jammy, and why:
 - mc114: deliberately a high floor (>=0.19.3), the line verified to serve
   working server launchers all the way down to 1.14.4. Do not lower it.
 
-Quilt Loader natively loads a jar's `fabric.mod.json` — this project also
-ships a `quilt.mod.json` (same jar, both loaders) purely for an accurate
-platform badge, not because Quilt needs it to load the mod. All four eras
+Quilt Loader's Fabric-compatibility layer will load a jar that carries only a
+`fabric.mod.json` — that is why this mod already ran on Quilt before it
+shipped any Quilt metadata. But once a `quilt.mod.json` is present in the jar,
+that file takes precedence and Quilt ignores the jar's `fabric.mod.json`;
+Fabric Loader ignores `quilt.mod.json` entirely. This project ships both in
+the same jar, so on Quilt the metadata actually in force — declared ranges and
+entrypoint alike — is `quilt.mod.json`'s, and an accurate Quilt platform badge
+is a consequence of that, not the reason for it. All four eras
 declare the same Quilt Loader floor, `>=0.30.0`, and the same Java floor as
 their Fabric counterpart (Quilt Loader itself imposes no additional JVM
 floor at any era). This is asserted, not assumed: every version the e2e matrix
