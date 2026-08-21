@@ -20,12 +20,15 @@ type row struct {
 var rows = map[int]row{
 	// pre-1.19: no configuration state, no login_acknowledged, command goes
 	// out as a chat packet with the slash in the string.
+	477: {477, "1.14", eraChat, 0x20, 0x0F, 0x03},
 	498: {498, "1.14.4", eraChat, 0x20, 0x0F, 0x03},
 	578: {578, "1.15.2", eraChat, 0x21, 0x0F, 0x03},
-	736: {736, "1.16/1.16.1", eraChat, 0x20, 0x10, 0x03},
+	735: {735, "1.16", eraChat, 0x20, 0x10, 0x03},
+	736: {736, "1.16.1", eraChat, 0x20, 0x10, 0x03},
 	751: {751, "1.16.2", eraChat, 0x1F, 0x10, 0x03},
 	753: {753, "1.16.3", eraChat, 0x1F, 0x10, 0x03},
 	754: {754, "1.16.4/1.16.5", eraChat, 0x1F, 0x10, 0x03},
+	755: {755, "1.17", eraChat, 0x21, 0x0F, 0x03},
 	756: {756, "1.17.1", eraChat, 0x21, 0x0F, 0x03},
 	757: {757, "1.18/1.18.1", eraChat, 0x21, 0x0F, 0x03},
 	758: {758, "1.18.2", eraChat, 0x21, 0x0F, 0x03},

@@ -1,8 +1,14 @@
-# Per-version protocol table, 1.14.4 – 26.2
+# Per-version protocol table, 1.14 – 26.2
 
-Protocol reference for the Go e2e bot (`tools/`). Scope: every version in the Makefile's
-default `VERSIONS` list plus 1.14.4 and 1.15.2 — 27 versions. Only the facts a login +
-one-command + disconnect client needs. All IDs are serverbound (C→S) or clientbound (S→C)
+Protocol reference for the Go e2e bot (`tools/`). Scope: every version the e2e grid can
+boot on any event — the Makefile's default `VERSIONS` list, plus the versions the
+workflow_dispatch deep sweep adds. Note that a `.0` release is its own protocol and needs
+its own row: 1.14 is 477 and 1.14.4 is 498; 1.16 is 735 and 1.16.1 is 736; 1.17 is 755 and
+1.17.1 is 756. Missing rows for those three cost the deep sweep six red legs on its second
+run — the server booted and the mod loaded, but the bot could not join, so only the
+player-command assertion failed.
+
+Only the facts a login + one-command + disconnect client needs. All IDs are serverbound (C→S) or clientbound (S→C)
 as labelled; all values hex packet ids unless stated. `tools/table.go` implements this
 table.
 
@@ -40,12 +46,15 @@ trigger.
 
 | MC | proto | cfg | UUID | sig | cmd pkt | cmd id | KA play S→C/C→S | login(play) | source |
 |---|---|---|---|---|---|---|---|---|---|
+| 1.14 | 477 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14` |
 | 1.14.4 | 498 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14.4` |
 | 1.15.2 | 578 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.15.2` |
-| 1.16, 1.16.1 | 736 | no | none | — | chat | 0x03 | 0x20 / 0x10 | 0x25 | md `pc/1.16.1` |
+| 1.16 | 735 | no | none | — | chat | 0x03 | 0x20 / 0x10 | 0x25 | md `pc/1.16` |
+| 1.16.1 | 736 | no | none | — | chat | 0x03 | 0x20 / 0x10 | 0x25 | md `pc/1.16.1` |
 | 1.16.2 | 751 | no | none | — | chat | 0x03 | 0x1F / 0x10 | 0x24 | md `pc/1.16.2` |
 | 1.16.3 | 753 | no | none | — | chat | 0x03 | 0x1F / 0x10 | 0x24 | md `pc/1.16.2` (alias; no packet-id change 751→753) |
 | 1.16.5 | 754 | no | none | — | chat | 0x03 | 0x1F / 0x10 | 0x24 | md `pc/1.16.2` (alias) |
+| 1.17 | 755 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.17` |
 | 1.17.1 | 756 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.17.1` |
 | 1.18, 1.18.1 | 757 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.18` |
 | 1.18.2 | 758 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.18.2` |
