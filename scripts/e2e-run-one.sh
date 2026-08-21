@@ -6,16 +6,17 @@
 # missing file is treated as a failure. No failure can be lost.
 set -euo pipefail
 
-VERSION="${1:?usage: e2e-run-one.sh <minecraft-version> | --print-java|--print-routing|--print-forge-routing|--print-neo-routing <minecraft-version>}"
+VERSION="${1:?usage: e2e-run-one.sh <minecraft-version> | --print-java|--print-routing|--print-fabric-routing|--print-forge-routing|--print-neo-routing <minecraft-version>}"
 
 # Probe modes: query the routing table and exit, before any env validation.
 #   --print-java           -> the era-correct Java floor            ("17")
 #   --print-routing        -> jar family and Java floor             ("1192 17")
 #   --print-forge-routing  -> Forge jar band and expect-refused flag ("legacy 0")
+#   --print-fabric-routing -> Fabric jar family and expect-refused flag ("1192 1")
 #   --print-neo-routing    -> NeoForge build and its Java floor  ("21.1.248 21")
 PROBE=""
 case "$VERSION" in
-  --print-java|--print-routing|--print-forge-routing|--print-neo-routing)
+  --print-java|--print-routing|--print-fabric-routing|--print-forge-routing|--print-neo-routing)
     PROBE="$VERSION"
     VERSION="${2:?usage: e2e-run-one.sh $VERSION <minecraft-version>}"
     ;;
@@ -29,13 +30,35 @@ case "$VERSION" in
   1.20.3|1.20.4|1.20.5|1.20.6|1.21*) FLOOR_JAVA=21; JAR_FAMILY=121 ;;
   1.17*)               FLOOR_JAVA=17; JAR_FAMILY=114 ;;
   1.19|1.19.0)
-    echo "[e2e] Minecraft $VERSION is unsupported: the mc1192 jar's floor is 1.19.1 (1.19.0's execute() lacks the ParseResults overload the jar hooks)" >&2
-    exit 2
+    # Not merely skipped: with FABRIC_EXPECT_REFUSED=1 this version becomes the
+    # out-of-range guard leg and routes to the mc1192 jar deliberately -- see the
+    # refusal block below. --print-fabric-routing is exempt because reporting
+    # "this must be refused" IS its job; --print-routing/--print-java keep
+    # erroring here, which scripts/test-jar-routing.sh's UNSUPPORTED list pins.
+    if [ "$PROBE" != "--print-fabric-routing" ] && [ "${FABRIC_EXPECT_REFUSED:-0}" != "1" ]; then
+      echo "[e2e] Minecraft $VERSION is unsupported: the mc1192 jar's floor is 1.19.1 (1.19.0's execute() lacks the ParseResults overload the jar hooks). Set FABRIC_EXPECT_REFUSED=1 to run it as a refusal guard." >&2
+      exit 2
+    fi
+    FLOOR_JAVA=17; JAR_FAMILY=1192
     ;;
   1.19*|1.20|1.20.1|1.20.2) FLOOR_JAVA=17; JAR_FAMILY=1192 ;;
   1.18*)               FLOOR_JAVA=17; JAR_FAMILY=114 ;;
   1.14*|1.15*|1.16*)   FLOOR_JAVA=8;  JAR_FAMILY=114 ;;
   *)                   FLOOR_JAVA=21; JAR_FAMILY=121 ;;
+esac
+
+# Out-of-range guard, mirroring FORGE_EXPECT_REFUSED below. The four declared
+# ranges live in gradle.properties (minecraft_range_114/_1192/_121/_26); a
+# version that falls in none of them must be REFUSED by the loader, not merely
+# skipped by this harness. 1.19.0 is the live example: it sits between the mc114
+# ceiling (<1.19) and the mc1192 floor (>=1.19.1). JAR_FAMILY=1192 above is
+# deliberate — the guard hands the server the jar a real operator would install,
+# so what is asserted is that jar's metadata gate, not an absent file. An
+# unasserted guard is not a guard: this is what fails the day one of those
+# ranges is widened by hand or by a processResources bug.
+FABRIC_EXPECT_REFUSED="${FABRIC_EXPECT_REFUSED:-0}"
+case "$VERSION" in
+  1.19|1.19.0) FABRIC_EXPECT_REFUSED=1 ;;
 esac
 
 # Forge routing — version-only, this case statement is the single home for
@@ -118,6 +141,7 @@ case "$PROBE" in
   --print-java)          echo "$FLOOR_JAVA"; exit 0 ;;
   --print-routing)       echo "$JAR_FAMILY $FLOOR_JAVA"; exit 0 ;;
   --print-forge-routing) echo "$FORGE_JAR_BAND $FORGE_EXPECT_REFUSED"; exit 0 ;;
+  --print-fabric-routing) echo "$JAR_FAMILY $FABRIC_EXPECT_REFUSED"; exit 0 ;;
   --print-neo-routing)
     if [ -n "$NEOFORGE_VERSION" ]; then
       echo "$NEOFORGE_VERSION $NEO_FLOOR_JAVA"
@@ -139,6 +163,11 @@ esac
 # to Forge's. Zero it here, once, rather than gating every consumer downstream.
 if [ "$LOADER" != "forge" ]; then
   FORGE_EXPECT_REFUSED=0
+fi
+# Same reasoning in reverse: the Fabric/Quilt guard asserts fabric.mod.json's
+# (and quilt.mod.json's) minecraft range, which Forge and NeoForge never read.
+if [ "$LOADER" != "fabric" ] && [ "$LOADER" != "quilt" ]; then
+  FABRIC_EXPECT_REFUSED=0
 fi
 # In-range Forge legs: the jar's OWN bytecode floor is what matters here, not
 # the generic per-MC-version table above (that table reflects the FABRIC
@@ -460,6 +489,7 @@ if docker run --rm \
     -e PLAYER_PHASE="$PLAYER_PHASE" \
     -e LOADER="$LOADER" \
     -e FORGE_EXPECT_REFUSED="$FORGE_EXPECT_REFUSED" \
+    -e FABRIC_EXPECT_REFUSED="$FABRIC_EXPECT_REFUSED" \
     -e E2E_CONFIG_VARIANT="$CONFIG_VARIANT" \
     -e NEOFORGE_VERSION="$NEOFORGE_VERSION" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
