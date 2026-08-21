@@ -9,8 +9,18 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Keyed on the EVENT as well as the ref, so a workflow_dispatch deep sweep and
+# a push run on main do not share a group. They used to: the group was
+# ci-${{ github.ref }}, and cancel-in-progress is a property of the ARRIVING
+# run, so every merge to main evicted any sweep already running. Run
+# 32529611370 died that way at 87 green / 0 red when #71 merged, and the run
+# before it the same way -- which is why "the deep sweep is green on main" had
+# never been established: not because it failed, but because a merge always
+# killed it first. The failure was silent, too, since the run reads `cancelled`
+# rather than `failure`. Exempting dispatch from CANCELLING others would not
+# have helped; the sweep is the victim, not the culprit. Issue #73.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
