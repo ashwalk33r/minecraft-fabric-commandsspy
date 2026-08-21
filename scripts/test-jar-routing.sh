@@ -446,6 +446,10 @@ coverage_tsv="$(cd "$repo_root/tools" && go run . gen-matrix --coverage)"
 excluded_of() {
   printf '%s\n' "$coverage_tsv" | awk -F'\t' -v b="$1" '$1 == b && $2 == "excluded" { print $3 }'
 }
+reason_of() {
+  printf '%s\n' "$coverage_tsv" \
+    | awk -F'\t' -v b="$1" -v v="$2" '$1 == b && $2 == "excluded" && $3 == v { print $4 }'
+}
 # NeoForge: excluded because the line's newest build is a prerelease. Field 1 of
 # --print-neo-routing is that build.
 for v in $(excluded_of neo); do
@@ -456,9 +460,18 @@ for v in $(excluded_of neo); do
   esac
   check "neo exclusion $v is still beta-only" "beta" "$got"
 done
-# Forge: excluded because the harness refuses the version -- either the era gate
-# rejects it outright (exit != 0) or the routing probe raises the refusal flag.
-# A refusal leg is the absence of coverage, so it belongs to #56, not here.
+# Forge: three different situations reach `excluded`, and only two of them can
+# be probed. Where Forge never PUBLISHED a build there is nothing to install and
+# nothing to ask -- `e2e-run-one.sh` discovers that from the promotions feed at
+# run time, which is a network call, and `contracts` makes none -- so those are
+# skipped by their reason prefix, exactly like mc26's two below. What is still
+# probed is that CI cannot boot the version: either the shared era gate rejects
+# it outright (exit != 0) or the routing probe raises FORGE_EXPECT_REFUSED.
+# Note the flag itself conflates unproven-by-CI with out-of-declared-range -- it
+# is raised by absence from the hand-maintained FORGE_KNOWN_GOOD_* lists -- so
+# the check below deliberately claims only "CI cannot boot this", which is what
+# the flag actually witnesses. The coverage table's reason says which of the
+# three it is.
 forge_refusal_state() {
   local out
   if ! out="$("$script_dir/e2e-run-one.sh" --print-forge-routing "$1" 2>/dev/null)"; then
@@ -466,12 +479,16 @@ forge_refusal_state() {
   elif [ "${out##* }" = "1" ]; then
     echo "refused"
   else
-    echo "in-range ($out) -- promote it into the band's deep list"
+    echo "bootable ($out) -- promote it into the band's deep list, or correct its reason"
   fi
 }
 for band in forge forge_legacy forge_mc116 forge_eventbus7; do
   for v in $(excluded_of "$band"); do
-    check "$band exclusion $v is still a refusal, not coverage" "refused" "$(forge_refusal_state "$v")"
+    case "$(reason_of "$band" "$v")" in
+      "no Forge build published:"*) continue ;;
+    esac
+    check "$band exclusion $v is still not bootable by CI (gated or refused)" \
+          "refused" "$(forge_refusal_state "$v")"
   done
 done
 # mc26's two exclusions (26.1.1/26.1.2) are the one case with no executable

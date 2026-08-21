@@ -118,7 +118,12 @@ var all121 = []string{"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5",
 //	deep     — booted on workflow_dispatch, which is now the deep sweep its
 //	           name always implied. Always a superset of sampled.
 //	excluded — declared, and booted by nothing on any event, each with the
-//	           reason it is not.
+//	           reason it is not. Three different situations end up here and the
+//	           reason has to say which, because they are not the same claim:
+//	           the LOADER refuses the version; the loader project never
+//	           published a build for it, so there is nothing to install at all;
+//	           or this HARNESS gates it for a reason of its own. Only the first
+//	           is re-probeable offline — see scripts/test-jar-routing.sh.
 //
 // The invariant gen_matrix_test.go asserts is `deep + excluded == declared`,
 // exactly, per band. A version therefore cannot leave the grid by being
@@ -203,7 +208,7 @@ var coverage = map[string]bandCoverage{
 		deep: []string{"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
 			"1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2", "1.20.3", "1.20.4"},
 		excluded: map[string]string{
-			"1.19": "the shared era-routing gate in scripts/e2e-run-one.sh rejects 1.19 before any loader probe runs (1.19.0's execute() lacks the ParseResults overload the jar hooks), so a leg here would be a REFUSAL leg, not coverage — issue #56 owns it",
+			"1.19": "blocked by the harness, not by Forge: Forge publishes 41.1.0 for 1.19 on both channels and would load the mod here. What stops it is the shared era-routing gate in scripts/e2e-run-one.sh, which rejects 1.19 before any loader routing runs because the FABRIC mc1192 jar's floor is 1.19.1 (1.19.0's execute() lacks the ParseResults overload that jar hooks). The only way past is FABRIC_EXPECT_REFUSED=1, the wrong flag to set on a leg whose point is Forge coverage",
 		},
 	},
 
@@ -217,8 +222,8 @@ var coverage = map[string]bandCoverage{
 		sampled: []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
 		deep:    []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
 		excluded: map[string]string{
-			"1.14": "--print-forge-routing 1.14 reports \"mc116 1\": absent from FORGE_KNOWN_GOOD_MC116, so a leg would be a REFUSAL leg, not coverage — issue #56 owns it",
-			"1.16": "--print-forge-routing 1.16 reports \"mc116 1\" for the same reason; the Fabric mc114 band boots 1.16 in the deep sweep, so the RCON-name edge is proven on the loader whose jar declares it",
+			"1.14": "no Forge build published: the promotions feed goes 1.13.2 -> 1.14.2 and carries no 1.14 key at all, so there is nothing to install. FORGE_EXPECT_REFUSED does raise here, but only because 1.14 is missing from FORGE_KNOWN_GOOD_MC116 — that flag means unproven-by-CI, not out-of-range, and it is not the reason this version cannot run",
+			"1.16": "no Forge build published: the promotions feed jumps 1.15 -> 1.16.1. The Fabric mc114 band boots 1.16 in the deep sweep, so the 1.15.2|1.16 RCON-name edge is still proven — on the loader whose jar declares it",
 		},
 	},
 
