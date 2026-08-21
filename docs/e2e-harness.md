@@ -65,6 +65,15 @@ Verdict line grammar (the final line of container output is authoritative):
   Minecraft range): Forge refused the mod (`needs language provider
   javafml`) and no `[CommandsSpy] [` line was ever logged. See "Forge
   server install" below.
+- `E2E <version> PASS fabric-out-of-range-refused-as-expected` — the
+  Fabric/Quilt mirror, reachable only when `FABRIC_EXPECT_REFUSED=1` (today
+  that is Minecraft 1.19.0, which falls in the crack between the mc114
+  ceiling `<1.19` and the mc1192 floor `>=1.19.1`): the loader refused the
+  mod, so no `Loading CommandsSpy` banner was ever logged. Its one `FAIL`
+  code is `fabric-out-of-range-not-refused`. The leg is handed the mc1192
+  jar deliberately — the one a real operator would install — so what it
+  asserts is that jar's `fabric.mod.json`/`quilt.mod.json` range gate, not an
+  absent file.
 - `E2E <version> PASS config-behaviors` — the config-behaviors leg
   (`CONFIG_VARIANT=1`): a `config/commands-spy.json` is seeded before boot
   with a blacklisted command and `logArguments: true`, and the leg asserts
