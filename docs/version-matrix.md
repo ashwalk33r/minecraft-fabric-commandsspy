@@ -77,8 +77,8 @@ output jar.
 
 ## Quilt: the pre-1.18 entrypoint gap
 
-On Quilt Loader, `CommandsSpy.onInitialize()` is **never invoked on dedicated
-servers below Minecraft 1.18** — silently, with no crash and no exception.
+On Quilt Loader, `CommandsSpyFabric.onInitialize()` is **never invoked on
+dedicated servers below Minecraft 1.18** — silently, no crash, no exception.
 e2e-proven with quilt-loader 0.30.0: 1.14.4, 1.16.5 and 1.17.1 fail; 1.18.2,
 1.19.2, 1.19.4, 1.20.2, 1.21.11 pass. The boundary is a Minecraft version, not
 a jar boundary — 1.17.1 and 1.18.2 are served by the same mc114 jar and the
@@ -88,6 +88,11 @@ Nothing user-visible is lost. Mixins are applied by SpongePowered Mixin
 independently of the loader's entrypoint invocation, so the mod's entire
 function — console, RCON and player command logging — is asserted and passes
 on all three versions. The only missing artifact is the startup banner.
+
+The declaration quilt-loader fails to honour is `quilt_loader.entrypoints.main`
+in `src/main/resources/quilt.mod.json` (`pl.m2x.commandsspy.CommandsSpyFabric`)
+— Quilt reads that file for this jar, not `fabric.mod.json`, so
+`fabric.mod.json`'s identical `main` entrypoint is not the one being skipped.
 
 Upstream, not ours, and not fixable by choosing a different loader version:
 quilt-loader's `EntrypointPatch` bytecode-patches Minecraft's own main class to
