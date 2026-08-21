@@ -333,9 +333,14 @@ Which floors get the alpine base image vs. jammy, and why:
 - mc114: deliberately a high floor (>=0.19.3), the line verified to serve
   working server launchers all the way down to 1.14.4. Do not lower it.
 
-Quilt Loader natively loads a jar's `fabric.mod.json` — this project also
-ships a `quilt.mod.json` (same jar, both loaders) purely for an accurate
-platform badge, not because Quilt needs it to load the mod. All four eras
+Quilt Loader's Fabric-compatibility layer will load a jar that carries only a
+`fabric.mod.json` — that is why this mod already ran on Quilt before it
+shipped any Quilt metadata. But once a `quilt.mod.json` is present in the jar,
+that file takes precedence and Quilt ignores the jar's `fabric.mod.json`;
+Fabric Loader ignores `quilt.mod.json` entirely. This project ships both in
+the same jar, so on Quilt the metadata actually in force — declared ranges and
+entrypoint alike — is `quilt.mod.json`'s, and an accurate Quilt platform badge
+is a consequence of that, not the reason for it. All four eras
 declare the same Quilt Loader floor, `>=0.30.0`, and the same Java floor as
 their Fabric counterpart (Quilt Loader itself imposes no additional JVM
 floor at any era). This is asserted, not assumed: every version the e2e matrix
