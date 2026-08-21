@@ -1,4 +1,13 @@
 .idea
+
+# Eclipse / Eclipse JDT Language Server (VS Code Java, jdtls) write these into
+# the repo root when they index the project — no build required. /bin/ holds
+# compiled .class files and is NOT covered by the /build rule below. All four
+# are root-anchored so a future src/**/bin/ resource dir is not swallowed.
+/.classpath
+/.project
+/.settings/
+/bin/
 .gradle
 /build
 /forge/build
