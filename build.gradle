@@ -60,7 +60,7 @@ def is114 = mcTarget == '114'
 def jarClassifier = is26 ? '26.x' : (is1192 ? '1.19-1.20.2' : (is114 ? '1.14.x' : '1.21.x'))
 def propSuffix = is26 ? '26' : (is1192 ? '1192' : (is114 ? '114' : '121'))
 def srcSetDir = is26 ? 'src/mc26/java' : (is1192 ? 'src/mc1192/java' : (is114 ? 'src/mc114/java' : 'src/mc121/java'))
-// release 17/8/21 per target: era-correct bytecode. See docs/version-matrix.md.
+// release 17/8/21 per target: era-correct bytecode. See the wiki, Supported-Versions.
 def javaRelease = is1192 ? 17 : (is114 ? 8 : 21)
 
 version = "${project.mod_version}+mc${jarClassifier}"

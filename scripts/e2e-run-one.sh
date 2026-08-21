@@ -121,6 +121,8 @@ esac
 # table in the wiki, Version-Boundaries-And-Root-Causes -> "Hard floors".
 NEOFORGE_VERSION=""
 NEO_FLOOR_JAVA=0
+# 0 = no ceiling. Only one band has one: Forge modern, below.
+CEILING_JAVA=0
 case "$VERSION" in
   1.20.2)  NEOFORGE_VERSION="20.2.93";        NEO_FLOOR_JAVA=17 ;;
   1.20.3)  NEOFORGE_VERSION="20.3.8-beta";    NEO_FLOOR_JAVA=17 ;;
@@ -183,14 +185,34 @@ fi
 # legacy jar, which is Java-17 bytecode uniformly across 1.17.1-1.20.4).
 # eventbus7 keeps the generic per-version floor: 21 for 1.21.x and 25 for
 # 26.x are both >= the jar's java-21 bytecode, and 26.x servers themselves
-# require 25. Guard-leg (out-of-range) probes are deliberately left alone
-# here -- they get their own override further down, once JAVA_VERSION is
-# resolved.
+# require 25. Guard-leg (out-of-range) probes are excluded from this whole
+# arm by the FORGE_EXPECT_REFUSED != "1" condition below, so they keep the
+# generic per-version floor and never get a band floor or ceiling -- correct,
+# since a refusal probe asserts the mods.toml range gate, not a boot.
 if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
   case "$FORGE_JAR_BAND" in
     mc116)  FLOOR_JAVA=8 ;;
     legacy) FLOOR_JAVA=17 ;;
-    modern) FLOOR_JAVA=21 ;;
+    # Java 21 only (issue #66; the wiki, Supported-Versions -> "Forge modern
+    # is Java 21 only"). Ceiling, not just a floor: this band is the one place
+    # where a NEWER JVM is a downgrade.
+    # Measured by this harness: java 21 boots, java 25 and 26 both boot-fail.
+    # There is no java-22/23 image here, so the JDK-24 boundary itself is NOT
+    # measured -- it is cited from upstream's own release note: JDK 24 removed
+    # the jdk.crypto.ec module that nimbus-jose-jwt (a net.minecraftforge.
+    # bootstrap dependency) needs for module resolution, so there is nothing
+    # to --add-modules. The claim stays "java 21 only", never "<24".
+    # FORGE_MODERN_JAVA_CEILING overrides the ceiling for re-probing the band
+    # after an upstream Forge bootstrap fix, without editing this file.
+    # Keyed on FORGE_JAR_BAND, not on VERSION -- but the JDK-24 module failure
+    # is really a property of the SERVER's bootstrap, i.e. of the Minecraft
+    # version. The two coincide on every path CI or the Makefile can reach
+    # (FORGE_JAR_BAND is derived from VERSION, right above); they diverge only
+    # if someone hand-forces FORGE_JAR_BAND=legacy on a modern-band version,
+    # which also sets FORGE_EXPECT_REFUSED=1 and so skips this whole arm.
+    # Deliberate: keying on VERSION here would duplicate the range the band
+    # table above already carries.
+    modern) FLOOR_JAVA=21; CEILING_JAVA="${FORGE_MODERN_JAVA_CEILING:-21}" ;;
   esac
 fi
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
@@ -310,6 +332,15 @@ mkdir -p "$(dirname "$RESULT_FILE")" "$(dirname "$LOG_FILE")"
 if [ "$JAVA_VERSION" -lt "$FLOOR_JAVA" ]; then
   printf 'E2E %s java%s FAIL below-java-floor-%s\n' "$VERSION" "$JAVA_VERSION" "$FLOOR_JAVA" > "$RESULT_FILE"
   echo "[e2e] <- FAIL Minecraft $VERSION on java $JAVA_VERSION (floor is java $FLOOR_JAVA)"
+  exit 1
+fi
+
+# The mirror image, for the one band that has a ceiling. Same reasoning as the
+# floor guard above: without it the run burns a full boot timeout and reports a
+# generic boot-failed, which reads like a mod bug and is not one.
+if [ "$CEILING_JAVA" -ne 0 ] && [ "$JAVA_VERSION" -gt "$CEILING_JAVA" ]; then
+  printf 'E2E %s java%s FAIL above-java-ceiling-%s\n' "$VERSION" "$JAVA_VERSION" "$CEILING_JAVA" > "$RESULT_FILE"
+  echo "[e2e] <- FAIL Minecraft $VERSION on java $JAVA_VERSION (ceiling is java $CEILING_JAVA; issue #66)"
   exit 1
 fi
 

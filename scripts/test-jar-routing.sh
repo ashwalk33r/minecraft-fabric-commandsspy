@@ -199,6 +199,42 @@ for v in $FORGE_OUT_OF_RANGE_VERSIONS; do
   check "forge-routing $v refused" "1" "${got##* }"
 done
 
+# Probe 3d — the Forge modern band's Java CEILING (issue #66), asserted by
+# RUNNING the harness, not by reading its table. Forge's modern bootstrap
+# cannot resolve modules on java 24+ (nimbus-jose-jwt requires jdk.crypto.ec,
+# removed from the JDK in 24), so the band is java 21 only. The guard exits
+# before Docker is touched, which is what makes this cheap enough to pin here.
+echo "== Forge modern java ceiling (issue #66)"
+ceiling_probe() {
+  local java="$1" version="$2" ceiling_override="${3:-}" tmp
+  tmp="$(mktemp -d)"
+  REPO_ROOT="$tmp" \
+  E2E_LOG_DIR="logs" E2E_RESULT_DIR="results" \
+  MOD_JAR_121="x.jar" MOD_JAR_1192="x.jar" MOD_JAR_114="x.jar" MOD_JAR_26="x.jar" \
+  MOD_JAR_FORGE="x.jar" MOD_JAR_FORGE_LEGACY="x.jar" \
+  MOD_JAR_FORGE_EB7="x.jar" MOD_JAR_FORGE_MC116="x.jar" \
+  LOADER=forge JAVA_OVERRIDE="$java" FORGE_MODERN_JAVA_CEILING="$ceiling_override" \
+    bash "$repo_root/scripts/e2e-run-one.sh" "$version" >/dev/null 2>&1 || true
+  cat "$tmp"/results/*.result 2>/dev/null | tr -d '\n'
+  rm -rf "$tmp"
+}
+check "modern 1.21.5 on java 25 is refused with a named verdict" \
+      "E2E 1.21.5 java25 FAIL above-java-ceiling-21" "$(ceiling_probe 25 1.21.5)"
+check "modern 1.20.6 on java 26 is refused with a named verdict" \
+      "E2E 1.20.6 java26 FAIL above-java-ceiling-21" "$(ceiling_probe 26 1.20.6)"
+# The ceiling must not swallow the band's own floor leg, nor any other band:
+# these get past the guard and fail later, on the absent jar.
+check "modern 1.21.5 on java 21 is not refused by the ceiling" \
+      "E2E 1.21.5 java21 FAIL mod-jar-missing" "$(ceiling_probe 21 1.21.5)"
+check "eventbus7 26.2 on java 26 is not refused by the ceiling" \
+      "E2E 26.2 java26 FAIL mod-jar-missing" "$(ceiling_probe 26 26.2)"
+# FORGE_MODERN_JAVA_CEILING keeps the java-21-only claim falsifiable: raise it
+# and the same java-25 run that was refused above now gets past the guard
+# (proving the override reaches the guard, not that java 25 actually boots --
+# it fails later, on the absent jar, same as the unset-case checks above).
+check "FORGE_MODERN_JAVA_CEILING=26 lets modern 1.21.5 on java 25 past the guard" \
+      "E2E 1.21.5 java25 FAIL mod-jar-missing" "$(ceiling_probe 25 1.21.5 26)"
+
 # ...and the four declared ranges the band table above mirrors, exactly as the
 # Fabric block near the bottom of this file pins gradle.properties. The band
 # case statement in e2e-run-one.sh is a hand-maintained copy of these, so the
@@ -412,6 +448,37 @@ check "one NeoForge build job" "1" "$(grep -cE '^  build-neo:$' "$gate_yml")"
 check "band jar uploaded under one artifact name" "1" \
       "$(grep -cF 'name: commandsspy-jar-neoforge-${{ github.sha }}' "$gate_yml")"
 
+# Probe 3e — the six generated Forge e2e legs in ci.yml. Same wiring check as
+# the NeoForge legs above, and the one that keeps issue #66 honest: nothing
+# else asserts that no MODERN-band leg is scheduled above java 21. The
+# forward-JVM leg (forge_java26) is eventbus7-only for that reason, and
+# floors_test.go pins its band membership; what is pinned here is its JVM.
+echo "== Forge e2e legs in ci.yml"
+for spec in "e2e-forge-java21 forge_java21 21" \
+            "e2e-forge-legacy-java17 forge_legacy_java17 17" \
+            "e2e-forge-mc116-java8 forge_mc116_java8 8" \
+            "e2e-forge-eventbus7-java21 forge_eventbus7_java21 21" \
+            "e2e-forge-eventbus7-java25 forge_eventbus7_java25 25" \
+            "e2e-forge-java26 forge_java26 26"; do
+  read -r job key java <<< "$spec"
+  check "$job versions" "\${{ needs.contracts.outputs.$key }}" "$(ci_job_field "$job" versions)"
+  check "$job java"     "\"$java\""  "$(ci_job_field "$job" java)"
+  check "$job loader"   '"forge"'    "$(ci_job_field "$job" loader)"
+  check "$job skips an empty band" "1" \
+        "$(ci_job_block "$job" | grep -cF "needs.contracts.outputs.$key != '[]'")"
+done
+# This pins the six GENERATED Forge legs only -- there are two other, static
+# Forge legs in ci.yml (e2e-config-behaviors-forge, e2e-forge-refusal-guard)
+# that are not derived from the band tables above, so out of scope here; both
+# are pinned separately below (the config-behaviors block, and the
+# out-of-range refusal guard block). Among the six, forge_java21 is the only
+# key touching the modern band, and it references its own band key twice (the
+# if-guard and versions:), so 2 is the correct baseline. Any future GENERATED
+# leg pointing forge_java21's band at a newer JVM adds a third reference and
+# has to delete this line.
+check "forge_java21 referenced exactly twice in ci.yml (if-guard + versions)" "2" \
+      "$(grep -c 'needs.contracts.outputs.forge_java21' "$gate_yml")"
+
 echo "== config-behaviors legs in ci.yml (#34)"
 for loader in fabric quilt forge neoforge; do
   check "config-behaviors leg present ($loader)" "1" \
@@ -419,6 +486,17 @@ for loader in fabric quilt forge neoforge; do
 done
 check "config-behaviors legs pass config-variant: 1" "4" \
       "$(grep -cE '^      config-variant: "1"$' "$gate_yml")"
+# e2e-config-behaviors-forge is a static leg, not generated from the band
+# tables above, and it boots 1.21.1 -- the MODERN band. Nothing pinned its
+# java: before this; unpinned, a bump above 21 here would silently defeat
+# issue #66's ceiling (the run would still be refused at runtime, but nothing
+# would catch the regression before ci.yml ever ran).
+check "e2e-config-behaviors-forge versions" "'[\"1.21.1\"]'" \
+      "$(ci_job_field "e2e-config-behaviors-forge" versions)"
+check "e2e-config-behaviors-forge java"     '"21"' \
+      "$(ci_job_field "e2e-config-behaviors-forge" java)"
+check "e2e-config-behaviors-forge loader"   '"forge"' \
+      "$(ci_job_field "e2e-config-behaviors-forge" loader)"
 
 # The boot half of the out-of-range guard. Pinned here so deleting a leg from
 # ci.yml fails `contracts` loudly instead of quietly removing the only place
@@ -432,6 +510,20 @@ check "refusal guard legs pass fabric-expect-refused: 1" "2" \
       "$(grep -cE '^      fabric-expect-refused: "1"$' "$gate_yml")"
 check "refusal guard legs run the uncovered version" "2" \
       "$(grep -cF "versions: '[\"1.19\"]'" "$gate_yml")"
+# The Forge half of the same guard is shaped differently (forge-refusal-probe,
+# not fabric-expect-refused; 1.21.6, not 1.19) because Forge's own holes
+# (1.17, 1.20.5) have no published server build at all -- see the comment
+# above e2e-forge-refusal-guard in ci.yml for why. Pinned here for
+# completeness, not for issue #66: this leg forces FORGE_JAR_BAND=modern, but
+# 1.21.6 is already outside FORGE_KNOWN_GOOD_MODERN, so FORGE_EXPECT_REFUSED
+# is 1 before the ceiling arm ever runs (it's gated on FORGE_EXPECT_REFUSED !=
+# "1" in e2e-run-one.sh) -- this leg can never exercise the ceiling.
+check "e2e-forge-refusal-guard versions" "'[\"1.21.6\"]'" \
+      "$(ci_job_field "e2e-forge-refusal-guard" versions)"
+check "e2e-forge-refusal-guard java"     '"21"' \
+      "$(ci_job_field "e2e-forge-refusal-guard" java)"
+check "e2e-forge-refusal-guard loader"   '"forge"' \
+      "$(ci_job_field "e2e-forge-refusal-guard" loader)"
 
 # Probe 5 — THE SAMPLING RULE (issue #59). Two halves.
 #
