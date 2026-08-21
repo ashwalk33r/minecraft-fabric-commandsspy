@@ -84,7 +84,7 @@ var expected = map[string]map[string]int{
 	"mc114_java21": {"pull_request": 2, "workflow_dispatch": 5},
 	// Forge bands: floor rows plus the one forward-JVM row, no lean/full split
 	// except where the deep sweep widens the band's own version list.
-	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 8},
+	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 7},
 	"forge_legacy_java17":    {"pull_request": 10, "workflow_dispatch": 13},
 	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 7},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
@@ -159,7 +159,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 78, "workflow_dispatch": 133}
+	totals := map[string]int{"pull_request": 78, "workflow_dispatch": 132}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge and neo pairs (single-loader) plus 25 fixed jobs
 	// (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -168,11 +168,11 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*39 + 32 + 7 + 25 = 142. Dispatch: 2*80 + 39 + 14 + 25 = 238 — the
+	// PR: 2*39 + 32 + 7 + 25 = 142. Dispatch: 2*80 + 38 + 14 + 25 = 237 — the
 	// deep sweep's whole delta is Minecraft versions the PR grid never boots.
 	// The forge and neo terms carry the #58 forward-JVM rows: forge_java26 (1)
 	// and neo_fwd_java25 (1), the same on every event.
-	jobTotals := map[string]int{"pull_request": 142, "workflow_dispatch": 238}
+	jobTotals := map[string]int{"pull_request": 142, "workflow_dispatch": 237}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -226,11 +226,11 @@ func TestOptionCombinationTotals(t *testing.T) {
 		{"t0", 26, 50, 77, 125},
 		{"t0 mc1192", 32, 61, 89, 147},
 		{"t0 mc1192 mc114", 39, 80, 103, 185},
-		{"t0 mc1192 mc114 forge", 42, 87, 106, 192},
-		{"t0 mc1192 mc114 forge forge_legacy", 53, 101, 117, 206},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 112, 128, 217},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 119, 135, 224},
-		{allBands, 78, 133, 142, 238},
+		{"t0 mc1192 mc114 forge", 42, 86, 106, 191},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 100, 117, 205},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 111, 128, 216},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 118, 135, 223},
+		{allBands, 78, 132, 142, 237},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
