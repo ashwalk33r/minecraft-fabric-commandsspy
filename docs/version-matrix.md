@@ -535,7 +535,22 @@ a written reason for every declared version booted by neither.
 version cannot leave the grid by being deleted from a list — only by acquiring a
 reason someone had to type. `scripts/test-jar-routing.sh` re-probes the reasons
 that are claims about the world (a NeoForge line whose newest build is a beta, a
-Forge version the harness refuses), so an exclusion cannot outlive its cause.
+Forge version the harness gates), so an exclusion cannot outlive its cause.
+
+**Three different things put a version in `excluded`, and the reason has to say
+which**, because they are not the same claim and they do not age the same way:
+
+| Situation | Example | Re-probed offline? |
+|---|---|---|
+| The **loader refuses** it, or this **harness gates** it | Forge `1.19` — Forge publishes `41.1.0` and would load the mod, but the shared era-routing gate in `scripts/e2e-run-one.sh` rejects `1.19` before any loader routing runs, because the *Fabric* `mc1192` jar's floor is `1.19.1` | Yes |
+| The loader project **never published a build** | Forge `1.14` and `1.16` — the promotions feed goes 1.13.2 → 1.14.2 and 1.15 → 1.16.1. Nothing exists to install; the version is unbootable permanently, not merely unproven | **No.** `e2e-run-one.sh` learns this from the promotions feed at run time. That is a network call, and `contracts` makes none — pinning a copy in the repo would be a network fact in an offline costume |
+| A **judgement call** with no executable form | Fabric/Quilt `26.1.1`/`26.1.2` — mapping breaks land on minor boundaries, not patch releases | No. Only a human can retire it |
+
+One trap this table exists to avoid: `FORGE_EXPECT_REFUSED` in
+`scripts/e2e-run-one.sh` is raised by absence from the hand-maintained
+`FORGE_KNOWN_GOOD_*` lists, so it witnesses *"CI has not measured this"* and not
+*"the loader will refuse this"*. It is a fine signal and a misleading name; the
+coverage table's reason, not the flag, is where the actual cause is recorded.
 
 **`workflow_dispatch` is the deep sweep.** It boots each band's `deep` list —
 every declared version except the excluded ones — at zero cost to the pull-request
