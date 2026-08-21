@@ -467,15 +467,15 @@ for spec in "e2e-forge-java21 forge_java21 21" \
   check "$job skips an empty band" "1" \
         "$(ci_job_block "$job" | grep -cF "needs.contracts.outputs.$key != '[]'")"
 done
-# This pins the six GENERATED Forge legs only -- there are other, static
-# Forge legs in ci.yml (e2e-config-behaviors-forge, the e2e-gate canary) that
-# are not derived from the band tables above and so are out of scope here;
-# see the config-behaviors block below for the one of those that matters to
-# issue #66. Among the six, forge_java21 is the only key touching the modern
-# band, and it references its own band key twice (the if-guard and
-# versions:), so 2 is the correct baseline. Any future GENERATED leg pointing
-# forge_java21's band at a newer JVM adds a third reference and has to delete
-# this line.
+# This pins the six GENERATED Forge legs only -- there are two other, static
+# Forge legs in ci.yml (e2e-config-behaviors-forge, e2e-forge-refusal-guard)
+# that are not derived from the band tables above, so out of scope here; both
+# are pinned separately below (the config-behaviors block, and the
+# out-of-range refusal guard block). Among the six, forge_java21 is the only
+# key touching the modern band, and it references its own band key twice (the
+# if-guard and versions:), so 2 is the correct baseline. Any future GENERATED
+# leg pointing forge_java21's band at a newer JVM adds a third reference and
+# has to delete this line.
 check "forge_java21 referenced exactly twice in ci.yml (if-guard + versions)" "2" \
       "$(grep -c 'needs.contracts.outputs.forge_java21' "$gate_yml")"
 
@@ -510,6 +510,20 @@ check "refusal guard legs pass fabric-expect-refused: 1" "2" \
       "$(grep -cE '^      fabric-expect-refused: "1"$' "$gate_yml")"
 check "refusal guard legs run the uncovered version" "2" \
       "$(grep -cF "versions: '[\"1.19\"]'" "$gate_yml")"
+# The Forge half of the same guard is shaped differently (forge-refusal-probe,
+# not fabric-expect-refused; 1.21.6, not 1.19) because Forge's own holes
+# (1.17, 1.20.5) have no published server build at all -- see the comment
+# above e2e-forge-refusal-guard in ci.yml for why. Pinned here for
+# completeness, not for issue #66: this leg forces FORGE_JAR_BAND=modern, but
+# 1.21.6 is already outside FORGE_KNOWN_GOOD_MODERN, so FORGE_EXPECT_REFUSED
+# is 1 before the ceiling arm ever runs (it's gated on FORGE_EXPECT_REFUSED !=
+# "1" in e2e-run-one.sh) -- this leg can never exercise the ceiling.
+check "e2e-forge-refusal-guard versions" "'[\"1.21.6\"]'" \
+      "$(ci_job_field "e2e-forge-refusal-guard" versions)"
+check "e2e-forge-refusal-guard java"     '"21"' \
+      "$(ci_job_field "e2e-forge-refusal-guard" java)"
+check "e2e-forge-refusal-guard loader"   '"forge"' \
+      "$(ci_job_field "e2e-forge-refusal-guard" loader)"
 
 # Probe 5 — THE SAMPLING RULE (issue #59). Two halves.
 #
