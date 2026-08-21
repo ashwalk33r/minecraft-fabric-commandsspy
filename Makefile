@@ -83,6 +83,28 @@ _cfgvar_suffix := $(if $(filter 1,$(CONFIG_VARIANT)),-cfgvar,)
 # collide. See docs/e2e-harness.md.
 FABRIC_EXPECT_REFUSED ?= 0
 
+# 1 = the Forge out-of-range refusal guard leg. Forge's analogue of the leg
+# above cannot be built the same way: the two holes between the four declared
+# Forge ranges are 1.17 and 1.20.5, and Forge published no server build for
+# either -- the holes exist BECAUSE nothing was published there -- so a run on
+# them dies at no-forge-build-for-version before a container ever starts. What
+# is bootable is the same proposition with the mismatch on the other axis:
+# hand a version Forge DOES publish for the WRONG band's jar, by pre-setting
+# scripts/e2e-run-one.sh's FORGE_JAR_BAND instead of letting it route by
+# version. `modern` is the only band that isolates the minecraft range: every
+# band's loader_range mirrors its minecraft_range (Forge's major tracks the
+# Minecraft version 1:1), so on any other pairing the loaderVersion gate
+# refuses first and the minecraft range is never evaluated. modern's
+# loader_range is [50,) -- unbounded above -- so on 1.21.6 the javafml and
+# forge gates both pass and only minecraft_range_modern's <1.21.6 ceiling
+# refuses. FORGE_EXPECT_REFUSED then falls out for free: 1.21.6 is not in
+# FORGE_KNOWN_GOOD_MODERN, so the routing table raises the flag itself.
+FORGE_REFUSAL_PROBE ?= 0
+_forge_jar_band := $(FORGE_JAR_BAND)
+ifeq ($(FORGE_REFUSAL_PROBE),1)
+_forge_jar_band := modern
+endif
+
 # Only LOADER=forge needs the Forge jars built; a Fabric/Quilt/NeoForge run
 # must not pay for ForgeGradle's decompile pipeline. All four Forge jars are
 # built for any forge e2e run -- scripts/e2e-run-one.sh routes per version
@@ -205,6 +227,7 @@ _e2e-fanout:
 	  JAVA_OVERRIDE="$(JAVA)" \
 	  LOADER="$(LOADER)" \
 	  CONFIG_VARIANT="$(CONFIG_VARIANT)" \
+	  FORGE_JAR_BAND="$(_forge_jar_band)" \
 	  E2E_JAR_CACHE="$(E2E_JAR_CACHE)" \
 	  xargs -P $(PARALLEL) -n 1 ./scripts/e2e-run-one.sh || true
 	@echo ""

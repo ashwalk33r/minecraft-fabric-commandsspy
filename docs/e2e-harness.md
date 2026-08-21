@@ -62,9 +62,9 @@ Verdict line grammar (the final line of container output is authoritative):
   above.
 - `E2E <version> PASS forge-out-of-range-refused-as-expected` — reachable
   only when `FORGE_EXPECT_REFUSED=1` (a Forge leg outside the jar's declared
-  Minecraft range): Forge refused the mod (`needs language provider
-  javafml`) and no `[CommandsSpy] [` line was ever logged. See "Forge
-  server install" below.
+  Minecraft range): Forge refused the mod on mods.toml's `minecraft`
+  dependency range (`Mod commandsspy requires minecraft ...`) and no
+  `[CommandsSpy] [` line was ever logged. See "Forge server install" below.
 - `E2E <version> PASS fabric-out-of-range-refused-as-expected` — the
   Fabric/Quilt mirror, reachable only when `FABRIC_EXPECT_REFUSED=1` (today
   that is Minecraft 1.19.0, which falls in the crack between the mc114
@@ -178,14 +178,32 @@ hook is live. Every other assertion carries over unchanged.
 An out-of-range GUARD leg exercises the boundary directly:
 `scripts/e2e-run-one.sh` sets `FORGE_EXPECT_REFUSED=1` for any Minecraft
 version outside the jar's declared range, and `scripts/e2e-entrypoint.sh`
-then asserts (a) Forge refused the mod (`needs language provider javafml`)
-and (b) no `[CommandsSpy] [` line was ever logged — verdict `PASS
-forge-out-of-range-refused-as-expected`. With all four Forge jars shipped the
-only version this still fires on is **1.20.5**, the one release Forge itself
-publishes no build for; every other version 1.14–26.2 routes to a jar that
-declares it. A metadata string is the only thing standing between a user on an
-uncovered version and a server that dies mid-command, and an unasserted guard
-is not a guard.
+then asserts (a) Forge refused the mod on mods.toml's `minecraft` dependency
+range (`Mod commandsspy requires minecraft 1.20.6 or above, and below
+1.21.6`) and (b) no `[CommandsSpy] [` line was ever logged — verdict `PASS
+forge-out-of-range-refused-as-expected`. A metadata string is the only thing
+standing between a user on an uncovered version and a server that dies
+mid-command, and an unasserted guard is not a guard.
+
+Which version that leg runs on is not obvious, and the obvious choices do not
+work. The two holes between the four declared Forge ranges are **1.17** and
+**1.20.5**, and Forge published no server build for either — the holes exist
+*because* nothing was published there — so a leg on them dies at
+`no-forge-build-for-version` before a container starts. The bootable form of
+the same assertion puts the mismatch on the other axis: `make e2e ...
+FORGE_REFUSAL_PROBE=1` pre-sets `FORGE_JAR_BAND=modern`, handing a version the
+wrong band's jar. **1.21.6 with the modern jar** is the one pairing that
+isolates the minecraft range. Every band declares a `loader_range` alongside
+its `minecraft_range`, and a Forge major tracks its Minecraft version 1:1, so
+the two normally say the same thing and FML rejects at the language-provider
+stage (`needs language provider javafml:N or above`) without ever reading the
+minecraft dependency. `modern`'s `loader_range` is `[50,)` — unbounded above —
+so on 1.21.6 the javafml and forge gates both pass and
+`minecraft_range_modern`'s `<1.21.6` ceiling is the only thing left to refuse.
+The other three bands' minecraft ranges cannot be isolated by any bootable
+pairing; their `loader_range` covers them. The always-on offline half lives in
+`scripts/test-jar-routing.sh`, which pins both holes and all four declared
+ranges and fails in `contracts` before a jar is built.
 
 Also fixed while adding this leg: a `set -e` trap where a failing `grep`
 inside a command substitution silently killed `scripts/e2e-run-one.sh`

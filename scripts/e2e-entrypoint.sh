@@ -271,14 +271,34 @@ fi
 # Out-of-range guard leg: the assertions below all assume the mod RAN. Here the
 # whole point is that it must not have, so this path has its own two and returns
 # its own verdict. An unasserted guard is not a guard — this leg is what fails
-# the day someone widens mods.toml's range back over the SRG-runtime era.
+# the day someone widens the modern jar's declared minecraft range.
+#
+# Scope, stated precisely, because it is narrower than it looks: what this
+# asserts is mods.toml's `minecraft` DEPENDENCY range, and only the modern
+# jar's ceiling. Every band declares a loader_range alongside its
+# minecraft_range, and because a Forge major tracks its Minecraft version 1:1
+# the two say the same thing — so on any other pairing FML rejects at the
+# language-provider stage ("needs language provider javafml:N or above") and
+# never evaluates the minecraft dependency at all. modern is the exception:
+# its loader_range is [50,), unbounded above, so on 1.21.6 the javafml and
+# forge gates both pass and minecraft_range_modern's <1.21.6 ceiling is the
+# only thing left to refuse. The other three bands' minecraft ranges cannot be
+# isolated by any bootable pairing; their loader_range covers them.
 if [ "$FORGE_EXPECT_REFUSED" = "1" ]; then
   echo "[e2e] Assertion results (Forge out-of-range guard leg):"
   GUARD_FAILURES=""
-  if grep -q 'needs language provider javafml' "$LOG_FILE"; then
-    echo "  [PASS] Forge refused the mod: $MC_VERSION is outside its declared minecraft range"
+  # Observed verbatim on Forge 56.0.9 / Minecraft 1.21.6 handed the modern jar:
+  #   Mod §ecommandsspy§r requires §6minecraft§r §o1.20.6 or above, and below 1.21.6§r
+  # The §-codes are Minecraft colour escapes, hence the wildcards. Deliberately
+  # NOT matching the javafml language-provider line: that is the OTHER gate, and
+  # accepting it here is what let this leg pass without testing anything.
+  if grep -qE 'Mod .*commandsspy.* requires .*minecraft' "$LOG_FILE"; then
+    echo "  [PASS] Forge refused the mod on $MC_VERSION via mods.toml's minecraft dependency range (modern jar, ceiling <1.21.6)"
   else
-    echo "  [FAIL] Forge did NOT refuse the mod on $MC_VERSION — mods.toml no longer guards the SRG-runtime era"
+    echo "  [FAIL] Forge did NOT refuse the mod on $MC_VERSION via its minecraft range — the modern jar's [1.20.6,1.21.6) ceiling no longer guards"
+    if grep -q 'needs language provider javafml' "$LOG_FILE"; then
+      echo "  [INFO] the log shows 'needs language provider javafml': the loaderVersion gate fired first, so this leg no longer isolates the minecraft gate"
+    fi
     GUARD_FAILURES="${GUARD_FAILURES}forge-out-of-range-not-refused,"
   fi
   if grep -q '\[CommandsSpy\] \[' "$LOG_FILE"; then
