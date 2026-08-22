@@ -521,8 +521,13 @@ type publishedJar struct {
 }
 
 var publishedJars = []publishedJar{
-	{name: "mc1.14.x", loaders: "fabric", bands: []string{"mc114"}},
+	// Two uploads of ONE jar. The fabric+quilt row keeps the plain suffix — it is
+	// the version that already exists on Modrinth and the one most users install
+	// — and the fabric-only row, which carries the versions Quilt has no build
+	// for, takes a `-fabric` suffix. Modrinth version numbers must be distinct,
+	// so the suffix is not decoration: it is the release step's file name.
 	{name: "mc1.14.x", loaders: "fabric,quilt", bands: []string{"mc114"}, quilt: true},
+	{name: "mc1.14.x-fabric", loaders: "fabric", bands: []string{"mc114"}},
 	{name: "mc1.19-1.20.2", loaders: "fabric,quilt", bands: []string{"mc1192"}, quilt: true},
 	{name: "mc1.21.x", loaders: "fabric,quilt", bands: []string{"t0", "mc121"}, quilt: true},
 	{name: "mc26.x", loaders: "fabric,quilt", bands: []string{"mc26"}, quilt: true},
