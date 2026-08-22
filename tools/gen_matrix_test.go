@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -68,8 +69,8 @@ var expected = map[string]map[string]int{
 	"mc121_java25": {"pull_request": 2, "workflow_dispatch": 12},
 	"mc121_java26": {"pull_request": 2, "workflow_dispatch": 12},
 	// 26.x floor 25 (canary 26.2 moved to gate)
-	"mc26_java25": {"pull_request": 1, "workflow_dispatch": 1},
-	"mc26_java26": {"pull_request": 2, "workflow_dispatch": 2},
+	"mc26_java25": {"pull_request": 1, "workflow_dispatch": 3},
+	"mc26_java26": {"pull_request": 2, "workflow_dispatch": 4},
 	// t0 = 1.20.3-1.20.6: floor 21, coverage 25/26
 	"t0_java21": {"pull_request": 4, "workflow_dispatch": 4},
 	"t0_java25": {"pull_request": 2, "workflow_dispatch": 4},
@@ -80,17 +81,18 @@ var expected = map[string]map[string]int{
 	"mc1192_java21": {"pull_request": 2, "workflow_dispatch": 4},
 	// mc114 = 1.14.4 1.15.2 1.16.5 | 1.17.1 1.18.2: split floors
 	// 8 / 17, coverage 21 across the whole band.
-	"mc114_java8": {"pull_request": 3, "workflow_dispatch": 8},
+	"mc114_java8": {"pull_request": 3, "workflow_dispatch": 10},
 	// Versions Quilt Loader has no build for, so they get a fabric-only leg
-	// (issue #69). Empty on pull_request: 1.14 is deep-only.
-	"mc114_java8_fabric": {"pull_request": 0, "workflow_dispatch": 1},
+	// (issue #69): 1.14-1.14.3, the whole span below Quilt's 1.14.4 floor.
+	// Empty on pull_request — all four are deep-only.
+	"mc114_java8_fabric": {"pull_request": 0, "workflow_dispatch": 4},
 	"mc114_java17":       {"pull_request": 2, "workflow_dispatch": 5},
 	"mc114_java21":       {"pull_request": 2, "workflow_dispatch": 5},
 	// Forge bands: floor rows plus the one forward-JVM row, no lean/full split
 	// except where the deep sweep widens the band's own version list.
 	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 7},
 	"forge_legacy_java17":    {"pull_request": 10, "workflow_dispatch": 13},
-	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 7},
+	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 11},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
 	"forge_eventbus7_java25": {"pull_request": 4, "workflow_dispatch": 4},
 	// The forward-JVM row (#58): the eventbus7 band's ceiling alone, on the
@@ -173,7 +175,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 79, "workflow_dispatch": 133}
+	totals := map[string]int{"pull_request": 79, "workflow_dispatch": 146}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge, neo and babric pairs (single-loader) plus 26 fixed
 	// jobs (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -182,7 +184,10 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*39 + 32 + 7 + 1 + 26 = 144. Dispatch: 2*79 + 38 + 14 + 1 + 26 + 1 = 238
+	// PR: 2*39 + 32 + 7 + 1 + 26 = 144. Dispatch: 2*75 + 4 + 42 + 14 + 1 + 26 + 1 = 257
+	// — the `+ 4` term is mc114_java8_fabric, four versions Quilt has no build
+	// for, so they spawn ONE caller job each instead of two (issue #84 widened
+	// it from one version to four)
 	// — the deep sweep's whole delta is Minecraft versions the PR grid never
 	// boots. The forge and neo terms carry the #58 forward-JVM rows:
 	// forge_java26 (1) and neo_fwd_java25 (1), the same on every event.
@@ -192,7 +197,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// build-babric joined the nine build jobs. Adding a loader therefore moves
 	// this number twice, in two different places — that is what the split above
 	// is spelling out.
-	jobTotals := map[string]int{"pull_request": 144, "workflow_dispatch": 238}
+	jobTotals := map[string]int{"pull_request": 144, "workflow_dispatch": 257}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -245,15 +250,15 @@ func TestOptionCombinationTotals(t *testing.T) {
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 38, 62, 102},
-		{"t0", 26, 50, 78, 126},
-		{"t0 mc1192", 32, 61, 90, 148},
-		{"t0 mc1192 mc114", 39, 80, 104, 185},
-		{"t0 mc1192 mc114 forge", 42, 86, 107, 191},
-		{"t0 mc1192 mc114 forge forge_legacy", 53, 100, 118, 205},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 111, 129, 216},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 118, 136, 223},
-		{allBands, 79, 133, 144, 238},
+		{"", 18, 42, 62, 110},
+		{"t0", 26, 54, 78, 134},
+		{"t0 mc1192", 32, 65, 90, 156},
+		{"t0 mc1192 mc114", 39, 89, 104, 200},
+		{"t0 mc1192 mc114 forge", 42, 95, 107, 206},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 109, 118, 220},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 120, 129, 231},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 131, 136, 242},
+		{allBands, 79, 146, 144, 257},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -691,6 +696,12 @@ func TestQuiltUnavailableVersionsRunFabricOnly(t *testing.T) {
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		_, out := runGrid(t, emptyRoot(t), event, allBands)
 		for _, name := range allKeys {
+			// Fabric/Quilt rows only. quiltUnavailable is a statement about the
+			// QUILT caller job, and the forge, neo and babric rows have no quilt
+			// twin to strand — forge_mc116_java8 boots 1.14.2 quite happily.
+			if !strings.HasPrefix(name, "mc") {
+				continue
+			}
 			fabricOnly := strings.HasSuffix(name, "_fabric")
 			for _, v := range versionsOf(t, out[name]) {
 				if !quiltUnavailable[v] {
@@ -709,6 +720,9 @@ func TestQuiltUnavailableVersionsRunFabricOnly(t *testing.T) {
 	_, out := runGrid(t, emptyRoot(t), "workflow_dispatch", allBands)
 	seen := map[string]bool{}
 	for _, name := range allKeys {
+		if !strings.HasPrefix(name, "mc") {
+			continue
+		}
 		for _, v := range versionsOf(t, out[name]) {
 			seen[v] = true
 		}
@@ -741,4 +755,113 @@ func TestBabricBandIsExhaustiveAndSingleVersion(t *testing.T) {
 	if len(c.excluded) != 0 {
 		t.Errorf("babric excluded = %v, want empty: a single-version band has nothing to exclude", c.excluded)
 	}
+}
+
+// The declared lists are no longer hand-written: each is releasesIn() over the
+// band's minecraft_range_* line. This reads those lines out of the REAL
+// gradle.properties files and re-derives every list, so widening a range in a
+// properties file without regenerating — or hand-editing a declared list away
+// from its range — fails here. That is what makes "declared == every Mojang
+// release the loader accepts" a checked claim rather than a comment (issue #84).
+func TestDeclaredListsAreTheDeclaredRanges(t *testing.T) {
+	root := repoRootForTest(t)
+	rangeOf := func(file, key string) string {
+		data, err := os.ReadFile(filepath.Join(root, file))
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `=(.*)$`)
+		m := re.FindSubmatch(data)
+		if m == nil {
+			t.Fatalf("%s: no %s line", file, key)
+		}
+		return strings.TrimSpace(string(m[1]))
+	}
+	for _, tc := range []struct {
+		bands []string // one range may be split across bands (121 = t0 + mc121)
+		file  string
+		key   string
+	}{
+		{[]string{"mc114"}, "gradle.properties", "minecraft_range_114"},
+		{[]string{"mc1192"}, "gradle.properties", "minecraft_range_1192"},
+		{[]string{"t0", "mc121"}, "gradle.properties", "minecraft_range_121"},
+		{[]string{"mc26"}, "gradle.properties", "minecraft_range_26"},
+		{[]string{"forge_mc116"}, "forge/gradle.properties", "minecraft_range_mc116"},
+		{[]string{"forge_legacy"}, "forge/gradle.properties", "minecraft_range_legacy"},
+		{[]string{"forge"}, "forge/gradle.properties", "minecraft_range_modern"},
+		{[]string{"forge_eventbus7"}, "forge/gradle.properties", "minecraft_range_eventbus7"},
+		{[]string{"neo"}, "neoforge/gradle.properties", "minecraft_range_neo_all"},
+	} {
+		spec := rangeOf(tc.file, tc.key)
+		var got []string
+		for _, b := range tc.bands {
+			got = append(got, coverage[b].declared...)
+		}
+		want := releasesIn(spec)
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("%v declared != releasesIn(%q = %s)\n got: %v\nwant: %v",
+				tc.bands, tc.key, spec, got, want)
+		}
+	}
+}
+
+// The published game_versions lists are generated, and docs/modrinth-versions.tsv
+// is that output committed. If the coverage table moves and the snapshot does
+// not, the store lists and the CI grid have drifted — which is issue #84 — and
+// this fails before a release can carry the drift onto Modrinth.
+func TestPublishSnapshotMatchesTheCoverageTable(t *testing.T) {
+	var got strings.Builder
+	if err := printPublish(&got); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repoRootForTest(t), "docs", "modrinth-versions.tsv")
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != string(want) {
+		t.Errorf("docs/modrinth-versions.tsv is stale. Regenerate:\n"+
+			"  cd tools && REPO_ROOT=.. go run . gen-matrix --publish > ../docs/modrinth-versions.tsv\n"+
+			"got:\n%s\nwant:\n%s", got.String(), want)
+	}
+}
+
+// Nothing is published that nobody can install: every version on a published
+// list is booted by the deep sweep or excluded for a reason that leaves the
+// version installable (a beta-only NeoForge line, a harness gate). A "no build
+// published" exclusion means the loader project shipped no file at all, and
+// those must not appear on a store page.
+func TestPublishedVersionsAreInstallable(t *testing.T) {
+	for _, j := range publishedJars {
+		listed := setOf(publishedVersions(j))
+		for _, b := range j.bands {
+			for v, reason := range coverage[b].excluded {
+				if strings.HasPrefix(reason, noBuildPublished) && listed[v] {
+					t.Errorf("%s (%s): %s is published but %s has no build for it",
+						j.name, j.loaders, v, b)
+				}
+			}
+			if !j.quilt {
+				continue
+			}
+			for v := range quiltUnavailable {
+				if listed[v] {
+					t.Errorf("%s (%s): %s is published on quilt, which has no build for it",
+						j.name, j.loaders, v)
+				}
+			}
+		}
+	}
+}
+
+// repoRootForTest points at the checked-out tree: these two tests read the real
+// gradle.properties and the committed snapshot, unlike the grid tests, which run
+// against a synthetic root.
+func repoRootForTest(t *testing.T) string {
+	t.Helper()
+	root := os.Getenv("REPO_ROOT")
+	if root == "" {
+		root = ".."
+	}
+	return root
 }

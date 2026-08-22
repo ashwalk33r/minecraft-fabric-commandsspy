@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -90,19 +91,139 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 
 // Versions the FABRIC jar boots and QUILT LOADER has no build for, so they run
 // as a fabric-only row instead of a permanently red quilt twin (issue #69).
-// Membership is an upstream fact — meta.quiltmc.org/v3/versions/game lists
-// 1.14.4 and not plain 1.14 — which contracts cannot re-probe, because that is
-// a network call and contracts makes none. What IS asserted offline, in
+// Membership is an upstream fact — meta.quiltmc.org/v3/versions/game starts the
+// 1.14 line at 1.14.4 — which contracts cannot re-probe, because that is a
+// network call and contracts makes none. What IS asserted offline, in
 // gen_matrix_test.go, is that every version named here leaves the shared row
 // and lands in the _fabric one: the set cannot be edited without the grid
 // following it.
-var quiltUnavailable = map[string]bool{"1.14": true}
+//
+// It is also what makes the PUBLISHED quilt list differ from the fabric one:
+// the mc1.14.x jar ships as two Modrinth versions, fabric and fabric+quilt, so
+// a version Quilt cannot install is never advertised on Quilt (issue #84).
+// 1.14.1-1.14.3 joined 1.14 here when #84 enumerated the declared range: the
+// same feed lists none of the four.
+var quiltUnavailable = map[string]bool{
+	"1.14": true, "1.14.1": true, "1.14.2": true, "1.14.3": true,
+}
 
 func ends(list []string) []string {
 	if len(list) < 2 {
 		return list
 	}
 	return []string{list[0], list[len(list)-1]}
+}
+
+// ---------------------------------------------------------------------------
+// THE RELEASE AXIS (issue #84)
+//
+// Every Mojang release from 1.14 (the oldest version any band declares) to the
+// newest, in release order. It exists because the PUBLISHED version lists —
+// Modrinth's game_versions — are the declared ranges enumerated over exactly
+// this axis, and until #84 nothing in the repository could enumerate them: each
+// band's `declared` list was hand-written, and five real releases inside
+// declared ranges (1.14.1 1.14.2 1.14.3 1.15 1.15.1) appeared in no list here
+// while being advertised on Modrinth all the same.
+//
+// A version joins this list when Mojang ships it, not when this repository
+// decides to care about it. gen_matrix_test.go asserts every band's `declared`
+// equals `releasesIn(<the band's minecraft_range_* line>)`, read from the real
+// gradle.properties, so the axis cannot drift from the ranges the jars ship.
+//
+// Snapshots (1.14.5, 22w13oneblockatatime, ...) are not releases and are not
+// here; b1.7.3 is not on this axis either — the babric band declares an exact
+// version, not an interval, so there is nothing to enumerate.
+var mojangAxis = []string{
+	"1.14", "1.14.1", "1.14.2", "1.14.3", "1.14.4",
+	"1.15", "1.15.1", "1.15.2",
+	"1.16", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5",
+	"1.17", "1.17.1",
+	"1.18", "1.18.1", "1.18.2",
+	"1.19", "1.19.1", "1.19.2", "1.19.3", "1.19.4",
+	"1.20", "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6",
+	"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6",
+	"1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
+	"26.1", "26.1.1", "26.1.2", "26.2",
+}
+
+// cmpVer orders two dotted numeric Minecraft versions. Field-wise integer
+// compare, not string compare: "1.21.10" sorts after "1.21.9", and "26.2" after
+// "1.22". A missing field reads as 0, so "1.21" < "1.21.1".
+func cmpVer(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		x, y := 0, 0
+		if i < len(as) {
+			x, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			y, _ = strconv.Atoi(bs[i])
+		}
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+// releasesIn enumerates mojangAxis over a declared range, in either notation
+// the repository uses: the Fabric loader's `>=1.14 <1.19` and the Maven
+// interval `[1.14,1.17)` Forge and NeoForge write. Both bounds are optional and
+// each may be inclusive or exclusive; an exact version (`[1.21.1]`, or a bare
+// `1.0.0-beta.7.3`) yields that version if the axis holds it.
+//
+// This is the one place a declared range turns into a version list. The
+// coverage table below and the published game_versions lists both run through
+// it, which is what makes them the same claim rather than two lists that agree
+// until someone edits one.
+func releasesIn(spec string) []string {
+	lo, hi := "", ""
+	loInc, hiInc := true, true
+	spec = strings.TrimSpace(spec)
+	switch {
+	case strings.HasPrefix(spec, "[") || strings.HasPrefix(spec, "("):
+		loInc = spec[0] == '['
+		hiInc = strings.HasSuffix(spec, "]")
+		body := strings.Trim(spec, "[]()")
+		lo, hi, _ = strings.Cut(body, ",")
+		if !strings.Contains(body, ",") {
+			hi = lo // [1.21.1] — an exact version
+		}
+	default:
+		for _, tok := range strings.Fields(spec) {
+			switch {
+			case strings.HasPrefix(tok, ">="):
+				lo, loInc = tok[2:], true
+			case strings.HasPrefix(tok, ">"):
+				lo, loInc = tok[1:], false
+			case strings.HasPrefix(tok, "<="):
+				hi, hiInc = tok[2:], true
+			case strings.HasPrefix(tok, "<"):
+				hi, hiInc = tok[1:], false
+			default:
+				lo, hi, loInc, hiInc = tok, tok, true, true
+			}
+		}
+	}
+	lo, hi = strings.TrimSpace(lo), strings.TrimSpace(hi)
+	out := []string{}
+	for _, v := range mojangAxis {
+		if lo != "" {
+			if c := cmpVer(v, lo); c < 0 || (c == 0 && !loInc) {
+				continue
+			}
+		}
+		if hi != "" {
+			if c := cmpVer(v, hi); c > 0 || (c == 0 && !hiInc) {
+				continue
+			}
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 // The 1.21 line in release order. 1.21.11 is the java-21 gate canary: it is
@@ -125,11 +246,15 @@ var all121 = []string{"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5",
 //
 // Each band now states its version contract as data:
 //
-//	declared — every release on the axis this repo names (see "What 'covered'
-//	           settled" in the wiki's Supported-Versions) that this band's declared
-//	           minecraft_range_* covers. Restated here INDEPENDENTLY of the
-//	           emit calls below; that independence is what makes the invariant
-//	           bite.
+//	declared — every Mojang release this band's minecraft_range_* covers,
+//	           enumerated over mojangAxis by releasesIn(). Since issue #84 this
+//	           is the WIDE reading: the same set the published Modrinth
+//	           game_versions list advertises, not the narrower "every release
+//	           this repo names" the wiki settled on for #59. The two differed by
+//	           five real releases — 1.14.1 1.14.2 1.14.3 1.15 1.15.1 — that were
+//	           advertised to users and booted by nothing, which is exactly the
+//	           gap #84 measured. Stated independently of the emit calls below;
+//	           that independence is what makes the invariant bite.
 //	sampled  — booted on every e2e event. The rows below split it by Java floor.
 //	deep     — booted on workflow_dispatch, which is now the deep sweep its
 //	           name always implied. Always a superset of sampled.
@@ -160,21 +285,18 @@ var coverage = map[string]bandCoverage{
 	// the rest by the floor row, so the deep sweep adds nothing here.
 	"mc121": {declared: all121, sampled: all121, deep: all121},
 
-	// >=26.1 <26.3. The two patch releases are the only Fabric-side exclusion
-	// with a technical cause rather than a budget one.
+	// >=26.1 <26.3. Every release in the interval, all booted by the deep
+	// sweep since issue #84: the two patch releases used to be excluded as a
+	// budget call, and they were published on Modrinth all the same.
 	"mc26": {
-		declared: []string{"26.1", "26.1.1", "26.1.2", "26.2"},
+		declared: releasesIn(">=26.1 <26.3"),
 		sampled:  []string{"26.1", "26.2"},
-		deep:     []string{"26.1", "26.2"},
-		excluded: map[string]string{
-			"26.1.1": "26.x mapping breaks land on the MINOR boundaries, not the patch releases, and each extra version costs a full server download (the wiki, Supported-Versions -> \"The Makefile's default version list\")",
-			"26.1.2": "same as 26.1.1 — and the Forge eventbus7 band boots both, so a patch-level break would still surface there",
-		},
+		deep:     []string{"26.1", "26.1.1", "26.1.2", "26.2"},
 	},
 
 	// The 1.20.x half of minecraft_range_121: four versions, all booted.
 	"t0": {
-		declared: []string{"1.20.3", "1.20.4", "1.20.5", "1.20.6"},
+		declared: releasesIn(">=1.20.3 <1.21"),
 		sampled:  []string{"1.20.3", "1.20.4", "1.20.5", "1.20.6"},
 		deep:     []string{"1.20.3", "1.20.4", "1.20.5", "1.20.6"},
 	},
@@ -185,21 +307,21 @@ var coverage = map[string]bandCoverage{
 	// floor, named in scripts/test-jar-routing.sh as a boundary probe and
 	// until now booted by nothing.
 	"mc1192": {
-		declared: []string{"1.19.1", "1.19.2", "1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2"},
+		declared: releasesIn(">=1.19.1 <1.20.3"),
 		sampled:  []string{"1.19.2", "1.19.4", "1.20.1", "1.20.2"},
 		deep:     []string{"1.19.1", "1.19.2", "1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2"},
 	},
 
-	// >=1.14 <1.19. 1.16 is on the axis for the reason it is in
-	// test-jar-routing.sh's EXPECTED table: 1.15.2|1.16 is the exact edge
-	// where the RCON source name flips from Recon to Rcon. It was named there
-	// and booted nowhere; the deep sweep is where it now boots.
+	// >=1.14 <1.19, every release in it. The five the repo used to name
+	// nowhere — 1.14.1 1.14.2 1.14.3 1.15 1.15.1 — boot in the deep sweep since
+	// #84; three of them are Quilt-less and ride the fabric-only row. 1.16
+	// matters for the reason it is in test-jar-routing.sh's EXPECTED table:
+	// 1.15.2|1.16 is the exact edge where the RCON source name flips from Recon
+	// to Rcon.
 	"mc114": {
-		declared: []string{"1.14", "1.14.4", "1.15.2", "1.16", "1.16.1", "1.16.2",
-			"1.16.3", "1.16.4", "1.16.5", "1.17", "1.17.1", "1.18", "1.18.1", "1.18.2"},
-		sampled: []string{"1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2"},
-		deep: []string{"1.14", "1.14.4", "1.15.2", "1.16", "1.16.1", "1.16.2",
-			"1.16.3", "1.16.4", "1.16.5", "1.17", "1.17.1", "1.18", "1.18.1", "1.18.2"},
+		declared: releasesIn(">=1.14 <1.19"),
+		sampled:  []string{"1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2"},
+		deep:     releasesIn(">=1.14 <1.19"),
 	},
 
 	// Forge modern, [1.20.6,1.21.6). The sample is the measured floor and
@@ -208,7 +330,7 @@ var coverage = map[string]bandCoverage{
 	// is the right place for the other five. (1.20.4 rides in the same job but
 	// belongs to forge_legacy — see the FORGE section below.)
 	"forge": {
-		declared: []string{"1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5"},
+		declared: releasesIn("[1.20.6,1.21.6)"),
 		sampled:  []string{"1.20.6", "1.21.1", "1.21.5"},
 		deep:     []string{"1.20.6", "1.21", "1.21.1", "1.21.3", "1.21.4", "1.21.5"},
 		excluded: map[string]string{
@@ -220,8 +342,7 @@ var coverage = map[string]bandCoverage{
 	// the proof is SRG member-id stability across Forge majors 37-49; the deep
 	// sweep adds the three in-range versions the measurement never covered.
 	"forge_legacy": {
-		declared: []string{"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19", "1.19.1", "1.19.2",
-			"1.19.3", "1.19.4", "1.20", "1.20.1", "1.20.2", "1.20.3", "1.20.4"},
+		declared: releasesIn("[1.17.1,1.20.5)"),
 		sampled: []string{"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
 			"1.20.1", "1.20.2", "1.20.3", "1.20.4"},
 		deep: []string{"1.17.1", "1.18", "1.18.1", "1.18.2", "1.19.1", "1.19.2",
@@ -232,17 +353,21 @@ var coverage = map[string]bandCoverage{
 	},
 
 	// Forge mc116, [1.14,1.17). Every measured version is sampled, same
-	// cross-major reasoning as legacy. The two exclusions are not budget
-	// calls: FORGE_KNOWN_GOOD_MC116 in scripts/e2e-run-one.sh does not list
-	// them, so the harness itself expects a refusal.
+	// cross-major reasoning as legacy; the deep sweep adds the four releases
+	// #84 enumerated into the range and Forge does publish builds for
+	// (1.14.2 1.14.3 1.15 1.15.1 — all four joined FORGE_KNOWN_GOOD_MC116 in
+	// scripts/e2e-run-one.sh in the same change). The three exclusions are not
+	// budget calls: the promotions feed carries no key for them at all, so
+	// nothing can be installed and nothing is published either.
 	"forge_mc116": {
-		declared: []string{"1.14", "1.14.4", "1.15.2", "1.16", "1.16.1", "1.16.2",
-			"1.16.3", "1.16.4", "1.16.5"},
-		sampled: []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
-		deep:    []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
+		declared: releasesIn("[1.14,1.17)"),
+		sampled:  []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
+		deep: []string{"1.14.2", "1.14.3", "1.14.4", "1.15", "1.15.1", "1.15.2",
+			"1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
 		excluded: map[string]string{
-			"1.14": "no Forge build published: the promotions feed goes 1.13.2 -> 1.14.2 and carries no 1.14 key at all, so there is nothing to install. FORGE_EXPECT_REFUSED does raise here, but only because 1.14 is missing from FORGE_KNOWN_GOOD_MC116 — that flag means unproven-by-CI, not out-of-range, and it is not the reason this version cannot run",
-			"1.16": "no Forge build published: the promotions feed jumps 1.15 -> 1.16.1. The Fabric mc114 band boots 1.16 in the deep sweep, so the 1.15.2|1.16 RCON-name edge is still proven — on the loader whose jar declares it",
+			"1.14.1": "no Forge build published: the promotions feed goes 1.13.2 -> 1.14.2, so 1.14 and 1.14.1 both have nothing to install. Same class as 1.14 and 1.16 below",
+			"1.14":   "no Forge build published: the promotions feed goes 1.13.2 -> 1.14.2 and carries no 1.14 key at all, so there is nothing to install. FORGE_EXPECT_REFUSED does raise here, but only because 1.14 is missing from FORGE_KNOWN_GOOD_MC116 — that flag means unproven-by-CI, not out-of-range, and it is not the reason this version cannot run",
+			"1.16":   "no Forge build published: the promotions feed jumps 1.15 -> 1.16.1. The Fabric mc114 band boots 1.16 in the deep sweep, so the 1.15.2|1.16 RCON-name edge is still proven — on the loader whose jar declares it",
 		},
 	},
 
@@ -250,8 +375,7 @@ var coverage = map[string]bandCoverage{
 	// proof is that one official-name jar fires across Forge majors 56-65 —
 	// so the deep sweep adds nothing.
 	"forge_eventbus7": {
-		declared: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
-			"26.1", "26.1.1", "26.1.2", "26.2"},
+		declared: releasesIn("[1.21.6,26.3)"),
 		sampled: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
 			"26.1", "26.1.1", "26.1.2", "26.2"},
 		deep: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
@@ -267,11 +391,8 @@ var coverage = map[string]bandCoverage{
 	// scripts/test-jar-routing.sh so the list cannot go stale when NeoForge
 	// promotes one of them.
 	"neo": {
-		declared: []string{"1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6",
-			"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6",
-			"1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
-			"26.1", "26.1.1", "26.1.2", "26.2"},
-		sampled: []string{"1.20.2", "1.20.4", "1.20.6", "1.21.1", "1.21.11", "26.2"},
+		declared: releasesIn("[1.20.2,26.3)"),
+		sampled:  []string{"1.20.2", "1.20.4", "1.20.6", "1.21.1", "1.21.11", "26.2"},
 		deep: []string{"1.20.2", "1.20.4", "1.20.6", "1.21", "1.21.1", "1.21.3",
 			"1.21.4", "1.21.5", "1.21.8", "1.21.10", "1.21.11", "26.1.2", "26.2"},
 		excluded: map[string]string{
@@ -368,6 +489,92 @@ func printCoverage(w io.Writer) error {
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// THE PUBLISHED LISTS (issue #84)
+//
+// One row per Modrinth version: the jar as it is uploaded, the loaders it is
+// tagged with, and the game_versions list. Before this, those lists were
+// hand-carried from one release to the next and matched nothing in the
+// repository — 40 of 1.7.0's 113 loader-and-version claims were backed by no CI
+// leg at all, and one of them (Quilt 1.14) could not be installed by anybody.
+//
+// game_versions is the band's DECLARED range — what the loader accepts — minus
+// the versions nothing can be installed on:
+//
+//   - a loader that never published a build for the version (the "no Forge
+//     build published" exclusions; Quilt's missing 1.14-1.14.3). There is no
+//     file to download, so advertising it is a claim with no product behind it.
+//   - nothing else. A version excluded from CI for a reason that is about CI —
+//     a beta-only NeoForge line, a harness gate — is still installable and
+//     stays listed.
+//
+// Everything else that is declared is now booted: the deep sweep's version set
+// IS the declared set minus those exclusions, which is what closes #84's gap.
+//
+// The mc1.14.x jar emits TWO rows, fabric and fabric+quilt, because Modrinth
+// cannot say "this version, but not on that loader" inside one version — the
+// same jar is uploaded twice so the Quilt list can be the shorter one.
+type publishedJar struct {
+	name    string // the Modrinth version suffix, e.g. "mc1.14.x"
+	loaders string
+	bands   []string
+	quilt   bool // drop the versions Quilt Loader has no build for
+}
+
+var publishedJars = []publishedJar{
+	{name: "mc1.14.x", loaders: "fabric", bands: []string{"mc114"}},
+	{name: "mc1.14.x", loaders: "fabric,quilt", bands: []string{"mc114"}, quilt: true},
+	{name: "mc1.19-1.20.2", loaders: "fabric,quilt", bands: []string{"mc1192"}, quilt: true},
+	{name: "mc1.21.x", loaders: "fabric,quilt", bands: []string{"t0", "mc121"}, quilt: true},
+	{name: "mc26.x", loaders: "fabric,quilt", bands: []string{"mc26"}, quilt: true},
+	{name: "mc1.16.x-forge", loaders: "forge", bands: []string{"forge_mc116"}},
+	{name: "mc1.17-1.20.4-forge", loaders: "forge", bands: []string{"forge_legacy"}},
+	{name: "mc1.21.x-forge", loaders: "forge", bands: []string{"forge"}},
+	{name: "mc1.21.6-26.2-forge", loaders: "forge", bands: []string{"forge_eventbus7"}},
+	{name: "mc1.20.2-26.2-neoforge", loaders: "neoforge", bands: []string{"neo"}},
+	{name: "mcb1.7.3-babric", loaders: "babric", bands: []string{"babric"}},
+}
+
+// noBuildPublished marks the exclusions that mean "the loader project shipped
+// nothing for this version", the only reason that removes a version from a
+// published list. Matched on the reason's prefix, which printCoverage already
+// emits, so one sentence carries both the CI exclusion and the store claim.
+const noBuildPublished = "no Forge build published:"
+
+// publishedVersions is game_versions for one uploaded jar.
+func publishedVersions(j publishedJar) []string {
+	out := []string{}
+	for _, b := range j.bands {
+		c := coverage[b]
+		for _, v := range c.declared {
+			if strings.HasPrefix(c.excluded[v], noBuildPublished) {
+				continue
+			}
+			if j.quilt && quiltUnavailable[v] {
+				continue
+			}
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// printPublish dumps the published lists as `jar<TAB>loaders<TAB>game_versions`.
+// docs/modrinth-versions.tsv is this output, committed, and gen_matrix_test.go
+// fails when the two differ — so the store lists cannot drift from the coverage
+// table without a build going red first. Regenerate, never hand-edit:
+//
+//	cd tools && REPO_ROOT=.. go run . gen-matrix --publish > ../docs/modrinth-versions.tsv
+func printPublish(w io.Writer) error {
+	for _, j := range publishedJars {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n",
+			j.name, j.loaders, strings.Join(publishedVersions(j), ",")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -381,6 +588,9 @@ func runGenMatrix(args []string) error {
 	for _, a := range args {
 		if a == "--coverage" {
 			return printCoverage(os.Stdout)
+		}
+		if a == "--publish" {
+			return printPublish(os.Stdout)
 		}
 	}
 	var ghOut io.Writer
