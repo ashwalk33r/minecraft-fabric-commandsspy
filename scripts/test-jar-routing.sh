@@ -644,13 +644,13 @@ unaccounted="$(printf '%s\n' "$named" \
   | grep -vxF -f <(printf '%s\n' "$booted"; printf '%s\n' $WAIVED) | tr '\n' ' ')"
 check "named versions with no CI leg and no waiver" "" "${unaccounted% }"
 
-# Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the two
+# Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the three
 # `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.
-echo "== e2e-entrypoint.sh era literals (RCON source name, player /list form)"
+echo "== e2e-entrypoint.sh era literals (RCON source name, console source name, player /list form)"
 entrypoint="$script_dir/e2e-entrypoint.sh"
 # shellcheck disable=SC2016 # the $ is a sed-pattern literal, not an expansion
 era_cases="$(sed -n '/^case "\$MC_VERSION" in/,/^esac/p' "$entrypoint")"
-check "entrypoint has exactly two MC_VERSION case blocks" "2" \
+check "entrypoint has exactly three MC_VERSION case blocks" "3" \
       "$(printf '%s\n' "$era_cases" | grep -c '^case ')"
 era_of() {
   # shellcheck disable=SC2034 # read by the eval'd case blocks below
@@ -658,10 +658,31 @@ era_of() {
   eval "$era_cases"
   echo "$RCON_SOURCE_NAME $PLAYER_LIST_LITERAL"
 }
+console_of() {
+  # shellcheck disable=SC2034 # read by the eval'd case blocks below
+  local MC_VERSION="$1" CONSOLE_SOURCE_NAME=""
+  eval "$era_cases"
+  echo "$CONSOLE_SOURCE_NAME"
+}
 for v in $ALL_VERSIONS $BOUNDARY_EXTRAS; do
   read -r _family _floor rcon slash <<< "${EXPECTED[$v]}"
   check "era literals $v" "$rcon $slash" "$(era_of "$v")"
 done
+
+# The console source name is its own axis, kept out of EXPECTED because it has
+# exactly one non-default row: CONSOLE on Beta 1.7.3 (the game's own
+# CommandOutput.getName(); b1.7.3 vanilla prints "CONSOLE: Stopping the
+# server.." for the same reason), Server on every modern version. Both halves
+# are checked so the literal cannot be flattened into a pattern matching both —
+# an assertion that cannot fail proves nothing.
+check "console source name b1.7.3" "CONSOLE" "$(console_of b1.7.3)"
+check "console source name 1.21"   "Server"  "$(console_of 1.21)"
+
+# b1.7.3's routing row: it predates every era band, and it is reachable on the
+# babric loader only. BABRIC is the JAR_FAMILY, 21 the loader stack's Java floor
+# (not the game's era-contemporary 8).
+check "b1.7.3 routes to the Babric jar on java 21" "BABRIC 21" \
+      "$(MOD_JAR_BABRIC=x "$script_dir/e2e-run-one.sh" --print-routing b1.7.3)"
 
 echo
 if [[ "$failures" -eq 0 ]]; then
