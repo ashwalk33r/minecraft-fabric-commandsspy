@@ -1,4 +1,4 @@
-# Upstream report: quilt-loader's pre-1.18 entrypoint gap
+# Upstream report: quilt-loader's pre-1.18.2 entrypoint gap
 
 This file is a **bug report for quilt-loader, written to be pasted into
 QuiltMC's tracker by a human**. It has not been filed. Nothing has been sent
@@ -18,7 +18,7 @@ Everything from the next heading to the end of the file is the report. Select
 from there and paste; nothing above it is meant to travel.
 
 For this repo's own view of the same defect — what it costs us and how CI
-holds it — see the wiki, [Quilt: the pre-1.18 entrypoint gap](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes#quilt-the-pre-118-entrypoint-gap), and its
+holds it — see the wiki, [Quilt: the pre-1.18.2 entrypoint gap](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes#quilt-the-pre-1182-entrypoint-gap), and its
 two follow-on subsections, "The gap is specific to the `main` call site" and
 "Why a Quilt-native entrypoint cannot close this gap". That link is one-way:
 this file quotes the version matrix, the version matrix does not yet point

@@ -541,7 +541,7 @@ esac
 # functional assertion — console, RCON, config-at-boot, player command — with
 # the "main" banner the only thing missing, exactly like 1.17.1 below them. Mixins still apply, so every
 # functional assertion below is unaffected; only the startup banner is missing.
-# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18 entrypoint gap".
+# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18.2 entrypoint gap".
 # Asserted as EXPECTED-ABSENT, not skipped, so CI
 # reports it the day upstream fixes this.
 QUILT_ENTRYPOINT_GAP=0

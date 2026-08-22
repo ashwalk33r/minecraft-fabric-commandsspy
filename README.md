@@ -23,7 +23,7 @@ User documentation: [MOD.md](./MOD.md). Official releases:
 - [docs/protocol-table.md](docs/protocol-table.md) — the Go bot's per-version
   protocol reference.
 - [docs/quilt-entrypoint-gap-upstream.md](docs/quilt-entrypoint-gap-upstream.md)
-  — an unfiled, paste-ready bug report for quilt-loader's pre-1.18 entrypoint
+  — an unfiled, paste-ready bug report for quilt-loader's pre-1.18.2 entrypoint
   gap, with two reproduction recipes.
 
 ## Build
