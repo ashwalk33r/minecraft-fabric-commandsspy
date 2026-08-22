@@ -63,6 +63,7 @@ jobs:
       neo_java21: ${{ steps.grid.outputs.neo_java21 }}
       neo_java25: ${{ steps.grid.outputs.neo_java25 }}
       neo_fwd_java25: ${{ steps.grid.outputs.neo_fwd_java25 }}
+      babric_java21: ${{ steps.grid.outputs.babric_java21 }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: "Verify action pins"
@@ -387,6 +388,45 @@ jobs:
           ls -l build/libs/commandsspy-*.jar
           echo "::endgroup::"
 
+  # Separate job and separate Gradle build (babric/), on purpose, and for a
+  # sharper version of the Forge reason below: this one resolves the
+  # Ornithe/ploceus toolchain from community mavens (ploceus publishes only a
+  # SNAPSHOT line) and reverse-converts the jar into Babric's intermediary
+  # namespace. None of that touches the jars above.
+  build-babric:
+    name: "Build: Babric (MC b1.7.3)"
+    runs-on: ubuntu-latest
+    needs: [contracts]
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 40
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: "Log in to GHCR"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/commandsspy-ci-gradle
+          key: ci-gradle-babric-${{ hashFiles('Dockerfile.ci', 'gradle/wrapper/gradle-wrapper.properties', 'babric/build.gradle', 'babric/gradle.properties', 'babric/settings.gradle') }}
+      - name: "Build: mod compilation (babric target, make build-babric)"
+        run: make build-babric
+      - name: "Upload: the babric jar"
+        id: upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: commandsspy-jar-babric-${{ github.sha }}
+          path: babric/build/libs/commandsspy-*+mcb1.7.3-babric.jar
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 30 || 1 }}
+      - name: "Artifact links"
+        run: |
+          echo "::group::Uploaded jar -> ${{ steps.upload.outputs.artifact-url }}"
+          ls -l babric/build/libs/commandsspy-*.jar
+          echo "::endgroup::"
+
   # Separate job and separate Gradle build (forge/), on purpose: ForgeGradle
   # never touches the five jars above. First build decompiles Minecraft, so
   # it is slow when its per-target ci-gradle cache misses.
@@ -544,7 +584,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [contracts, wiki-links, go-quality, lint-java, unit-tests,
             build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy,
-            build-forge-mc116, build-forge-eventbus7]
+            build-forge-mc116, build-forge-eventbus7, build-babric]
     if: ${{ always() }}
     timeout-minutes: 5
     steps:
@@ -560,6 +600,7 @@ jobs:
           echo "forge-legacy:      ${{ needs.build-forge-legacy.outputs.artifact-url }}"
           echo "forge-mc116:       ${{ needs.build-forge-mc116.outputs.artifact-url }}"
           echo "forge-eventbus7:   ${{ needs.build-forge-eventbus7.outputs.artifact-url }}"
+          echo "babric:            ${{ needs.build-babric.outputs.artifact-url }}"
           echo "::endgroup::"
       - name: "Fail unless every dependency succeeded"
         run: |
@@ -576,7 +617,7 @@ jobs:
     name: "e2e-gate (${{ matrix.mc }}, java ${{ matrix.java }}, ${{ matrix.loader }})"
     needs: [contracts, go-quality, lint-java, unit-tests,
             build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy,
-            build-forge-mc116, build-forge-eventbus7]
+            build-forge-mc116, build-forge-eventbus7, build-babric]
     # No status function here, so GitHub prepends the implicit success()
     # check — push-to-main builds jars but runs no e2e.
     if: ${{ github.event_name != 'push' }}
@@ -645,7 +686,7 @@ jobs:
   # variants are (see the stage comment below).
   e2e-neoforge-java17:
     name: "e2e 1.20.2-1.20.4 java 17 (neoforge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -662,7 +703,7 @@ jobs:
 
   e2e-neoforge-java21:
     name: "e2e 1.20.6-1.21.11 java 21 (neoforge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -679,7 +720,7 @@ jobs:
 
   e2e-neoforge-java25:
     name: "e2e 26.2 java 25 (neoforge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -701,7 +742,7 @@ jobs:
   # the tripwire for an upstream floor moving.
   e2e-neoforge-fwd-java25:
     name: "e2e 1.21.1 java 25 (neoforge, above floor)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -716,6 +757,31 @@ jobs:
       loader: "neoforge"
       jar-sha: ${{ github.sha }}
 
+  # Babric: one leg, one version, one JVM. b1.7.3 is the only Minecraft version
+  # the loader exists for, and java 21 is the LOADER STACK's floor rather than
+  # the game's -- see the wiki, Supported-Versions -> Babric. Its own
+  # workflow_call rather than a matrix dimension inside e2e-stage.yml, so it
+  # renders as its own collapsible group in the Actions UI (the Loader Adding
+  # Playbook, Part 2). The versions list still comes from contracts, not a
+  # literal: the coverage table is the single home of "which versions boot",
+  # and a literal here would be the one row it could not police.
+  e2e-babric-java21:
+    name: "e2e b1.7.3 java 21 (babric)"
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
+    if: >-
+      ${{ !cancelled()
+          && !contains(needs.*.result, 'failure')
+          && needs.contracts.outputs.babric_java21 != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/e2e-stage.yml
+    with:
+      versions: ${{ needs.contracts.outputs.babric_java21 }}
+      java: "21"
+      loader: "babric"
+      jar-sha: ${{ github.sha }}
+
   # Config behaviors (#34): blacklist suppression + logArguments:true need the
   # config seeded BEFORE boot (CommandsSpy.CONFIG is a static final with no
   # reload path), so they cannot share the default legs' boots. One
@@ -723,7 +789,7 @@ jobs:
   # CommandsSpy.handleCommand, so per-version repetition would buy nothing.
   e2e-config-behaviors-fabric:
     name: "e2e config-behaviors (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -744,7 +810,7 @@ jobs:
   # entrypoint banner it greps for never fires on quilt below 1.18.
   e2e-config-behaviors-quilt:
     name: "e2e config-behaviors (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -762,7 +828,7 @@ jobs:
 
   e2e-config-behaviors-forge:
     name: "e2e config-behaviors (forge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -780,7 +846,7 @@ jobs:
 
   e2e-config-behaviors-neoforge:
     name: "e2e config-behaviors (neoforge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -806,7 +872,7 @@ jobs:
   # scripts/test-jar-routing.sh and fails in `contracts` before anything builds.
   e2e-fabric-refusal-guard:
     name: "e2e out-of-range refusal (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -824,7 +890,7 @@ jobs:
 
   e2e-quilt-refusal-guard:
     name: "e2e out-of-range refusal (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -861,7 +927,7 @@ jobs:
   # four declared ranges and fails in `contracts` before anything builds.
   e2e-forge-refusal-guard:
     name: "e2e out-of-range refusal (forge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -890,7 +956,7 @@ jobs:
   # band's `needs:` lists both loader variants of every prior band.
   e2e-mc121-java21-fabric:
     name: "e2e 1.21.x java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -907,7 +973,7 @@ jobs:
 
   e2e-mc121-java21-quilt:
     name: "e2e 1.21.x java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -930,7 +996,7 @@ jobs:
   # Fabric per-band coverage-row pattern is still not reused here.
   e2e-forge-java21:
     name: "e2e 1.20.6-1.21.5 java 21 (forge)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -947,7 +1013,7 @@ jobs:
 
   e2e-forge-legacy-java17:
     name: "e2e 1.17.1-1.20.4 java 17 (forge legacy)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -964,7 +1030,7 @@ jobs:
 
   e2e-forge-mc116-java8:
     name: "e2e 1.14.4-1.16.5 java 8 (forge mc116)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -984,7 +1050,7 @@ jobs:
   # version, like the legacy band — rationale in tools/gen_matrix.go.
   e2e-forge-eventbus7-java21:
     name: "e2e 1.21.6-1.21.11 java 21 (forge eventbus7)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1001,7 +1067,7 @@ jobs:
 
   e2e-forge-eventbus7-java25:
     name: "e2e 26.1-26.2 java 25 (forge eventbus7)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1027,7 +1093,7 @@ jobs:
   # tools/gen_matrix.go's Forge stage, like every other Forge leg.
   e2e-forge-java26:
     name: "e2e 26.2 java 26 (forge, above floor)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1044,7 +1110,7 @@ jobs:
 
   e2e-mc121-java25-fabric:
     name: "e2e 1.21.x java 25 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1061,7 +1127,7 @@ jobs:
 
   e2e-mc121-java25-quilt:
     name: "e2e 1.21.x java 25 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1078,7 +1144,7 @@ jobs:
 
   e2e-mc121-java26-fabric:
     name: "e2e 1.21.x java 26 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1095,7 +1161,7 @@ jobs:
 
   e2e-mc121-java26-quilt:
     name: "e2e 1.21.x java 26 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1112,7 +1178,7 @@ jobs:
 
   e2e-mc26-java25-fabric:
     name: "e2e 26.x java 25 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1129,7 +1195,7 @@ jobs:
 
   e2e-mc26-java25-quilt:
     name: "e2e 26.x java 25 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1146,7 +1212,7 @@ jobs:
 
   e2e-mc26-java26-fabric:
     name: "e2e 26.x java 26 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1163,7 +1229,7 @@ jobs:
 
   e2e-mc26-java26-quilt:
     name: "e2e 26.x java 26 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate]
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate]
     if: >-
       ${{ !cancelled()
           && !contains(needs.*.result, 'failure')
@@ -1180,7 +1246,7 @@ jobs:
 
   e2e-t0-java21-fabric:
     name: "e2e 1.20.3-1.20.6 java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1202,7 +1268,7 @@ jobs:
 
   e2e-t0-java21-quilt:
     name: "e2e 1.20.3-1.20.6 java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1224,7 +1290,7 @@ jobs:
 
   e2e-t0-java25-fabric:
     name: "e2e 1.20.3-1.20.6 java 25 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1246,7 +1312,7 @@ jobs:
 
   e2e-t0-java25-quilt:
     name: "e2e 1.20.3-1.20.6 java 25 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1268,7 +1334,7 @@ jobs:
 
   e2e-t0-java26-fabric:
     name: "e2e 1.20.3-1.20.6 java 26 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1290,7 +1356,7 @@ jobs:
 
   e2e-t0-java26-quilt:
     name: "e2e 1.20.3-1.20.6 java 26 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1312,7 +1378,7 @@ jobs:
 
   e2e-mc1192-java17-fabric:
     name: "e2e 1.19-1.20.2 java 17 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1337,7 +1403,7 @@ jobs:
 
   e2e-mc1192-java17-quilt:
     name: "e2e 1.19-1.20.2 java 17 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1362,7 +1428,7 @@ jobs:
 
   e2e-mc1192-java21-fabric:
     name: "e2e 1.19-1.20.2 java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1387,7 +1453,7 @@ jobs:
 
   e2e-mc1192-java21-quilt:
     name: "e2e 1.19-1.20.2 java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1413,7 +1479,7 @@ jobs:
   # Stage 5 — mc114 band: 1.14-1.18, split floors (1.14-1.16.x java 8, 1.17-1.18 java 17).
   e2e-mc114-java8-fabric:
     name: "e2e 1.14-1.16 java 8 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1443,7 +1509,7 @@ jobs:
   # meta.quiltmc.org lists no game version for while Fabric boots it green.
   e2e-mc114-java8-fabric-only:
     name: "e2e 1.14-1.16 java 8 (fabric, no quilt build)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1470,7 +1536,7 @@ jobs:
 
   e2e-mc114-java8-quilt:
     name: "e2e 1.14-1.16 java 8 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1497,7 +1563,7 @@ jobs:
 
   e2e-mc114-java17-fabric:
     name: "e2e 1.17-1.18 java 17 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1524,7 +1590,7 @@ jobs:
 
   e2e-mc114-java17-quilt:
     name: "e2e 1.17-1.18 java 17 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1551,7 +1617,7 @@ jobs:
 
   e2e-mc114-java21-fabric:
     name: "e2e 1.14-1.18 java 21 (fabric)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
@@ -1578,7 +1644,7 @@ jobs:
 
   e2e-mc114-java21-quilt:
     name: "e2e 1.14-1.18 java 21 (quilt)"
-    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, unit-tests, e2e-gate,
+    needs: [contracts, build-mc121x, build-mc1192, build-mc114x, build-mc26x, build-neo, build-forge-modern, build-forge-legacy, build-forge-mc116, build-forge-eventbus7, build-babric, unit-tests, e2e-gate,
             e2e-mc121-java21-fabric, e2e-mc121-java21-quilt,
             e2e-mc121-java25-fabric, e2e-mc121-java25-quilt,
             e2e-mc121-java26-fabric, e2e-mc121-java26-quilt,
