@@ -85,13 +85,15 @@ version lists are literal and so never go empty, carry an explicit
 Stage order is popularity order: a failure in a widely-run version surfaces
 before runner minutes are spent on the long tail.
 
-1. **Tier 1: nine parallel build jobs, one jar each** (`needs: [contracts]`),
+1. **Tier 1: ten parallel build jobs, one jar each** (`needs: [contracts]`),
    replacing the old sequential ~25-minute `build-jars` job:
    `build-mc121x`/`build-mc1192`/`build-mc114x`/`build-mc26x` (per-era
    `make build-121`/`-1192`/`-114`/`-26`), `build-neo`
    (the one NeoForge band jar), and `build-forge-modern`, `build-forge-legacy`,
    `build-forge-mc116`, `build-forge-eventbus7` — each Forge target a
-   separate Gradle build (`forge/`), all in the same pinned CI image. One
+   separate Gradle build (`forge/`), all in the same pinned CI image — and
+   `build-babric` (the one Babric jar, from the separate `babric/` build; see
+   item 7). One
    artifact per job:
    `commandsspy-jar-mc1.21.x-<sha>`, `commandsspy-jar-mc1.19-1.20.2-<sha>`,
    `commandsspy-jar-mc1.14.x-<sha>`, `commandsspy-jar-mc26.x-<sha>`,
@@ -99,7 +101,8 @@ before runner minutes are spent on the long tail.
    `commandsspy-jar-forge-modern-<sha>`,
    `commandsspy-jar-forge-legacy-<sha>`,
    `commandsspy-jar-forge-mc116-<sha>`,
-   `commandsspy-jar-forge-eventbus7-<sha>`; retention 30 days on push,
+   `commandsspy-jar-forge-eventbus7-<sha>`, `commandsspy-jar-babric-<sha>`;
+   retention 30 days on push,
    1 day otherwise. The download side is unchanged: stage jobs fetch with
    pattern `commandsspy-jar-*-<sha>` + `merge-multiple`, so the split is
    invisible to them. Gradle cache keys are per-target
@@ -109,7 +112,7 @@ before runner minutes are spent on the long tail.
    `forge/build.gradle` and `forge/gradle.properties` are in every key
    alongside the root build files, because the first Forge build of each
    target decompiles Minecraft and is slow on a cold cache.
-2. **e2e-gate** — `needs` all four Tier 0 gates and all nine build jobs:
+2. **e2e-gate** — `needs` all four Tier 0 gates and all ten build jobs:
    two canary pairs (1.21.11/java21, 26.2/java25), each
    crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
    four canary jobs run. `fail-fast` is off so all four always report.
@@ -178,6 +181,21 @@ before runner minutes are spent on the long tail.
    (`E2E <version> PASS config-behaviors`, see [e2e-harness.md](e2e-harness.md))
    and skip the player-bot phase since no player assertion runs on this leg.
 
+7. **Babric stage** — one caller job, `e2e-babric-java21` ("e2e b1.7.3 java 21
+   (babric)"), a normal `e2e-stage.yml` call with `loader: babric` reading the
+   `babric_java21` output of `tools/gen_matrix.go`. Its jar comes from its own
+   Tier 1 build job, `build-babric` ("Build: Babric (MC b1.7.3)"), a separate
+   Gradle build in `babric/` for the same reason `forge/` and `neoforge/` are
+   separate — a different plugin stack (ploceus + Loom remap), a different
+   mappings namespace, and a reverse-conversion step the root build has no
+   notion of. It uploads `commandsspy-jar-babric-<sha>` and caches on
+   `ci-gradle-babric-<hash>` over `babric/`'s own build files. The Babric band
+   is single-version by construction — b1.7.3 is the only Minecraft version the
+   loader exists for — so `declared`, `sampled` and `deep` are the same
+   one-element list and the `pull_request` and `workflow_dispatch` grids for
+   this band are identical. That is the intended shape for a single-version
+   Tier 1 band, not a missing deep sweep.
+
 Lean grid on `pull_request` (floor rows boot each band's sample, newest-Java
 coverage rows only that sample's ends), deep sweep on `workflow_dispatch`
 (floor rows boot each band's whole declared range bar the written exclusions;
@@ -217,7 +235,7 @@ exists so a broken build costs a handful of jobs instead of the whole fan-out;
 putting NeoForge there would let a NeoForge-only break block ~40 Fabric/Quilt
 jobs that have nothing to do with it. Its own job groups also match the reason
 Quilt got one: separate, independently-collapsible groups in the Actions UI.
-The three legs `need` `contracts`, `unit-tests`, all nine build jobs and
+The three legs `need` `contracts`, `unit-tests`, all ten build jobs and
 `e2e-gate`, and are in no other job's `needs:`, so the popularity-first band
 ordering is untouched and they run in parallel with it.
 
