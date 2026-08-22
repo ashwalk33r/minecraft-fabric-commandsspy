@@ -394,10 +394,12 @@ Two rules the file encodes, so the release does not have to re-decide them:
   loader will accept it on — which since #84 is also the set the deep sweep
   boots. A version is dropped only when the loader project published no build
   for it, because then there is nothing to install.
-- `mc1.14.x` is uploaded **twice**, `fabric` and `fabric,quilt`, with different
-  lists: Quilt Loader has no build below `1.14.4`, and Modrinth cannot exclude
-  one loader from one version. Two version rows is how that claim gets told the
-  truth.
+- `mc1.14.x` is uploaded **twice** — the same jar file, two Modrinth versions:
+  `<ver>+mc1.14.x` tagged `fabric,quilt`, and `<ver>+mc1.14.x-fabric` tagged
+  `fabric`, carrying the four versions Quilt Loader has no build for. Modrinth
+  cannot exclude one loader from one version, and its version numbers must be
+  distinct, so the `-fabric` suffix in the first column of the snapshot IS the
+  version number to type. Eleven rows, ten jar files.
 
 Regenerate after any change to a declared range or the coverage table
 (`gen_matrix_test.go` fails until you do):
