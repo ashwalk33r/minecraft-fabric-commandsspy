@@ -74,3 +74,32 @@ Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a`
 
 To log arguments of all commands, use `"logArguments": true`.
 Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a b c`
+
+## About the version lists on the download page
+
+Each file's Minecraft version list is the range that file's metadata **declares** —
+every Minecraft release the loader will accept it on. Since 1.7.1 those lists are
+generated from the repository's own coverage table (`docs/modrinth-versions.tsv`),
+and every version on them is booted as a real dedicated server by CI, or carries a
+written reason why it is not. Nothing is listed that cannot be installed.
+
+Four things a version list cannot say, so they are said here:
+
+- **`+mc1.21.x-forge` is Java 21 only.** Java 25 and above crash before Minecraft
+  starts — a Forge bootstrap limitation, not a mod one.
+- **Quilt below 1.14.4 does not exist.** Quilt Loader publishes no build for
+  Minecraft 1.14–1.14.3, so those four releases are on `+mc1.14.x-fabric` (tagged
+  Fabric only) and not on `+mc1.14.x` (Fabric and Quilt). Same jar, two listings,
+  because a listing cannot exclude one loader from one version.
+- **On Quilt below 1.18.2 the startup banner is missing.** Quilt Loader never
+  invokes the mod's `main` entrypoint there. It costs the `Loading CommandsSpy`
+  line and nothing else: command logging, config creation and every other behaviour
+  are proven on those versions.
+- **Some NeoForge lines have only prerelease loader builds** (1.20.3, 1.20.5,
+  1.21.2, 1.21.6, 1.21.7, 1.21.9, 26.1, 26.1.1). The mod installs there; CI does
+  not boot them, because a green build should not depend on beta loader code.
+
+The full matrix — which (Minecraft, loader, Java) combinations are proven, which are
+declared, and the command that regenerates every figure — is in the wiki:
+[Supported Versions](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions).
+

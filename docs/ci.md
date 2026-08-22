@@ -408,7 +408,11 @@ Regenerate after any change to a declared range or the coverage table
 cd tools && REPO_ROOT=.. go run . gen-matrix --publish > ../docs/modrinth-versions.tsv
 ```
 
-Caveats that belong in the Modrinth **description**, not in a version list:
-`mc1.21.x-forge` is Java 21 only (Java 25+ crashes before Minecraft starts,
-issue #66), and the NeoForge lines whose newest build is a `-beta` install fine
-but are not booted by CI.
+Caveats belong in the Modrinth **description**, not in a version list. They are
+written once, in `MOD.md` under "About the version lists on the download page" —
+the Forge `mc1.21.x` Java 21 ceiling (#66), the missing Quilt builds below
+1.14.4 and why `mc1.14.x` ships as two listings, the absent startup banner on
+Quilt below 1.18.2, and the beta-only NeoForge lines. **The project description
+is `MOD.md`**: paste it whole when it changes. Modrinth's API refuses project
+edits to a token with only version scopes, so this step is a paste in the web
+UI unless the token carries project write.
