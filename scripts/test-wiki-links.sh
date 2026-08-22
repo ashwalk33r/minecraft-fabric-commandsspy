@@ -207,8 +207,8 @@ check "colon, dots and apostrophe deleted" \
       "$(slug "Gate 1: the 1.16.4 crash is the JDK's \`ManifestEntryVerifier\` change")"
 check "apostrophe inside backticks deleted" "the-makefiles-default-version-list" \
       "$(slug "The \`Makefile\`'s default version list")"
-check "colon deleted, dots closed up" "quilt-the-pre-118-entrypoint-gap" \
-      "$(slug 'Quilt: the pre-1.18 entrypoint gap')"
+check "colon deleted, dots closed up" "quilt-the-pre-1182-entrypoint-gap" \
+      "$(slug 'Quilt: the pre-1.18.2 entrypoint gap')"
 
 # --- D. the provenance line ------------------------------------------------
 # Supported-Versions opens with a hand-maintained "Applies to: the grid as it

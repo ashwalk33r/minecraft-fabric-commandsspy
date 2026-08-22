@@ -209,6 +209,21 @@ DEFAULT_MAX_HEAP=512M
 if [ "$LOADER" = "forge" ] || [ "$LOADER" = "neoforge" ]; then
   DEFAULT_MAX_HEAP=1G
 fi
+# 1.18/1.18.1 need the Forge-sized heap on every loader: Caves & Cliffs Part II
+# generates far more terrain on first boot, and 512M is not enough to finish it.
+# Measured on the #84 sweep — quilt 1.18 and 1.18.1 died in "Preparing start
+# region" with OutOfMemoryError: Java heap space and never reached "Done (",
+# so every command assertion failed behind it. Fabric cleared the same versions
+# on 512M, which is exactly why the sampled grid never saw this: same version,
+# same worldgen, less loader on top. Per-version like BOOT_TIMEOUT in
+# e2e-run-one.sh, not a global raise — a bigger heap everywhere would hide a
+# genuine leak on the versions that fit.
+# An `if`, deliberately not a `case "$MC_VERSION"`: scripts/test-jar-routing.sh
+# lifts the era-literal case blocks out of this file by name and asserts there
+# are exactly three of them, so a fourth one here fails contracts.
+if [ "$MC_VERSION" = "1.18" ] || [ "$MC_VERSION" = "1.18.1" ]; then
+  DEFAULT_MAX_HEAP=1G
+fi
 JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx${DEFAULT_MAX_HEAP} -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
 # The fifo is held open read-write on fd 3 and handed to java as stdin directly.
 # A `tail -f console.in |` pipeline here is a trap: tail never exits, so a
@@ -520,15 +535,19 @@ case "$MC_VERSION" in
 esac
 
 # quilt-loader never invokes the ModInitializer "main" entrypoint on dedicated
-# servers below 1.18 — silently, no crash. Mixins still apply, so every
+# servers below 1.18.2 — silently, no crash. The boundary was believed to be
+# 1.18 until the #84 sweep booted 1.18 and 1.18.1 for the first time (run
+# 32576161823): both loaded the mod, applied the mixins and passed every
+# functional assertion — console, RCON, config-at-boot, player command — with
+# the "main" banner the only thing missing, exactly like 1.17.1 below them. Mixins still apply, so every
 # functional assertion below is unaffected; only the startup banner is missing.
-# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18 entrypoint gap".
+# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18.2 entrypoint gap".
 # Asserted as EXPECTED-ABSENT, not skipped, so CI
 # reports it the day upstream fixes this.
 QUILT_ENTRYPOINT_GAP=0
 if [ "$LOADER" = "quilt" ]; then
   case "$MC_VERSION" in
-    1.14|1.14.*|1.15|1.15.*|1.16|1.16.*|1.17|1.17.*) QUILT_ENTRYPOINT_GAP=1 ;;
+    1.14|1.14.*|1.15|1.15.*|1.16|1.16.*|1.17|1.17.*|1.18|1.18.1) QUILT_ENTRYPOINT_GAP=1 ;;
   esac
 fi
 
@@ -559,7 +578,7 @@ if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
 fi
 
 # Babric declares no preLaunch entrypoint -- that one exists solely to measure the
-# Quilt pre-1.18 gap -- so the guard above already excludes it. This takes its place,
+# Quilt pre-1.18.2 gap -- so the guard above already excludes it. This takes its place,
 # and it is a canary for toolchain drift rather than for the mod: the mod loads
 # identically on the frozen babric-fork loader (0.15.6-babric.2) and on upstream
 # 0.19.3, so without pinning the version the leg could silently start testing a
@@ -615,7 +634,7 @@ fi
 # MOD.md's "On startup" half, sampled at boot before any command ran.
 # Unconditional on purpose: every loader's entrypoint touches CommandsSpy before
 # the server is ready — Fabric/Quilt via the preLaunch entrypoint (measured, incl.
-# quilt below 1.18 where "main" never fires), Forge/NeoForge via the @Mod
+# quilt below 1.18.2 where "main" never fires), Forge/NeoForge via the @Mod
 # constructor's CommandsSpy.init(). A red leg here is a finding to investigate,
 # never a reason to narrow this check to a subset of loaders.
 if [ "$CONFIG_AT_BOOT" -ne 1 ]; then
@@ -661,7 +680,7 @@ fi
 
 echo "[e2e] Assertion results:"
 if [ "$QUILT_ENTRYPOINT_GAP" = "1" ]; then
-  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18 entrypoint gap has closed upstream — update the wiki's Version-Boundaries-And-Root-Causes and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18: entrypoint banner absent as expected (mixins still asserted below)"; fi
+  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18.2 entrypoint gap has closed upstream — update the wiki's Version-Boundaries-And-Root-Causes and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18.2: entrypoint banner absent as expected (mixins still asserted below)"; fi
 elif grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [PASS] mod loaded (Loading CommandsSpy)"; else echo "  [FAIL] mod not loaded (Loading CommandsSpy)"; fi
 if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
   if grep -q 'CommandsSpy preLaunch: config loaded\.' "$LOG_FILE"; then echo "  [PASS] preLaunch entrypoint invoked (config pulled up to boot)"; else echo "  [FAIL] preLaunch entrypoint NOT invoked — the preLaunch call site regressed"; fi

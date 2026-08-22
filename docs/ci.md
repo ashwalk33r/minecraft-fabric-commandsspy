@@ -377,3 +377,36 @@ sweep is a button instead.
 `band<TAB>state<TAB>version<TAB>reason`, which is how
 `scripts/test-jar-routing.sh` re-probes the exclusions instead of restating
 them.
+
+## Publishing: the version lists are generated
+
+`go run . gen-matrix --publish` prints one
+`jar<TAB>loaders<TAB>game_versions` row per Modrinth version, and
+`docs/modrinth-versions.tsv` is that output committed. **Publish from that
+file** — copy each row's third column into the matching Modrinth version's
+game_versions field. Never hand-carry the lists from the previous release: that
+is how issue #84 happened, 40 of 1.7.0's 113 published loader-and-version claims
+backed by no CI leg and one (Quilt `1.14`) not installable at all.
+
+Two rules the file encodes, so the release does not have to re-decide them:
+
+- `game_versions` is the jar's **declared range** — every Mojang release the
+  loader will accept it on — which since #84 is also the set the deep sweep
+  boots. A version is dropped only when the loader project published no build
+  for it, because then there is nothing to install.
+- `mc1.14.x` is uploaded **twice**, `fabric` and `fabric,quilt`, with different
+  lists: Quilt Loader has no build below `1.14.4`, and Modrinth cannot exclude
+  one loader from one version. Two version rows is how that claim gets told the
+  truth.
+
+Regenerate after any change to a declared range or the coverage table
+(`gen_matrix_test.go` fails until you do):
+
+```
+cd tools && REPO_ROOT=.. go run . gen-matrix --publish > ../docs/modrinth-versions.tsv
+```
+
+Caveats that belong in the Modrinth **description**, not in a version list:
+`mc1.21.x-forge` is Java 21 only (Java 25+ crashes before Minecraft starts,
+issue #66), and the NeoForge lines whose newest build is a `-beta` install fine
+but are not booted by CI.

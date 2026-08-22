@@ -3,10 +3,10 @@
 # CommandsSpy
 
 A server mod that logs every executed command with its source (player, console,
-RCON, function, command block). One shared implementation ships as nine jars —
-four era-correct Fabric/Quilt jars, four Forge jars split by mapping era, and a
-single NeoForge band jar. Which versions each covers, and which are proven by a
-booted server in CI: [Supported Versions](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions).
+RCON, function, command block). One shared implementation ships as ten jars —
+four era-correct Fabric/Quilt jars, four Forge jars split by mapping era, a
+single NeoForge band jar, and a Babric jar for Beta 1.7.3. Which versions each
+covers, and which are proven by a booted server in CI: [Supported Versions](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions).
 
 User documentation: [MOD.md](./MOD.md). Official releases:
 [Modrinth](https://modrinth.com/mod/commandsspy/versions).
@@ -23,7 +23,7 @@ User documentation: [MOD.md](./MOD.md). Official releases:
 - [docs/protocol-table.md](docs/protocol-table.md) — the Go bot's per-version
   protocol reference.
 - [docs/quilt-entrypoint-gap-upstream.md](docs/quilt-entrypoint-gap-upstream.md)
-  — an unfiled, paste-ready bug report for quilt-loader's pre-1.18 entrypoint
+  — an unfiled, paste-ready bug report for quilt-loader's pre-1.18.2 entrypoint
   gap, with two reproduction recipes.
 
 ## Build

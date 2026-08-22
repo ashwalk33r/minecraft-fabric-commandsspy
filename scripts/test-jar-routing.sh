@@ -63,7 +63,16 @@ ALL_VERSIONS="1.14.4 1.15.2 1.16.5 1.17.1 1.18.2 \
 # raised floor — the first version the jar supports, the jar AND slash flip.
 EXPECTED[1.16]="114 8 Rcon /list"
 EXPECTED[1.19.1]="1192 17 Rcon list"
-BOUNDARY_EXTRAS="1.16 1.19.1"
+# The five releases inside >=1.14 <1.19 that this repo named nowhere until
+# issue #84 enumerated the declared range. They are published on Modrinth and
+# booted by the deep sweep, so their routing is asserted here too — as boundary
+# extras rather than in ALL_VERSIONS, which would also grow `make e2e`.
+EXPECTED[1.14.1]="114 8 Recon /list"
+EXPECTED[1.14.2]="114 8 Recon /list"
+EXPECTED[1.14.3]="114 8 Recon /list"
+EXPECTED[1.15]="114 8 Recon /list"
+EXPECTED[1.15.1]="114 8 Recon /list"
+BOUNDARY_EXTRAS="1.16 1.19.1 1.14.1 1.14.2 1.14.3 1.15 1.15.1"
 
 # Versions that must route NOWHERE: the mc1192 jar's floor is 1.19.1.
 UNSUPPORTED="1.19 1.19.0"
@@ -192,7 +201,7 @@ echo "== LOADER=forge routing (mc116/legacy/modern/eventbus7, refusal flag)"
 # 1.16.4 is in-range and known-good: e2e-run-one.sh's install-time ModLauncher
 # 8.1.3 drop-in cures the Forge 35.x JDK 8u321+ crash. See the wiki,
 # Version-Boundaries-And-Root-Causes -> "Gate 1: the 1.16.4 crash is the JDK's `ManifestEntryVerifier` change".
-FORGE_MC116_VERSIONS="1.14.4 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5"
+FORGE_MC116_VERSIONS="1.14.4 1.15 1.15.1 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5"
 FORGE_LEGACY_VERSIONS="1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4"
 FORGE_MODERN_VERSIONS="1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5"
 FORGE_EB7_VERSIONS="1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2"
@@ -267,7 +276,7 @@ check "FORGE_MODERN_JAVA_CEILING=26 lets modern 1.21.5 on java 25 past the guard
 echo "== declared Forge minecraft ranges (forge/gradle.properties)"
 forge_gp="$repo_root/forge/gradle.properties"
 forge_declared_range() { sed -n "s/^minecraft_range_$1=//p" "$forge_gp"; }
-check "minecraft_range_mc116"     "[1.14,1.17)"      "$(forge_declared_range mc116)"
+check "minecraft_range_mc116"     "[1.14.4,1.17)"    "$(forge_declared_range mc116)"
 check "minecraft_range_legacy"    "[1.17.1,1.20.5)"  "$(forge_declared_range legacy)"
 check "minecraft_range_modern"    "[1.20.6,1.21.6)"  "$(forge_declared_range modern)"
 check "minecraft_range_eventbus7" "[1.21.6,26.3)"    "$(forge_declared_range eventbus7)"
@@ -611,13 +620,15 @@ done
 # tools/gen_matrix_test.go asserts the
 # reason is present; nothing here can assert it is still true.
 
-# Half two: the DENOMINATOR. "Covered" is measured against the versions this
-# repo NAMES -- not against every Minecraft release Mojang ever shipped inside a
-# declared range, which no offline check could enumerate and which would decay
-# without a commit. See "The denominator, settled" in the wiki's
-# Supported-Versions page. The
-# standing invariant: every version named anywhere in this repo is booted by
-# some CI leg on some event, or carries a written waiver here.
+# Half two: the DENOMINATOR. Every Minecraft release inside a declared range --
+# which IS enumerable offline since issue #84: mojangAxis in tools/gen_matrix.go
+# holds the release list, releasesIn() cuts it to a range, and every band's
+# `declared` is that cut. It is also the list published as Modrinth
+# game_versions, so a version that is advertised and booted by nothing now fails
+# here instead of shipping. See "The denominator, settled" in the wiki'"'"'s
+# Supported-Versions page. The standing invariant: every version named anywhere
+# in this repo is booted by some CI leg on some event, or carries a written
+# waiver here.
 echo "== sampling rule: every named version is booted or waived"
 # Waived, with reasons. These are the versions no minecraft_range_* covers: the
 # crack between the mc114 ceiling (<1.19) and the mc1192 floor (>=1.19.1). The

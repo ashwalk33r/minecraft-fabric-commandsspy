@@ -35,7 +35,7 @@ command still produces a `[CommandsSpy]` line; with `logArguments: false`
 (the default) an argument-bearing command is logged with the bare command
 name and not its arguments; and `config/commands-spy.json` matches the
 documented initial schema. The schema check reads the file from disk after
-the run completes, so on `LOADER=quilt` below 1.18 — where the mod's
+the run completes, so on `LOADER=quilt` below 1.18.2 — where the mod's
 initializer entrypoint never fires and `CommandsSpyConfig.load()` runs
 lazily on the first executed command instead — it only proves the file was
 created by the end of the run, not that it existed at server startup.
@@ -378,7 +378,7 @@ the leg as `babric-rcon-appeared-update-docs`. A skipped assertion is invisible
 on the wiki; an asserted absence is a row.
 
 The `preLaunch` assertion does not apply — the Babric metadata declares no such
-entrypoint, because that entrypoint exists solely to measure the Quilt pre-1.18
+entrypoint, because that entrypoint exists solely to measure the Quilt pre-1.18.2
 gap. In its place the leg pins the loader version, asserting the banner
 `Loading Minecraft Beta 1.7.3 with Fabric Loader 0.19.3`, so toolchain drift onto
 the frozen babric fork surfaces as a named failure

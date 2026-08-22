@@ -21,7 +21,12 @@ var rows = map[int]row{
 	// pre-1.19: no configuration state, no login_acknowledged, command goes
 	// out as a chat packet with the slash in the string.
 	477: {477, "1.14", eraChat, 0x20, 0x0F, 0x03},
+	480: {480, "1.14.1", eraChat, 0x20, 0x0F, 0x03},
+	485: {485, "1.14.2", eraChat, 0x20, 0x0F, 0x03},
+	490: {490, "1.14.3", eraChat, 0x20, 0x0F, 0x03},
 	498: {498, "1.14.4", eraChat, 0x20, 0x0F, 0x03},
+	573: {573, "1.15", eraChat, 0x21, 0x0F, 0x03},
+	575: {575, "1.15.1", eraChat, 0x21, 0x0F, 0x03},
 	578: {578, "1.15.2", eraChat, 0x21, 0x0F, 0x03},
 	735: {735, "1.16", eraChat, 0x20, 0x10, 0x03},
 	736: {736, "1.16.1", eraChat, 0x20, 0x10, 0x03},

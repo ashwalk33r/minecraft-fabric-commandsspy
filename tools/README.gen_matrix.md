@@ -20,7 +20,10 @@ Key contract: the coverage table, not the emit calls, decides which versions
 a row lists. Each band states its `declared` range, its `sampled` list, its
 `deep` list and a reason for every declared version booted by neither;
 `gen_matrix_test.go` asserts `deep + excluded == declared` exactly, so a
-version can only leave the grid by acquiring a reason. Background:
+version can only leave the grid by acquiring a reason. Since issue #84
+`declared` is every Mojang release the range covers — the same set published as
+Modrinth `game_versions` — so what is advertised and what CI boots are one list
+with one set of written exceptions. Background:
 ["The denominator, settled"](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions#the-denominator-settled).
 
 Second contract: every output name is written on every run, even as a literal
@@ -50,6 +53,23 @@ here.
 - `ends(list)` — first and last element; the "lean" shrink.
 - `coverage` / `booted(band, full)` — the version contract per band, and the
   list to boot for this event.
+- `mojangAxis` / `releasesIn(spec)` — the Minecraft release list, and the one
+  place a declared range (`>=1.14 <1.19`, `[1.14.4,1.17)`) becomes a version
+  list. Every band's `declared` is `releasesIn()` over its `minecraft_range_*`,
+  and `gen_matrix_test.go` re-derives all of them from the real
+  gradle.properties files, so a widened range cannot silently keep an old list.
+- `printPublish(w)` / `publishedJars` — `gen-matrix --publish`, one
+  `jar<TAB>loaders<TAB>game_versions` row per uploaded Modrinth version. The
+  list is the band's declared range minus what no one can install: a version
+  the loader project published no build for, and (on the quilt row) the
+  versions in `quiltUnavailable`. The `mc1.14.x` jar is uploaded twice, `fabric`
+  and `fabric,quilt`, because Modrinth cannot exclude one loader from one
+  version. `docs/modrinth-versions.tsv` is this output committed, and
+  `gen_matrix_test.go` fails when the two differ. Regenerate, never hand-edit:
+
+  ```
+  cd tools && REPO_ROOT=.. go run . gen-matrix --publish > ../docs/modrinth-versions.tsv
+  ```
 - `printCoverage(w)` — `gen-matrix --coverage`, a `band<TAB>state<TAB>version<TAB>reason`
   dump so `scripts/test-jar-routing.sh` can re-probe the exclusions rather
   than restate them.
