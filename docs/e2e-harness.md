@@ -292,6 +292,26 @@ covers 1.20.2-26.2, so the only way to miss is to ask for a version that has no
 NeoForge at all. Explicit failure, never a silent fallback to a jar that cannot
 load.
 
+## Log capture
+
+Assertions grep `logs/latest.log` (falling back to `server.log`, the console
+capture, when log4j wrote nothing). Minecraft's own log4j config rolls
+`latest.log` on a date change, so a run crossing midnight used to leave a file
+that begins mid-run — and `grep -q` cannot tell a missing line from a rolled-away
+one, so four legs reported `mod-not-loaded` for a mod that worked (issue #78).
+
+The container therefore boots with
+`-Dlog4j2.configurationFile=/mc-server/e2e-log4j2.xml` (`scripts/e2e-log4j2.xml`,
+baked into the image): Console + a non-rolling File appender, nothing else, so
+`latest.log` is one run by construction. The config is deliberately plain — the
+mc114 band runs log4j 2.8.1 on Java 8.
+
+Backing that up, the entrypoint asserts the boot banner (`Starting minecraft
+server`) is present before running any other assertion. A truncated capture is
+verdict `log-capture-truncated`, which accuses the harness, not the mod — the
+same attribution rule `scripts/test-wiki-links.sh` applies to its own environment
+errors.
+
 ## Config-behaviors leg
 
 `CONFIG_VARIANT=1` (Makefile, `scripts/e2e-run-one.sh`,

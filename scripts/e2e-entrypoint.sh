@@ -175,7 +175,16 @@ JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx${DEFAULT_MAX_HEAP} -XX:+UseSerialGC -XX:
 # everything in it, is torn down the moment this script (its PID 1) exits.
 exec 3<>console.in
 # shellcheck disable=SC2086 # both are whitespace-separated argument lists; word splitting is the point
-timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS $SERVER_LAUNCH_ARGS nogui <&3 > server.log 2>&1 &
+# -Dlog4j2.configurationFile is OUTSIDE $JAVA_FLAGS on purpose: JAVA_FLAGS is
+# wholesale-overridable from the environment above, and this override must not be
+# losable — it is what keeps logs/latest.log unrolled, i.e. what makes every
+# assertion below read the WHOLE run (issue #78).
+# ponytail: forge/neoforge launch via an @argfile whose options expand after
+# ours, so an upstream argfile that ever sets log4j2.configurationFile itself
+# would win and silently no-op this. The boot-banner check below is what catches
+# that, which is why it is not defended against here.
+timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS -Dlog4j2.configurationFile=/mc-server/e2e-log4j2.xml \
+  $SERVER_LAUNCH_ARGS nogui <&3 > server.log 2>&1 &
 SERVER_PID=$!
 
 BOOTED=0
@@ -266,6 +275,21 @@ if [ -f logs/latest.log ]; then
   LOG_FILE="logs/latest.log"
 else
   LOG_FILE="server.log"
+fi
+
+# latest.log is log4j's file, and before issue #78 it rolled on a date change:
+# a run crossing midnight left a capture beginning mid-run, indistinguishable to
+# `grep -q` from a mod that never logged. The non-rolling config passed at launch
+# makes the whole-run premise TRUE; this makes it CHECKED. It accuses the log
+# capture, never the mod — the attribution rule scripts/test-wiki-links.sh states
+# for its own environment errors. Fails, never skips.
+# Gated on BOOTED: a server that died before the banner is a real boot failure and
+# already has its own verdict; this must not steal it.
+if [ "$BOOTED" -eq 1 ] && ! grep -q 'Starting minecraft server' "$LOG_FILE"; then
+  echo "[e2e] HARNESS FAULT: $LOG_FILE has no boot banner — the capture is truncated."
+  echo "[e2e] This accuses the LOG CAPTURE, not the mod. Nothing below was validly asserted."
+  echo "E2E ${MC_VERSION} FAIL log-capture-truncated"
+  exit 1
 fi
 
 # Out-of-range guard leg: the assertions below all assume the mod RAN. Here the
