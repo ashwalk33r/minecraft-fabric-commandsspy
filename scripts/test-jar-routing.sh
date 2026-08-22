@@ -170,7 +170,7 @@ echo "== LOADER=forge routing (mc116/legacy/modern/eventbus7, refusal flag)"
 # treats it as globally unsupported before any probe runs, forge included.
 # 1.16.4 is in-range and known-good: e2e-run-one.sh's install-time ModLauncher
 # 8.1.3 drop-in cures the Forge 35.x JDK 8u321+ crash. See the wiki,
-# Version-Boundaries-And-Root-Causes -> "Gate 1".
+# Version-Boundaries-And-Root-Causes -> "Gate 1: the 1.16.4 crash is the JDK's `ManifestEntryVerifier` change".
 FORGE_MC116_VERSIONS="1.14.4 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5"
 FORGE_LEGACY_VERSIONS="1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4"
 FORGE_MODERN_VERSIONS="1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5"

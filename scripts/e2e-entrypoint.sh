@@ -413,8 +413,8 @@ esac
 # quilt-loader never invokes the ModInitializer "main" entrypoint on dedicated
 # servers below 1.18 — silently, no crash. Mixins still apply, so every
 # functional assertion below is unaffected; only the startup banner is missing.
-# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18
-# entrypoint gap". Asserted as EXPECTED-ABSENT, not skipped, so CI
+# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18 entrypoint gap".
+# Asserted as EXPECTED-ABSENT, not skipped, so CI
 # reports it the day upstream fixes this.
 QUILT_ENTRYPOINT_GAP=0
 if [ "$LOADER" = "quilt" ]; then
