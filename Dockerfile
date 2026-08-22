@@ -32,6 +32,8 @@ COPY --from=build /tools /usr/local/bin/tools
 WORKDIR /mc-server
 
 COPY scripts/e2e-entrypoint.sh /mc-server/entrypoint.sh
+# Non-rolling log4j config (issue #78) — handed to the JVM by the entrypoint.
+COPY scripts/e2e-log4j2.xml /mc-server/e2e-log4j2.xml
 RUN chmod +x /mc-server/entrypoint.sh
 
 ENTRYPOINT ["/mc-server/entrypoint.sh"]

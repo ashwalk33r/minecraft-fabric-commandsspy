@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Non-rolling log4j config for the e2e run (issue #78).
+
+  Minecraft's shipped config rolls logs/latest.log on a date change, so a run
+  that crosses midnight in the container's timezone leaves a latest.log that
+  begins mid-run. Every assertion in scripts/e2e-entrypoint.sh greps that file,
+  and `grep -q` cannot tell a missing line from a rolled-away one: the mod gets
+  blamed for the clock. With this config latest.log is the whole run by
+  construction.
+
+  Kept to Console + File + PatternLayout on purpose: the mc114 band boots
+  log4j 2.8.1 on Java 8 (see docs/testing.md), so nothing newer may appear here.
+
+  The pattern must end with %msg%n and nothing else — e2e-entrypoint.sh asserts
+  '[CommandsSpy] [Server] say$' anchored at end of line.
+-->
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="Console" target="SYSTEM_OUT">
+      <PatternLayout pattern="[%d{HH:mm:ss}] [%t/%level]: %msg%n"/>
+    </Console>
+    <File name="File" fileName="logs/latest.log" append="false">
+      <PatternLayout pattern="[%d{HH:mm:ss}] [%t/%level]: %msg%n"/>
+    </File>
+  </Appenders>
+  <Loggers>
+    <Root level="info">
+      <AppenderRef ref="Console"/>
+      <AppenderRef ref="File"/>
+    </Root>
+  </Loggers>
+</Configuration>

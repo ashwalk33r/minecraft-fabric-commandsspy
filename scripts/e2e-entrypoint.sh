@@ -175,7 +175,16 @@ JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx${DEFAULT_MAX_HEAP} -XX:+UseSerialGC -XX:
 # everything in it, is torn down the moment this script (its PID 1) exits.
 exec 3<>console.in
 # shellcheck disable=SC2086 # both are whitespace-separated argument lists; word splitting is the point
-timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS $SERVER_LAUNCH_ARGS nogui <&3 > server.log 2>&1 &
+# -Dlog4j2.configurationFile is OUTSIDE $JAVA_FLAGS on purpose: JAVA_FLAGS is
+# wholesale-overridable from the environment above, and this override must not be
+# losable — it is what keeps logs/latest.log unrolled, i.e. what makes every
+# assertion below read the WHOLE run (issue #78).
+# ponytail: forge/neoforge launch via an @argfile whose options expand after
+# ours, so an upstream argfile that ever sets log4j2.configurationFile itself
+# would win and silently no-op this. The boot-banner check below is what catches
+# that, which is why it is not defended against here.
+timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS -Dlog4j2.configurationFile=/mc-server/e2e-log4j2.xml \
+  $SERVER_LAUNCH_ARGS nogui <&3 > server.log 2>&1 &
 SERVER_PID=$!
 
 BOOTED=0
@@ -262,10 +271,37 @@ if [ "$LOADER" = "fabric" ] && [ "$BOOTED" -eq 1 ] && [ -d /jar-cache ] && [ ! -
   fi
 fi
 
-if [ -f logs/latest.log ]; then
+# Which capture holds the WHOLE run? Decided by CONTENT, not by filename.
+# logs/latest.log is log4j's and is not ours to trust: it rolled at midnight
+# before issue #78, and a loader is free to reconfigure log4j onto its own file
+# mid-boot. server.log is the raw stdout redirect from the launch above — one
+# process, one run, no rotation, no reconfiguration.
+# `grep -q` cannot tell a missing line from a rolled-away one, which is what
+# turned a clock into four `mod-not-loaded` verdicts; picking the file that
+# provably starts at the boot banner is what makes every assertion below valid.
+BANNER='Starting minecraft server'
+if [ "$BOOTED" -ne 1 ]; then
+  # Never booted: the banner is legitimately absent and boot-failed already owns
+  # this run. Old preference, so a bootstrap crash still reports the loader's log.
+  if [ -f logs/latest.log ]; then LOG_FILE="logs/latest.log"; else LOG_FILE="server.log"; fi
+elif grep -q "$BANNER" logs/latest.log 2>/dev/null; then
   LOG_FILE="logs/latest.log"
-else
+elif grep -q "$BANNER" server.log 2>/dev/null; then
   LOG_FILE="server.log"
+  echo "[e2e] NOTE: logs/latest.log has no boot banner — asserting against server.log (full console capture) instead."
+  echo "[e2e] first 5 lines of logs/latest.log, for diagnosis:"
+  head -5 logs/latest.log || true
+else
+  # Harness fault, never a mod verdict — the attribution rule
+  # scripts/test-wiki-links.sh states for its own environment errors. Prints its
+  # evidence: a verdict nobody can act on without an artifact download is the
+  # trap issue #78 is about.
+  echo "[e2e] HARNESS FAULT: no capture contains the boot banner — both are truncated."
+  echo "[e2e] This accuses the LOG CAPTURE, not the mod. Nothing was validly asserted."
+  echo "[e2e] head of logs/latest.log:"; head -20 logs/latest.log 2>/dev/null || echo "  (absent)"
+  echo "[e2e] head of server.log:";      head -20 server.log 2>/dev/null || echo "  (absent)"
+  echo "E2E ${MC_VERSION} FAIL log-capture-truncated"
+  exit 1
 fi
 
 # Out-of-range guard leg: the assertions below all assume the mod RAN. Here the
