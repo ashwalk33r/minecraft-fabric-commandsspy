@@ -60,7 +60,7 @@ JAVA ?=
 
 # Each must exist as eclipse-temurin:<n>-jre-jammy; check the tag before
 # adding. 11 is manual-override only.
-JAVA_VERSIONS_SUPPORTED := 8 11 17 21 25 26
+JAVA_VERSIONS_SUPPORTED := 8 17 21 25 26
 
 # fabric (default) | quilt | forge | neoforge — which loader's server boots.
 # See docs/e2e-harness.md.
