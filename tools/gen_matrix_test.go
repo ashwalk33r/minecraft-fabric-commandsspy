@@ -92,7 +92,7 @@ var expected = map[string]map[string]int{
 	// except where the deep sweep widens the band's own version list.
 	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 7},
 	"forge_legacy_java17":    {"pull_request": 10, "workflow_dispatch": 13},
-	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 11},
+	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 9},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
 	"forge_eventbus7_java25": {"pull_request": 4, "workflow_dispatch": 4},
 	// The forward-JVM row (#58): the eventbus7 band's ceiling alone, on the
@@ -175,7 +175,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 79, "workflow_dispatch": 146}
+	totals := map[string]int{"pull_request": 79, "workflow_dispatch": 144}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge, neo and babric pairs (single-loader) plus 26 fixed
 	// jobs (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -184,7 +184,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*39 + 32 + 7 + 1 + 26 = 144. Dispatch: 2*75 + 4 + 42 + 14 + 1 + 26 + 1 = 257
+	// PR: 2*39 + 32 + 7 + 1 + 26 = 144. Dispatch: 2*75 + 4 + 40 + 14 + 1 + 26 + 1 = 255
 	// — the `+ 4` term is mc114_java8_fabric, four versions Quilt has no build
 	// for, so they spawn ONE caller job each instead of two (issue #84 widened
 	// it from one version to four)
@@ -197,7 +197,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// build-babric joined the nine build jobs. Adding a loader therefore moves
 	// this number twice, in two different places — that is what the split above
 	// is spelling out.
-	jobTotals := map[string]int{"pull_request": 144, "workflow_dispatch": 257}
+	jobTotals := map[string]int{"pull_request": 144, "workflow_dispatch": 255}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -257,8 +257,8 @@ func TestOptionCombinationTotals(t *testing.T) {
 		{"t0 mc1192 mc114 forge", 42, 95, 107, 206},
 		{"t0 mc1192 mc114 forge forge_legacy", 53, 109, 118, 220},
 		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 120, 129, 231},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 131, 136, 242},
-		{allBands, 79, 146, 144, 257},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 129, 136, 240},
+		{allBands, 79, 144, 144, 255},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{

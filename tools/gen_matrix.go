@@ -352,22 +352,21 @@ var coverage = map[string]bandCoverage{
 		},
 	},
 
-	// Forge mc116, [1.14,1.17). Every measured version is sampled, same
-	// cross-major reasoning as legacy; the deep sweep adds the four releases
-	// #84 enumerated into the range and Forge does publish builds for
-	// (1.14.2 1.14.3 1.15 1.15.1 — all four joined FORGE_KNOWN_GOOD_MC116 in
-	// scripts/e2e-run-one.sh in the same change). The three exclusions are not
-	// budget calls: the promotions feed carries no key for them at all, so
-	// nothing can be installed and nothing is published either.
+	// Forge mc116, [1.14.4,1.17). Every measured version is sampled, same
+	// cross-major reasoning as legacy; the deep sweep adds 1.15 and 1.15.1,
+	// the two releases #84 enumerated into the range that Forge both publishes
+	// and this jar's javafml range accepts. The range floor moved 1.14 ->
+	// 1.14.4 in the same change: 1.14/1.14.1 have no Forge build, and
+	// 1.14.2/1.14.3 are Forge 26.x/27.x, which FML refuses against the jar's
+	// own forge_range_mc116=[28,37). The one exclusion left is 1.16, which
+	// Forge never published.
 	"forge_mc116": {
-		declared: releasesIn("[1.14,1.17)"),
+		declared: releasesIn("[1.14.4,1.17)"),
 		sampled:  []string{"1.14.4", "1.15.2", "1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
-		deep: []string{"1.14.2", "1.14.3", "1.14.4", "1.15", "1.15.1", "1.15.2",
+		deep: []string{"1.14.4", "1.15", "1.15.1", "1.15.2",
 			"1.16.1", "1.16.2", "1.16.3", "1.16.4", "1.16.5"},
 		excluded: map[string]string{
-			"1.14.1": "no Forge build published: the promotions feed goes 1.13.2 -> 1.14.2, so 1.14 and 1.14.1 both have nothing to install. Same class as 1.14 and 1.16 below",
-			"1.14":   "no Forge build published: the promotions feed goes 1.13.2 -> 1.14.2 and carries no 1.14 key at all, so there is nothing to install. FORGE_EXPECT_REFUSED does raise here, but only because 1.14 is missing from FORGE_KNOWN_GOOD_MC116 — that flag means unproven-by-CI, not out-of-range, and it is not the reason this version cannot run",
-			"1.16":   "no Forge build published: the promotions feed jumps 1.15 -> 1.16.1. The Fabric mc114 band boots 1.16 in the deep sweep, so the 1.15.2|1.16 RCON-name edge is still proven — on the loader whose jar declares it",
+			"1.16": "no Forge build published: the promotions feed jumps 1.15 -> 1.16.1. The Fabric mc114 band boots 1.16 in the deep sweep, so the 1.15.2|1.16 RCON-name edge is still proven — on the loader whose jar declares it",
 		},
 	},
 

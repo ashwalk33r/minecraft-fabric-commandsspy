@@ -26,11 +26,11 @@ back here.
 
 ---
 
-## quilt-loader silently never invokes a mod's `main` entrypoint on dedicated servers below Minecraft 1.18
+## quilt-loader silently never invokes a mod's `main` entrypoint on dedicated servers below Minecraft 1.18.2
 
 ### Summary
 
-On a dedicated server running Minecraft **1.17.1 or older**, quilt-loader
+On a dedicated server running Minecraft **1.18.1 or older**, quilt-loader
 never calls the class declared in `quilt_loader.entrypoints.main`. There is no
 crash, no exception, no warning, and no log line — the entrypoint simply never
 runs. On Minecraft 1.18.2 and every version above it, the same jar on the same
@@ -66,14 +66,20 @@ Measured across this project's e2e matrix. Every row is a real dedicated
 server, booted in a container, with the mod jar in `mods/`, driven over the
 console and RCON.
 
-**`main` entrypoint never invoked — four versions:**
+**`main` entrypoint never invoked — nine versions:**
 
 | Minecraft | Java |
 | --- | --- |
-| 1.14.4 | 8 |
-| 1.15.2 | 8 |
-| 1.16.5 | 8 |
-| 1.17.1 | 17 |
+| 1.14 | 8 |
+| 1.14.1, 1.14.2, 1.14.3, 1.14.4 | 8 |
+| 1.15, 1.15.1, 1.15.2 | 8 |
+| 1.16, 1.16.1 – 1.16.5 | 8 |
+| 1.17, 1.17.1 | 17 |
+| 1.18, 1.18.1 | 17 |
+
+(Quilt Loader publishes no build for 1.14–1.14.3, so those rows are Fabric-only
+in this project's grid and are not evidence here; every other line above was
+booted on Quilt.)
 
 **`main` entrypoint invoked normally — five versions:**
 
@@ -85,30 +91,36 @@ console and RCON.
 | 1.20.2 | 17 |
 | 1.21.11 | 25 |
 
-The break is between **1.17.1 and 1.18.2**.
+The break is between **1.18.1 and 1.18.2**. It was recorded as 1.17.1|1.18.2
+until 1.18 and 1.18.1 were booted for the first time in run 32576161823: both
+sit on the failing side, and both pass every other assertion — console, RCON,
+config-at-boot, player command, mixin — with the `main` banner the only thing
+missing.
 
-A note on the count, because it was undercounted here for a while: the prose
-named three failing versions and omitted 1.15.2, while the code never did.
-`scripts/e2e-entrypoint.sh` gates the expected-absent assertion on four
-Minecraft lines —
+A note on the count, because it has been wrong twice: the prose first named
+three failing versions and omitted 1.15.2, while the code never did; then both
+stopped at 1.17.x, because 1.18 and 1.18.1 were in the declared range and
+booted by nothing. `scripts/e2e-entrypoint.sh` gates the expected-absent
+assertion on the Minecraft lines below the boundary —
 
 ```sh
 if [ "$LOADER" = "quilt" ]; then
   case "$MC_VERSION" in
-    1.14|1.14.*|1.15|1.15.*|1.16|1.16.*|1.17|1.17.*) QUILT_ENTRYPOINT_GAP=1 ;;
+    1.14|1.14.*|1.15|1.15.*|1.16|1.16.*|1.17|1.17.*|1.18|1.18.1) QUILT_ENTRYPOINT_GAP=1 ;;
   esac
 fi
 ```
 
-— and `tools/gen_matrix.go` puts 1.15.2 in the band that actually runs:
+— and `tools/gen_matrix.go` puts 1.15.2 in the sample that runs on every event:
 
 ```go
-mc114 := band("mc114", "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2")
+sampled: []string{"1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2"},
 ```
 
 1.15.2 therefore runs on Quilt on every pull request, under the
-banner-must-be-absent assertion, and passes. The prose was stale, not the
-measurement. **Four failing versions, not three.**
+banner-must-be-absent assertion, and passes. The rest of the band's declared
+range runs on the deep sweep, which is where 1.18 and 1.18.1 were finally
+measured. The prose was stale, not the measurement.
 
 ### The held-constant control
 
@@ -205,7 +217,7 @@ identical commit, prints **both** lines.
 
 What this establishes:
 
-- **The loader's entrypoint dispatch machinery works below 1.18.** It reaches
+- **The loader's entrypoint dispatch machinery works below 1.18.2.** It reaches
   `QuiltLoaderImpl.invokePreLaunch`, walks `EntrypointUtils.invoke` →
   `EntrypointStorage` → `DefaultLanguageAdapter.create`, constructs a mod's
   entrypoint object and invokes it. The defect is *not* "quilt-loader does not
@@ -433,8 +445,8 @@ the declaration above uses `preLaunch`, not `pre_launch`.
    anything: the mod is in the mod list (its mixin was applied from
    `quilt.mod.json`), the dispatch machinery runs (it invoked `preLaunch` from
    the same file), and only `main` is skipped, silently.
-2. **Confirm or deny.** Is this a defect, or is pre-1.18 simply not supported?
-3. **If pre-1.18 is out of scope, please publish that.** quilt-loader ships no
+2. **Confirm or deny.** Is this a defect, or is pre-1.18.2 simply not supported?
+3. **If pre-1.18.2 is out of scope, please publish that.** quilt-loader ships no
    minimum-supported-Minecraft statement anywhere we could find. A one-line
    floor in the README or on the download page would have saved this entire
    investigation, and would save it for the next person.

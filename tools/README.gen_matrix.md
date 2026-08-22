@@ -54,7 +54,7 @@ here.
 - `coverage` / `booted(band, full)` — the version contract per band, and the
   list to boot for this event.
 - `mojangAxis` / `releasesIn(spec)` — the Minecraft release list, and the one
-  place a declared range (`>=1.14 <1.19`, `[1.14,1.17)`) becomes a version
+  place a declared range (`>=1.14 <1.19`, `[1.14.4,1.17)`) becomes a version
   list. Every band's `declared` is `releasesIn()` over its `minecraft_range_*`,
   and `gen_matrix_test.go` re-derives all of them from the real
   gradle.properties files, so a widened range cannot silently keep an old list.

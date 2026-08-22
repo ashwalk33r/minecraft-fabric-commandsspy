@@ -4,7 +4,7 @@ import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 
 /**
  * Measures whether quilt-loader invokes the "preLaunch" entrypoint on dedicated
- * servers below Minecraft 1.18, where it provably never invokes the ModInitializer
+ * servers below Minecraft 1.18.2, where it provably never invokes the ModInitializer
  * "main" entrypoint. Knot runs preLaunch before the game's main class is loaded — a
  * different call site from the EntrypointPatch-injected Hooks.startServer path that
  * the "main" gap lives on, so the gap does not necessarily extend to it. See
