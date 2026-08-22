@@ -209,6 +209,18 @@ DEFAULT_MAX_HEAP=512M
 if [ "$LOADER" = "forge" ] || [ "$LOADER" = "neoforge" ]; then
   DEFAULT_MAX_HEAP=1G
 fi
+# 1.18/1.18.1 need the Forge-sized heap on every loader: Caves & Cliffs Part II
+# generates far more terrain on first boot, and 512M is not enough to finish it.
+# Measured on the #84 sweep — quilt 1.18 and 1.18.1 died in "Preparing start
+# region" with OutOfMemoryError: Java heap space and never reached "Done (",
+# so every command assertion failed behind it. Fabric cleared the same versions
+# on 512M, which is exactly why the sampled grid never saw this: same version,
+# same worldgen, less loader on top. Per-version like BOOT_TIMEOUT in
+# e2e-run-one.sh, not a global raise — a bigger heap everywhere would hide a
+# genuine leak on the versions that fit.
+case "$MC_VERSION" in
+  1.18|1.18.1) DEFAULT_MAX_HEAP=1G ;;
+esac
 JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx${DEFAULT_MAX_HEAP} -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
 # The fifo is held open read-write on fd 3 and handed to java as stdin directly.
 # A `tail -f console.in |` pipeline here is a trap: tail never exits, so a

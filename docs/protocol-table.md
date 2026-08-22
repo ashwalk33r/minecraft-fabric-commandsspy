@@ -8,6 +8,14 @@ its own row: 1.14 is 477 and 1.14.4 is 498; 1.16 is 735 and 1.16.1 is 736; 1.17 
 run — the server booted and the mod loaded, but the bot could not join, so only the
 player-command assertion failed.
 
+The same thing happened again on the sweep that added the five releases issue #84
+enumerated into `>=1.14 <1.19`: `1.14.1` (480), `1.14.2` (485), `1.14.3` (490), `1.15`
+(573) and `1.15.1` (575) had no rows, so seven legs died at `bot: server "1.15" speaks
+unsupported protocol 573` while every non-player assertion passed. **A version added to
+a band's coverage needs a row here in the same change.** The keep-alive ids move within
+the 1.14-1.15 span (0x20 -> 0x21 at 1.15), so a row cannot be assumed from its
+neighbours without checking the dump.
+
 Only the facts a login + one-command + disconnect client needs. All IDs are serverbound (C→S) or clientbound (S→C)
 as labelled; all values hex packet ids unless stated. `tools/table.go` implements this
 table.
@@ -47,7 +55,12 @@ trigger.
 | MC | proto | cfg | UUID | sig | cmd pkt | cmd id | KA play S→C/C→S | login(play) | source |
 |---|---|---|---|---|---|---|---|---|---|
 | 1.14 | 477 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14` |
+| 1.14.1 | 480 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14.1` |
+| 1.14.2 | 485 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14.1` (no 1.14.2 dump; 1.14.1 and 1.14.3 are identical, so the row between them is too) |
+| 1.14.3 | 490 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14.3` |
 | 1.14.4 | 498 | no | none | — | chat | 0x03 | 0x20 / 0x0F | 0x25 | md `pc/1.14.4` |
+| 1.15 | 573 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.15` |
+| 1.15.1 | 575 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.15.1` |
 | 1.15.2 | 578 | no | none | — | chat | 0x03 | 0x21 / 0x0F | 0x26 | md `pc/1.15.2` |
 | 1.16 | 735 | no | none | — | chat | 0x03 | 0x20 / 0x10 | 0x25 | md `pc/1.16` |
 | 1.16.1 | 736 | no | none | — | chat | 0x03 | 0x20 / 0x10 | 0x25 | md `pc/1.16.1` |
