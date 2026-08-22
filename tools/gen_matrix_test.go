@@ -21,6 +21,7 @@ var allKeys = []string{
 	"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
 	"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26",
 	"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25",
+	"babric_java21",
 }
 
 func runGrid(t *testing.T, repoRoot, event, bands string) (string, map[string]string) {
@@ -104,9 +105,12 @@ var expected = map[string]map[string]int{
 	"neo_java21":     {"pull_request": 3, "workflow_dispatch": 9},
 	"neo_java25":     {"pull_request": 1, "workflow_dispatch": 2},
 	"neo_fwd_java25": {"pull_request": 1, "workflow_dispatch": 1},
+	// Babric: one version, one JVM, identical on both events. declared ==
+	// sampled == deep, so there is nothing for the deep sweep to widen.
+	"babric_java21": {"pull_request": 1, "workflow_dispatch": 1},
 }
 
-const allBands = "t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116 neo"
+const allBands = "t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116 neo babric"
 
 func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 	_, out := runGrid(t, emptyRoot(t), "pull_request", allBands)
@@ -139,6 +143,9 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		"neo_java21":     `["1.20.6","1.21.1","1.21.11"]`,
 		"neo_java25":     `["26.2"]`,
 		"neo_fwd_java25": `["1.21.1"]`,
+		// The whole Babric band, byte-pinned: one version, and the same one on
+		// every event.
+		"babric_java21": `["b1.7.3"]`,
 	} {
 		if out[name] != want {
 			t.Errorf("%s = %s, want %s", name, out[name], want)
@@ -156,7 +163,8 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 			"mc114_java8", "mc114_java8_fabric", "mc114_java17", "mc114_java21",
 			"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
 			"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26",
-			"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25"} {
+			"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25",
+			"babric_java21"} {
 			if got, ok := out[name]; !ok || got != "[]" {
 				t.Errorf("[%s] %s = %q, want the literal []", event, name, got)
 			}
@@ -165,20 +173,26 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 78, "workflow_dispatch": 132}
+	totals := map[string]int{"pull_request": 79, "workflow_dispatch": 133}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
-	// caller job) + forge and neo pairs (single-loader) plus 25 fixed jobs
-	// (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
+	// caller job) + forge, neo and babric pairs (single-loader) plus 26 fixed
+	// jobs (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
 	// Build aggregator, the 4 e2e-gate canaries, the 4 config-behaviors legs
 	// (#34, one per loader) and the 3 out-of-range refusal guards (fabric and
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*39 + 32 + 7 + 25 = 142. Dispatch: 2*79 + 38 + 14 + 25 + 1 = 236 — the
-	// deep sweep's whole delta is Minecraft versions the PR grid never boots.
-	// The forge and neo terms carry the #58 forward-JVM rows: forge_java26 (1)
-	// and neo_fwd_java25 (1), the same on every event.
-	jobTotals := map[string]int{"pull_request": 142, "workflow_dispatch": 236}
+	// PR: 2*39 + 32 + 7 + 1 + 26 = 144. Dispatch: 2*79 + 38 + 14 + 1 + 26 + 1 = 238
+	// — the deep sweep's whole delta is Minecraft versions the PR grid never
+	// boots. The forge and neo terms carry the #58 forward-JVM rows:
+	// forge_java26 (1) and neo_fwd_java25 (1), the same on every event.
+	// The `+ 1` term before the fixed jobs is Babric: babric_java21's single
+	// version, one caller job because Babric has no quilt twin. Babric's other
+	// contribution is inside the fixed count, which went 25 -> 26 when
+	// build-babric joined the nine build jobs. Adding a loader therefore moves
+	// this number twice, in two different places — that is what the split above
+	// is spelling out.
+	jobTotals := map[string]int{"pull_request": 144, "workflow_dispatch": 238}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -206,12 +220,12 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 
 // 3. every option combination, both triggers
 // Totals are GATED PAIRS; TOTAL_JOBS is what the workflow spawns: 2 caller
-// jobs per fabric pair (-fabric/-quilt), 1 per forge or neo pair
-// (single-loader), plus 25 fixed jobs (contracts, go-quality, lint-java,
+// jobs per fabric pair (-fabric/-quilt), 1 per forge, neo or babric pair
+// (single-loader), plus 26 fixed jobs (contracts, go-quality, lint-java,
 // unit-tests, the 10 build jobs, the Build aggregator, the 4 e2e-gate
 // canaries, the 4 config-behaviors legs (#34, one per loader) and the 3
 // out-of-range refusal guards (fabric and quilt on 1.19.0, forge on 1.21.6);
-// on push only 14 of these run — gate, config-behaviors and the refusal
+// on push only 15 of these run — gate, config-behaviors and the refusal
 // guards are event-skipped). Run
 // against an empty fixture root so FORCE_BANDS alone decides. The forge-less
 // cases double as proof that absent Forge bands emit [] and add zero pairs.
@@ -221,22 +235,25 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 // TestNeoRowsCountAsOneJobEach.
 // The #58 forward-JVM rows show up per band, not in a lump: forge_java26 is
 // keyed on forge_eventbus7 alone (the modern band has no java-26 probe, issue
-// #66), and `neo` brings neo_fwd_java25.
+// #66), and `neo` brings neo_fwd_java25. Every case below is +1 job against
+// its pre-Babric value even where `babric` is not forced present: build-babric
+// is a fixed job and runs regardless of which bands ship. Only the last case
+// forces `babric`, so only it also gains a pair.
 func TestOptionCombinationTotals(t *testing.T) {
 	cases := []struct {
 		bands              string
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 38, 61, 101},
-		{"t0", 26, 50, 77, 125},
-		{"t0 mc1192", 32, 61, 89, 147},
-		{"t0 mc1192 mc114", 39, 80, 103, 184},
-		{"t0 mc1192 mc114 forge", 42, 86, 106, 190},
-		{"t0 mc1192 mc114 forge forge_legacy", 53, 100, 117, 204},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 111, 128, 215},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 118, 135, 222},
-		{allBands, 78, 132, 142, 236},
+		{"", 18, 38, 62, 102},
+		{"t0", 26, 50, 78, 126},
+		{"t0 mc1192", 32, 61, 90, 148},
+		{"t0 mc1192 mc114", 39, 80, 104, 185},
+		{"t0 mc1192 mc114 forge", 42, 86, 107, 191},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 100, 118, 205},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 111, 129, 216},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 118, 136, 223},
+		{allBands, 79, 133, 144, 238},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -458,7 +475,7 @@ func TestPushEmitsEmptyBands(t *testing.T) {
 			t.Errorf("[push] %s = %q, want the literal []", name, got)
 		}
 	}
-	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=14\n", "EVENT_NAME=push\n"} {
+	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=15\n", "EVENT_NAME=push\n"} {
 		if !strings.Contains(stdout, line) {
 			t.Errorf("[push] summary missing %q", line)
 		}
@@ -536,6 +553,7 @@ var bandRows = map[string][]string{
 	"forge_mc116":     {"forge_mc116_java8"},
 	"forge_eventbus7": {"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26"},
 	"neo":             {"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25"},
+	"babric":          {"babric_java21"},
 }
 
 func setOf(list []string) map[string]bool {
@@ -700,5 +718,27 @@ func TestQuiltUnavailableVersionsRunFabricOnly(t *testing.T) {
 			t.Errorf("workflow_dispatch: %s is quilt-unavailable but booted by no row at all; "+
 				"it should still run on fabric", v)
 		}
+	}
+}
+
+// Babric is a single-version band: b1.7.3 is the only version the loader exists for, so
+// declared == sampled == deep and the deep sweep adds nothing. That is the intended
+// shape, not a missing entry — see the wiki, Supported-Versions -> Babric.
+func TestBabricBandIsExhaustiveAndSingleVersion(t *testing.T) {
+	c, ok := coverage["babric"]
+	if !ok {
+		t.Fatal("no babric band in the coverage table")
+	}
+	want := []string{"b1.7.3"}
+	for _, pair := range []struct {
+		name string
+		got  []string
+	}{{"declared", c.declared}, {"sampled", c.sampled}, {"deep", c.deep}} {
+		if len(pair.got) != 1 || pair.got[0] != want[0] {
+			t.Errorf("babric %s = %v, want %v", pair.name, pair.got, want)
+		}
+	}
+	if len(c.excluded) != 0 {
+		t.Errorf("babric excluded = %v, want empty: a single-version band has nothing to exclude", c.excluded)
 	}
 }

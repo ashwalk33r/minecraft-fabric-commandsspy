@@ -79,6 +79,11 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 	case "neo":
 		data, err := os.ReadFile(filepath.Join(repoRoot, "neoforge", "gradle.properties"))
 		return err == nil && neoRangeRe.Match(data)
+	case "babric":
+		// No range regex: the band is one hardcoded version, so the only
+		// question is whether the separate Gradle build ships at all.
+		st, err := os.Stat(filepath.Join(repoRoot, "babric", "build.gradle"))
+		return err == nil && !st.IsDir()
 	}
 	return false
 }
@@ -279,6 +284,17 @@ var coverage = map[string]bandCoverage{
 			"26.1":   "newest NeoForge build for this line is 26.1.0.19-beta",
 			"26.1.1": "newest NeoForge build for this line is 26.1.1.15-beta",
 		},
+	},
+
+	// Babric, b1.7.3 and nothing else — the only Minecraft version the loader
+	// exists for. declared == sampled == deep, so the deep sweep adds nothing
+	// and there is no exclusion to write a reason for. One leg, one JVM (21),
+	// Tier 1 on every pull request: a Tier 2 row on a frozen platform would rot
+	// unnoticed, and this is the cheapest band in the grid.
+	"babric": {
+		declared: []string{"b1.7.3"},
+		sampled:  []string{"b1.7.3"},
+		deep:     []string{"b1.7.3"},
 	},
 }
 
@@ -664,6 +680,13 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// versions must sit strictly BELOW java 25, or it is not forward coverage.
 	emit("neo_fwd_java25", band("neo", "1.21.1"))
 
+	// STAGE 7 — Babric. One row, because the band is one version and one JVM.
+	// Java 21 is the LOADER STACK's floor, not the game's: b1.7.3 itself
+	// predates every modern JVM, but the Babric/Ornithe chain and the mixin
+	// compatibilityLevel are pinned at 21. No coverage row above the floor —
+	// there is no second Java the toolchain is pinned for.
+	emit("babric_java21", band("babric", booted("babric", full)...))
+
 	if emitErr != nil {
 		return emitErr
 	}
@@ -671,8 +694,9 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// GATED_PAIRS counts submatrix legs (versions x rows) once each.
 	// TOTAL_JOBS counts what the workflow actually spawns: every fabric band
 	// key feeds TWO caller jobs in ci.yml (-fabric and -quilt), forge_* and
-	// neo_* keys feed ONE (LOADER=forge/neoforge have no quilt twin), plus the
-	// 25 fixed jobs: contracts, go-quality, lint-java, unit-tests, the 9
+	// neo_* keys feed ONE (LOADER=forge/neoforge/babric have no quilt twin;
+	// babric_java21 is the one Babric row), plus the
+	// 26 fixed jobs: contracts, go-quality, lint-java, unit-tests, the 10
 	// build jobs, the Build aggregator, the 4 e2e-gate canaries (2 versions x
 	// fabric/quilt), the 4 config-behaviors legs (#34, one per loader), and
 	// the 3 out-of-range refusal guards — fabric + quilt on 1.19.0, the version
@@ -684,6 +708,10 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// event-skipped, leaving 14. The build jobs went 10 -> 9 when the two per-version
 	// NeoForge jobs collapsed into the one band job, and the 2 literal
 	// NeoForge e2e jobs this count used to carry are generated rows now.
+	// Babric moved BOTH numbers by exactly one, and the two terms are separate:
+	// +1 fixed job is build-babric (9 build jobs -> 10, so 25 -> 26 and the
+	// push subset 14 -> 15), and +1 gated pair is the babric_java21 row's one
+	// version, which spawns one caller job because Babric has no quilt twin.
 	total, jobs := 0, 0
 	for _, r := range rows {
 		total += r.n
@@ -696,7 +724,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		// _fabric suffix marks a row whose versions Quilt cannot boot at all
 		// (issue #69) — it has no quilt twin either.
 		if strings.HasPrefix(r.name, "forge") || strings.HasPrefix(r.name, "neo") ||
-			strings.HasSuffix(r.name, "_fabric") {
+			strings.HasPrefix(r.name, "babric") || strings.HasSuffix(r.name, "_fabric") {
 			jobs += r.n
 		} else {
 			jobs += 2 * r.n
@@ -705,9 +733,9 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	}
 	_, _ = fmt.Fprintf(stdout, "EVENT_NAME=%s\n", eventName)
 	_, _ = fmt.Fprintf(stdout, "GATED_PAIRS=%d\n", total)
-	fixedJobs := 25
+	fixedJobs := 26
 	if push {
-		fixedJobs = 14
+		fixedJobs = 15
 	}
 	_, _ = fmt.Fprintf(stdout, "TOTAL_JOBS=%d\n", jobs+fixedJobs)
 	return nil

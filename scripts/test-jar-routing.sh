@@ -684,6 +684,26 @@ check "console source name 1.21"   "Server"  "$(console_of 1.21)"
 check "b1.7.3 routes to the Babric jar on java 21" "BABRIC 21" \
       "$(MOD_JAR_BABRIC=x "$script_dir/e2e-run-one.sh" --print-routing b1.7.3)"
 
+# The other half of that row: babric and b1.7.3 are inseparable, so BOTH
+# mismatched pairings must be refused before anything is downloaded. Asserted
+# on the exit status AND on the message, because a script that dies for an
+# unrelated reason also exits non-zero -- and asserted in both directions,
+# since one alone would let the other pairing hand a loader a jar whose
+# declared Minecraft version its server can never satisfy.
+check_refused() {
+  local label="$1" loader="$2" version="$3" out rc
+  out="$(LOADER="$loader" MOD_JAR_BABRIC=x MOD_JAR_121=x \
+         "$script_dir/e2e-run-one.sh" "$version" 2>&1)" && rc=0 || rc=$?
+  if [[ "$rc" -ne 0 && "$out" == *"LOADER=babric and VERSION=b1.7.3 are inseparable"* ]]; then
+    echo "  ok   $label = refused (rc=$rc)"
+  else
+    echo "  FAIL $label: expected the inseparable-pair refusal, got rc=$rc: $out"
+    failures=$((failures + 1))
+  fi
+}
+check_refused "LOADER=babric on 1.21 is refused"   babric 1.21
+check_refused "LOADER=fabric on b1.7.3 is refused" fabric b1.7.3
+
 echo
 if [[ "$failures" -eq 0 ]]; then
   echo "jar-routing: all assertions passed"
