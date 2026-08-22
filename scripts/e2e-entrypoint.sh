@@ -271,23 +271,35 @@ if [ "$LOADER" = "fabric" ] && [ "$BOOTED" -eq 1 ] && [ -d /jar-cache ] && [ ! -
   fi
 fi
 
-if [ -f logs/latest.log ]; then
+# Which capture holds the WHOLE run? Decided by CONTENT, not by filename.
+# logs/latest.log is log4j's and is not ours to trust: it rolled at midnight
+# before issue #78, and a loader is free to reconfigure log4j onto its own file
+# mid-boot. server.log is the raw stdout redirect from the launch above — one
+# process, one run, no rotation, no reconfiguration.
+# `grep -q` cannot tell a missing line from a rolled-away one, which is what
+# turned a clock into four `mod-not-loaded` verdicts; picking the file that
+# provably starts at the boot banner is what makes every assertion below valid.
+BANNER='Starting minecraft server'
+if [ "$BOOTED" -ne 1 ]; then
+  # Never booted: the banner is legitimately absent and boot-failed already owns
+  # this run. Old preference, so a bootstrap crash still reports the loader's log.
+  if [ -f logs/latest.log ]; then LOG_FILE="logs/latest.log"; else LOG_FILE="server.log"; fi
+elif grep -q "$BANNER" logs/latest.log 2>/dev/null; then
   LOG_FILE="logs/latest.log"
-else
+elif grep -q "$BANNER" server.log 2>/dev/null; then
   LOG_FILE="server.log"
-fi
-
-# latest.log is log4j's file, and before issue #78 it rolled on a date change:
-# a run crossing midnight left a capture beginning mid-run, indistinguishable to
-# `grep -q` from a mod that never logged. The non-rolling config passed at launch
-# makes the whole-run premise TRUE; this makes it CHECKED. It accuses the log
-# capture, never the mod — the attribution rule scripts/test-wiki-links.sh states
-# for its own environment errors. Fails, never skips.
-# Gated on BOOTED: a server that died before the banner is a real boot failure and
-# already has its own verdict; this must not steal it.
-if [ "$BOOTED" -eq 1 ] && ! grep -q 'Starting minecraft server' "$LOG_FILE"; then
-  echo "[e2e] HARNESS FAULT: $LOG_FILE has no boot banner — the capture is truncated."
-  echo "[e2e] This accuses the LOG CAPTURE, not the mod. Nothing below was validly asserted."
+  echo "[e2e] NOTE: logs/latest.log has no boot banner — asserting against server.log (full console capture) instead."
+  echo "[e2e] first 5 lines of logs/latest.log, for diagnosis:"
+  head -5 logs/latest.log || true
+else
+  # Harness fault, never a mod verdict — the attribution rule
+  # scripts/test-wiki-links.sh states for its own environment errors. Prints its
+  # evidence: a verdict nobody can act on without an artifact download is the
+  # trap issue #78 is about.
+  echo "[e2e] HARNESS FAULT: no capture contains the boot banner — both are truncated."
+  echo "[e2e] This accuses the LOG CAPTURE, not the mod. Nothing was validly asserted."
+  echo "[e2e] head of logs/latest.log:"; head -20 logs/latest.log 2>/dev/null || echo "  (absent)"
+  echo "[e2e] head of server.log:";      head -20 server.log 2>/dev/null || echo "  (absent)"
   echo "E2E ${MC_VERSION} FAIL log-capture-truncated"
   exit 1
 fi

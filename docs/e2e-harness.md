@@ -294,23 +294,27 @@ load.
 
 ## Log capture
 
-Assertions grep `logs/latest.log` (falling back to `server.log`, the console
-capture, when log4j wrote nothing). Minecraft's own log4j config rolls
-`latest.log` on a date change, so a run crossing midnight used to leave a file
-that begins mid-run — and `grep -q` cannot tell a missing line from a rolled-away
-one, so four legs reported `mod-not-loaded` for a mod that worked (issue #78).
+Assertions grep whichever capture provably holds the **whole run**, decided by
+content: `logs/latest.log` if it contains the boot banner (`Starting minecraft
+server`), otherwise `server.log` — the raw stdout redirect of the server process,
+which has one run in it by construction and is never rolled or reconfigured. If
+neither has the banner the run fails as `log-capture-truncated`, printing the head
+of both files: that verdict accuses the harness, not the mod, the same attribution
+rule `scripts/test-wiki-links.sh` applies to its own environment errors.
 
-The container therefore boots with
+Why the check exists: Minecraft's log4j config rolls `latest.log` on a date change,
+so a run crossing midnight left a file beginning mid-run — and `grep -q` cannot
+tell a missing line from a rolled-away one, so four legs reported `mod-not-loaded`
+for a mod that worked (issue #78). The container therefore also boots with
 `-Dlog4j2.configurationFile=/mc-server/e2e-log4j2.xml` (`scripts/e2e-log4j2.xml`,
-baked into the image): Console + a non-rolling File appender, nothing else, so
+baked into the image): Console plus a non-rolling File appender, nothing more, so
 `latest.log` is one run by construction. The config is deliberately plain — the
-mc114 band runs log4j 2.8.1 on Java 8.
+mc114 band runs log4j 2.8.1 on Java 8 — and its pattern ends in `%msg%n` because
+the entrypoint asserts `[CommandsSpy] [Server] say$` anchored at end of line.
 
-Backing that up, the entrypoint asserts the boot banner (`Starting minecraft
-server`) is present before running any other assertion. A truncated capture is
-verdict `log-capture-truncated`, which accuses the harness, not the mod — the
-same attribution rule `scripts/test-wiki-links.sh` applies to its own environment
-errors.
+The banner selection is what covers the cases the config cannot: a loader that
+reconfigures log4j onto its own file mid-boot falls back to `server.log` with a
+`NOTE:` line naming what happened.
 
 ## Config-behaviors leg
 
