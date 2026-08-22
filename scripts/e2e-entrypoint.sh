@@ -218,9 +218,12 @@ fi
 # same worldgen, less loader on top. Per-version like BOOT_TIMEOUT in
 # e2e-run-one.sh, not a global raise — a bigger heap everywhere would hide a
 # genuine leak on the versions that fit.
-case "$MC_VERSION" in
-  1.18|1.18.1) DEFAULT_MAX_HEAP=1G ;;
-esac
+# An `if`, deliberately not a `case "$MC_VERSION"`: scripts/test-jar-routing.sh
+# lifts the era-literal case blocks out of this file by name and asserts there
+# are exactly three of them, so a fourth one here fails contracts.
+if [ "$MC_VERSION" = "1.18" ] || [ "$MC_VERSION" = "1.18.1" ]; then
+  DEFAULT_MAX_HEAP=1G
+fi
 JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx${DEFAULT_MAX_HEAP} -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
 # The fifo is held open read-write on fd 3 and handed to java as stdin directly.
 # A `tail -f console.in |` pipeline here is a trap: tail never exits, so a
