@@ -50,6 +50,10 @@ MOD_JAR_FORGE_MC116 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.16.x-forg
 # bounded by what booted, not by mappings; see the wiki,
 # Version-Boundaries-And-Root-Causes -> "Why one jar spans the whole NeoForge history".
 MOD_JAR_NEO := build/libs/commandsspy-$(MOD_VERSION)+mc1.20.2-26.2-neoforge.jar
+# The Babric jar, built by the separate babric/ Gradle build against the Ornithe
+# toolchain and reverse-converted. b1.7.3 only -- Babric is Beta 1.7.3 and nothing
+# else, so this is one jar for one version, not a band.
+MOD_JAR_BABRIC := babric/build/libs/commandsspy-$(MOD_VERSION)+mcb1.7.3-babric.jar
 
 # Optional Java override applied to EVERY version in this run:
 #   make e2e VERSIONS="1.21.11" JAVA=25
@@ -62,7 +66,7 @@ JAVA ?=
 # adding. 11 is manual-override only.
 JAVA_VERSIONS_SUPPORTED := 8 17 21 25 26
 
-# fabric (default) | quilt | forge | neoforge — which loader's server boots.
+# fabric (default) | quilt | forge | neoforge | babric — which loader's server boots.
 # See docs/e2e-harness.md.
 LOADER ?= fabric
 
@@ -119,6 +123,10 @@ _forge_jar_dep := $(if $(filter forge,$(LOADER)),$(MOD_JAR_FORGE) $(MOD_JAR_FORG
 # Only LOADER=neoforge needs the NeoForge jar built; a Fabric, Quilt or Forge
 # run must not pay for ModDevGradle's NeoForm pipeline.
 _neo_jars := $(if $(filter neoforge,$(LOADER)),$(MOD_JAR_NEO),)
+
+# Only LOADER=babric needs the Babric jar built; every other run must not pay for
+# the Ornithe/ploceus toolchain, which resolves from community mavens.
+_babric_jars := $(if $(filter babric,$(LOADER)),$(MOD_JAR_BABRIC),)
 E2E_KEYS := $(addsuffix $(_cfgvar_suffix),$(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS))))
 
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
@@ -193,11 +201,11 @@ e2e-images: ## pull-or-build the per-Java server Docker images serially, tag loc
 	  docker tag "$$ghcr_tag" "$$local_tag"; \
 	done
 
-e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
+e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) $(_babric_jars) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),$(words $(VERSIONS)))
 
-e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
+e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) $(_babric_jars) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),4)
 
@@ -205,8 +213,8 @@ e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(
 .PHONY: _e2e-fanout
 _e2e-fanout:
 	@case "$(LOADER)" in \
-	  fabric|quilt|forge|neoforge) ;; \
-	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt forge neoforge"; exit 1 ;; \
+	  fabric|quilt|forge|neoforge|babric) ;; \
+	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt forge neoforge babric"; exit 1 ;; \
 	esac
 	@echo "[e2e] Testing Minecraft versions: $(VERSIONS)"
 	@echo "[e2e] Loader: $(LOADER)"
@@ -225,6 +233,7 @@ _e2e-fanout:
 	  MOD_JAR_FORGE_EB7="$(MOD_JAR_FORGE_EB7)" \
 	  MOD_JAR_FORGE_MC116="$(MOD_JAR_FORGE_MC116)" \
 	  MOD_JAR_NEO="$(MOD_JAR_NEO)" \
+	  MOD_JAR_BABRIC="$(MOD_JAR_BABRIC)" \
 	  E2E_LOG_DIR="$(E2E_LOG_DIR)" \
 	  E2E_RESULT_DIR="$(E2E_RESULT_DIR)" \
 	  E2E_RUN_ID="$(E2E_RUN_ID)" \
@@ -299,6 +308,18 @@ $(MOD_JAR_FORGE): $(shell git ls-files forge src/main/java .env.version) | ci-im
 
 .PHONY: build-forge
 build-forge: $(MOD_JAR_FORGE) ## build the modern Forge jar, MC 1.20.6-1.21.5 (host gradlew + ForgeGradle 7)
+
+# Deliberately NOT a dependency of `build`, same reasoning as the Forge jars: this
+# one resolves the Ornithe/ploceus toolchain from community mavens (ploceus is a
+# SNAPSHOT line) and materialises its own Loom cache. Built on demand and by the
+# LOADER=babric e2e leg. `build` is the target, not `babricJar`: the plugin does not
+# attach babricJar to assemble, and babric/build.gradle wires the dependency.
+$(MOD_JAR_BABRIC): $(shell git ls-files babric src/main/java .env.version) | ci-image
+	@echo "[build] Building Babric jar (MC b1.7.3, Ornithe toolchain, reverse-converted)..."
+	@$(call in_ci_image_gradle,gradle -p babric build --no-daemon --quiet)
+
+.PHONY: build-babric
+build-babric: $(MOD_JAR_BABRIC) ## build the Babric jar, Minecraft b1.7.3 (separate Gradle build, Ornithe toolchain)
 
 # Legacy jar: issue #28 task 1, SRG-reobfuscated for the pre-1.20.5 era.
 $(MOD_JAR_FORGE_LEGACY): $(shell git ls-files forge src/main/java .env.version) | ci-image

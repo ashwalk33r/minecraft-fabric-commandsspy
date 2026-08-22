@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"package": "pl.m2x.commandsspy.babric.mixin",
+	"compatibilityLevel": "${mixin_compat}",
+	"mixins": [
+		"ServerPlayNetworkHandlerMixin",
+		"ServerCommandHandlerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

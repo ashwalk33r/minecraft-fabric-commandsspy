@@ -3,7 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"strconv"
 	"time"
 )
 
@@ -14,6 +17,10 @@ func runBot(args []string) error {
 	host := fs.String("host", "127.0.0.1", "server host")
 	port := fs.Int("port", 25565, "server port")
 	command := fs.String("command", "list", "command to send, without the slash")
+	// Protocol 14 (Beta 1.7.3) answers a modern status ping with 0xFF "Protocol
+	// error" — the status handshake postdates it — so that version cannot be
+	// negotiated and must be declared. 0 keeps the normal negotiate-by-ping path.
+	protocol := fs.Int("protocol", 0, "skip the status ping and assume this protocol (14 = Beta 1.7.3)")
 	timeout := fs.Duration("timeout", 150*time.Second, "global timeout for the whole run")
 	settle := fs.Duration("settle", 3*time.Second, "settle time after join and after the command")
 	if err := fs.Parse(args); err != nil {
@@ -23,6 +30,13 @@ func runBot(args []string) error {
 
 	// Absolute deadline: set on every socket, so no phase can outlive it.
 	deadline := time.Now().Add(*timeout)
+
+	// Protocol 14 (Beta 1.7.3, Babric) is pre-Netty and shares no framing with the
+	// table below, so it gets its own client rather than a table row — and it has no
+	// status ping to negotiate with either. See beta.go.
+	if *protocol == betaProtocolVersion {
+		return runBetaBot(*host, *port, *command, deadline, *settle)
+	}
 
 	name, proto, err := ping(*host, *port, deadline)
 	if err != nil {
@@ -72,6 +86,50 @@ func runBot(args []string) error {
 		return err
 	}
 	close(stop) // pumps exit; deferred Closes disconnect both players cleanly
+	log.Printf("[bots] done")
+	return nil
+}
+
+// runBetaBot is runBot's protocol-14 twin: same phases, same two players, same
+// attribution cross-check, over the pre-Netty framing in beta.go. It is separate
+// rather than a table row because none of mc.go's conn machinery — VarInt frames,
+// compression, the login state machine — exists on this protocol.
+func runBetaBot(host string, port int, command string, deadline time.Time, settle time.Duration) error {
+	var first net.Conn
+	for _, n := range []string{"e2e_player1", "e2e_player2"} {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), time.Until(deadline))
+		if err != nil {
+			return fmt.Errorf("beta (protocol %d): login phase, %s: %w", betaProtocolVersion, n, err)
+		}
+		defer func() { _ = c.Close() }()
+		if err := c.SetDeadline(deadline); err != nil {
+			return err
+		}
+		if err := betaLogin(c, n); err != nil {
+			return fmt.Errorf("beta (protocol %d): login phase, %s: %w", betaProtocolVersion, n, err)
+		}
+		log.Printf("[bots] %s logged in (Beta 1.7.3, protocol %d)", n, betaProtocolVersion)
+		// Drain and discard. Immediately after login the server floods entity and
+		// chunk packets this client has no parser for; left unread they fill the
+		// socket buffer and stall the server's writer for this connection. Nothing
+		// is asserted from the stream — the verdict comes from the server log, as it
+		// does for every other loader.
+		go func() { _, _ = io.Copy(io.Discard, c) }()
+		if first == nil {
+			first = c
+		}
+	}
+
+	// e2e_player2 sends nothing on purpose: it is the attribution cross-check.
+	time.Sleep(min(settle, time.Until(deadline)))
+	if err := betaSendChat(first, "/"+command); err != nil {
+		return fmt.Errorf("beta (protocol %d): command phase: %w", betaProtocolVersion, err)
+	}
+	log.Printf("[bots] e2e_player1 sent /%s", command)
+	time.Sleep(min(settle, time.Until(deadline)))
+	if !time.Now().Before(deadline) {
+		return fmt.Errorf("beta (protocol %d): global timeout", betaProtocolVersion)
+	}
 	log.Printf("[bots] done")
 	return nil
 }

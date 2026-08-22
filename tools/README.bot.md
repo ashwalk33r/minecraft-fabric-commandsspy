@@ -15,6 +15,7 @@ checks the log. Exit code 0 means every phase succeeded.
 3. **Status-ping phase.** Calls `ping()` (from `mc.go`) to ask the server its
    name and protocol number, then `rowFor()` (from `table.go`) to find the
    matching protocol-table row. Unsupported protocol = error out.
+   Skipped entirely when `-protocol` is given (see below).
 4. **Login phase.** Joins two players, `e2e_player1` and `e2e_player2`, via
    `join()`. Each gets a background `pump` goroutine that keeps the
    connection alive and reports errors on a channel.
@@ -37,6 +38,12 @@ so a failure line tells you exactly where it died.
 | `-command` | `list` | command to send, without the slash |
 | `-timeout` | `150s` | hard deadline for the entire run |
 | `-settle` | `3s` | pause after joins and after the command |
+| `-protocol` | `0` | skip the status ping and assume this protocol; `14` = Beta 1.7.3 |
+
+`-protocol` exists for exactly one version. A Beta 1.7.3 server answers the
+modern status ping with `0xFF` + `"Protocol error"` — the status handshake
+postdates it — so protocol 14 cannot be negotiated and must be declared. Every
+other loader still negotiates by ping, which is why the flag defaults to 0.
 
 ## Place in the tools/ package
 

@@ -1,0 +1,42 @@
+// Separate Gradle build ON PURPOSE, exactly like forge/ and neoforge/: ploceus and
+// Loom both own a `minecraft` extension and their own remap tasks, and the root build
+// produces four SHIPPING jars verified across the whole e2e grid. Isolation costs one
+// settings.gradle. See docs/babric-toolchain-spike.md for the resolved toolchain.
+pluginManagement {
+	repositories {
+		maven {
+			name = 'Ornithe'
+			url = 'https://maven.ornithemc.net/releases'
+		}
+		// Ploceus publishes only a SNAPSHOT line for the Loom 1.15 series, so this
+		// entry is required, not optional. See docs/babric-toolchain-spike.md section 3.
+		maven {
+			name = 'OrnitheSnapshots'
+			url = 'https://maven.ornithemc.net/snapshots'
+		}
+		maven {
+			name = 'GlassLauncher'
+			url = 'https://maven.glass-launcher.net/releases'
+		}
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		// retroconvert is published ONLY here -- a single-maintainer GitHub-Pages maven,
+		// not maven.glass-launcher.net. It carries the same class of availability risk as
+		// the server-jar mirror, for the one plugin with no substitute short of the
+		// fallback path. See docs/babric-toolchain-spike.md section 2.
+		maven {
+			name = 'Periut'
+			url = 'https://matthewperiut.github.io/repository'
+		}
+		mavenCentral()
+		gradlePluginPortal()
+	}
+}
+
+plugins {
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'commandsspy-babric'

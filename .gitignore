@@ -31,3 +31,7 @@ fabricloader.log
 # not cover its output tree - and that tree is multi-GB: ModDevGradle caches the
 # decompiled and recompiled Minecraft under it.
 neoforge/build/
+
+# babric/ is a standalone Gradle build too, so the root-anchored /build above does
+# not cover its output tree either. Same reason as neoforge/ and /forge/build.
+babric/build/

@@ -19,6 +19,11 @@ FORGE_EXPECT_REFUSED="${FORGE_EXPECT_REFUSED:-0}"
 FABRIC_EXPECT_REFUSED="${FABRIC_EXPECT_REFUSED:-0}"
 # Set by scripts/e2e-run-one.sh for LOADER=neoforge only.
 NEOFORGE_VERSION="${NEOFORGE_VERSION:-}"
+# Set by scripts/e2e-run-one.sh for LOADER=babric only, and asserted rather than
+# merely used: the loader version is the canary for toolchain drift (see below).
+# The default mirrors that script's own pin so a standalone run is not silently
+# unpinned.
+BABRIC_LOADER_VERSION="${BABRIC_LOADER_VERSION:-0.19.3}"
 # 1 = the config-behaviors leg: seed config/commands-spy.json BEFORE boot and
 # assert blacklist suppression + logArguments:true instead of the default-leg
 # assertions. Its own boot exists because CommandsSpy.CONFIG is a static final
@@ -57,6 +62,17 @@ elif [ "$LOADER" = "quilt" ]; then
   echo "[e2e] Copying pre-installed Quilt server for Minecraft $MC_VERSION..."
   cp -R /quilt-preinstalled/. .
   SERVER_LAUNCH_ARGS="-jar quilt-server-launch.jar"
+elif [ "$LOADER" = "babric" ]; then
+  # Babric: same host-side-install trick as Quilt, for a sharper reason -- the
+  # installer's polyfilled manifest is the ONLY thing that knows where a b1.7.3
+  # server jar lives (Mojang publishes none), so there is nothing this container
+  # could download for itself. Whole tree, not just the launch jar:
+  # fabric-server-launch.jar is a THIN jar whose manifest Class-Path points into
+  # libraries/. Copying it alone fails with "Could not find or load main class",
+  # which reads like a metadata bug and is not one.
+  echo "[e2e] Copying pre-installed Babric server for Minecraft $MC_VERSION..."
+  cp -R /babric-preinstalled/. .
+  SERVER_LAUNCH_ARGS="-jar fabric-server-launch.jar"
 elif [ "$LOADER" = "forge" ]; then
   # Forge: same host-side-install trick as Quilt (the installer wants a modern
   # JDK), but Forge is NEITHER a fat jar NOR a thin jar — 1.17+ installs a
@@ -109,7 +125,11 @@ fi
 # dependency was removed, and running without it is part of what this
 # test verifies.
 
-echo 'eula=true' > eula.txt
+# eula.txt postdates b1.7.3 (it landed in 1.7.10). The beta server never reads it
+# and never asks for it -- verified by booting one with no eula.txt present.
+if [ "$LOADER" != "babric" ]; then
+  echo 'eula=true' > eula.txt
+fi
 
 if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
   echo "[e2e] Config-behaviors leg: seeding config/commands-spy.json before boot"
@@ -122,6 +142,28 @@ if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
 CFGEOF
 fi
 
+if [ "$LOADER" = "babric" ]; then
+  # Beta 1.7.3 knows exactly fifteen keys -- verified by grepping the constant pool
+  # of every class in the server jar. enable-rcon, level-type, generator-settings,
+  # spawn-protection, simulation-distance, sync-chunk-writes,
+  # network-compression-threshold and generate-structures are all ABSENT, so the
+  # modern block below would be misleading rather than merely harmless. There is no
+  # RCON on this version; stdin is the only control channel (asserted below).
+  cat > server.properties <<EOF
+online-mode=false
+level-name=world
+level-seed=e2e
+max-players=5
+view-distance=3
+spawn-monsters=false
+spawn-animals=false
+pvp=true
+allow-nether=false
+allow-flight=false
+white-list=false
+server-port=25565
+EOF
+else
 cat > server.properties <<EOF
 enable-rcon=true
 rcon.port=${RCON_PORT}
@@ -152,6 +194,7 @@ allow-nether=false
 difficulty=peaceful
 enable-jmx-monitoring=false
 EOF
+fi
 
 # Boot the server with stdin attached to a fifo so we can send console commands
 # after it finishes starting up.
@@ -233,15 +276,29 @@ if [ "$BOOTED" -eq 1 ]; then
   echo "say e2e-args-probe" > console.in
   sleep 2
 
-  echo "[e2e] Sending RCON command..."
-  /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all || echo "[e2e] ⚠ RCON client failed"
+  if [ "$LOADER" = "babric" ]; then
+    echo "[e2e] Skipping RCON send: Beta 1.7.3 has no RCON (asserted absent below)"
+  else
+    echo "[e2e] Sending RCON command..."
+    /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all || echo "[e2e] ⚠ RCON client failed"
+  fi
 
   sleep 1
 
   # Bot's own timeout is 150s; the outer 160s timeout is the belt to its braces.
   if [ "$PLAYER_PHASE" = "1" ]; then
     echo "[e2e] Running player phase (bounded 160s)..."
-    timeout 160 /usr/local/bin/tools bot --host 127.0.0.1 --port 25565 --command list || echo "[e2e] ⚠ Player phase failed"
+    # Two era flags, both needed only on b1.7.3. --protocol 14: that version answers
+    # the modern status ping with 0xFF "Protocol error" (the status handshake
+    # postdates it), so the protocol cannot be negotiated and must be declared.
+    # --command me: on vanilla b1.7.3 `list` is a CONSOLE command and never reaches
+    # the player seam, which fires only for /me, /tell, /kill and the op set.
+    BOT_ARGS="--command list"
+    if [ "$LOADER" = "babric" ]; then
+      BOT_ARGS="--protocol 14 --command me"
+    fi
+    # shellcheck disable=SC2086 # BOT_ARGS is a flag list; word splitting is the point
+    timeout 160 /usr/local/bin/tools bot --host 127.0.0.1 --port 25565 $BOT_ARGS || echo "[e2e] ⚠ Player phase failed"
     # Settle so the command's log line is flushed before the kill below.
     sleep 1
   fi
@@ -393,6 +450,16 @@ case "$MC_VERSION" in
 esac
 echo "[e2e] Minecraft $MC_VERSION: expecting RCON command source named '$RCON_SOURCE_NAME'"
 
+# Console source name: CONSOLE on Beta 1.7.3, Server on every modern version. Both
+# come from the game's own CommandOutput.getName(), not from this mod -- b1.7.3
+# vanilla prints "CONSOLE: Stopping the server.." for the same reason. Era-exact
+# literal, never a pattern matching both: an assertion that cannot fail proves
+# nothing. Measured on a booted server; see docs/babric-toolchain-spike.md.
+case "$MC_VERSION" in
+  b1.7.3) CONSOLE_SOURCE_NAME="CONSOLE" ;;
+  *)      CONSOLE_SOURCE_NAME="Server" ;;
+esac
+
 # Config-behaviors leg: its own assertions and its own verdict, exactly like the
 # Forge out-of-range guard leg above. The default leg's assertions all assume the
 # stock config; here the config is deliberately non-stock, so they would be wrong.
@@ -408,7 +475,7 @@ if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
     echo "  [FAIL] mod not loaded (Loading CommandsSpy)"
     CFG_FAILURES="${CFG_FAILURES}config-variant-mod-not-loaded,"
   fi
-  if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then
+  if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] list" "$LOG_FILE"; then
     echo "  [FAIL] blacklisted command 'list' was logged"
     CFG_FAILURES="${CFG_FAILURES}blacklist-not-suppressed,"
   else
@@ -420,7 +487,7 @@ if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
     echo "  [FAIL] non-blacklisted RCON command not logged"
     CFG_FAILURES="${CFG_FAILURES}rcon-command-not-logged,"
   fi
-  if grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then
+  if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] say e2e-args-probe" "$LOG_FILE"; then
     echo "  [PASS] logArguments=true: 'say e2e-args-probe' logged with arguments"
   else
     echo "  [FAIL] logArguments=true: arguments not logged"
@@ -442,6 +509,12 @@ fi
 # Player /list literal: slash included <1.19, bare 'list' on 1.19+.
 # See docs/e2e-harness.md.
 case "$MC_VERSION" in
+  # Beta 1.7.3: the player seam fires only for /me, /tell, /kill and the op set --
+  # `list` is console-only there. /me is verified to reach
+  # ServerPlayNetworkHandler#handleCommand. The bot sends the SLASH (that is what
+  # makes it a command); the mod logs the bare name after normalization, which is
+  # why this literal has none.
+  b1.7.3)                                                      PLAYER_LIST_LITERAL="me" ;;
   1.14|1.14.*|1.15|1.15.*|1.16|1.16.*|1.17|1.17.*|1.18|1.18.*) PLAYER_LIST_LITERAL="/list" ;;
   *)                                                           PLAYER_LIST_LITERAL="list" ;;
 esac
@@ -485,6 +558,21 @@ if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
   fi
 fi
 
+# Babric declares no preLaunch entrypoint -- that one exists solely to measure the
+# Quilt pre-1.18 gap -- so the guard above already excludes it. This takes its place,
+# and it is a canary for toolchain drift rather than for the mod: the mod loads
+# identically on the frozen babric-fork loader (0.15.6-babric.2) and on upstream
+# 0.19.3, so without pinning the version the leg could silently start testing a
+# different stack after any upstream drift. Pinned to what the spike actually booted.
+if [ "$LOADER" = "babric" ]; then
+  # "Beta 1.7.3", NOT "b1.7.3": the loader prints the human-readable name, not the
+  # version id. Verified verbatim in the spike -- an assertion written against the
+  # version id never fires. See docs/babric-toolchain-spike.md.
+  if ! grep -q "Loading Minecraft Beta 1.7.3 with Fabric Loader ${BABRIC_LOADER_VERSION}" "$LOG_FILE"; then
+    FAILURES="${FAILURES}babric-loader-version-drift,"
+  fi
+fi
+
 # Two phrasings, era-exact: older Mixin says "was not found", modern Mixin
 # "could not find any targets matching". Fabric/Quilt only: neither Forge nor
 # NeoForge ships a mixin — both hook their platform's native CommandEvent — so
@@ -494,7 +582,7 @@ if [ "$LOADER" != "forge" ] && [ "$LOADER" != "neoforge" ] && grep -qE 'was not 
   FAILURES="${FAILURES}mixin-not-applied,"
 fi
 
-if ! grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then
+if ! grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] list" "$LOG_FILE"; then
   FAILURES="${FAILURES}console-command-not-logged,"
 fi
 
@@ -502,11 +590,25 @@ fi
 # CommandManager.execute, Forge/NeoForge their platform's CommandEvent, and
 # whether either fires for a name the dispatcher cannot resolve is exactly what
 # this asserts.
-if ! grep -q '\[CommandsSpy\] \[Server\] notacommand' "$LOG_FILE"; then
+if ! grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] notacommand" "$LOG_FILE"; then
   FAILURES="${FAILURES}unknown-command-not-logged,"
 fi
 
-if ! grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then
+# Beta 1.7.3 predates RCON entirely: there is no enable-rcon key and no listener.
+# This is asserted, not skipped, so the Babric leg carries the same number of
+# measured behaviours as every other loader and the wiki can say so. Two independent
+# halves: the server must not have written any rcon.* key into the properties file it
+# rewrites at boot, and nothing must be listening on the RCON port. The failure name
+# deliberately says "update docs" -- if RCON ever appears, the wiki claim is what is
+# wrong, not the mod.
+if [ "$LOADER" = "babric" ]; then
+  if grep -q '^rcon\.' server.properties 2>/dev/null; then
+    FAILURES="${FAILURES}babric-rcon-appeared-update-docs,"
+  fi
+  if /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all >/dev/null 2>&1; then
+    FAILURES="${FAILURES}babric-rcon-appeared-update-docs,"
+  fi
+elif ! grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then
   FAILURES="${FAILURES}rcon-command-not-logged,"
 fi
 
@@ -533,10 +635,10 @@ fi
 
 # logArguments default (false): the bare name is logged and the arguments are
 # NOT. Both halves are needed — the positive alone passes under either setting.
-if ! grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE"; then
+if ! grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] say$" "$LOG_FILE"; then
   FAILURES="${FAILURES}logargs-default-bare-name-missing,"
 fi
-if grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then
+if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] say e2e-args-probe" "$LOG_FILE"; then
   FAILURES="${FAILURES}logargs-default-leaked-arguments,"
 fi
 
@@ -567,12 +669,20 @@ fi
 if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandEvent, no Mixin to apply";
 elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoForge jar has no mixin (it hooks CommandEvent)";
 elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
-if grep -q '\[CommandsSpy\] \[Server\] list' "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
-if grep -q '\[CommandsSpy\] \[Server\] notacommand' "$LOG_FILE"; then echo "  [PASS] non-existing command logged"; else echo "  [FAIL] non-existing command not logged"; fi
-if grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
+if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] list" "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
+if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] notacommand" "$LOG_FILE"; then echo "  [PASS] non-existing command logged"; else echo "  [FAIL] non-existing command not logged"; fi
+if [ "$LOADER" = "babric" ]; then
+  case "$FAILURES" in
+    *babric-rcon-appeared-update-docs*) echo "  [FAIL] RCON appeared on b1.7.3 — update the wiki" ;;
+    *) echo "  [PASS] b1.7.3 has no RCON, as expected (asserted absent, not skipped)" ;;
+  esac
+elif grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
+if [ "$LOADER" = "babric" ]; then
+  if grep -q "Loading Minecraft Beta 1.7.3 with Fabric Loader ${BABRIC_LOADER_VERSION}" "$LOG_FILE"; then echo "  [PASS] loader version pinned: Beta 1.7.3 on Fabric Loader ${BABRIC_LOADER_VERSION} (upstream, not the frozen babric fork)"; else echo "  [FAIL] loader/version banner drifted from Beta 1.7.3 + Fabric Loader ${BABRIC_LOADER_VERSION} — the leg is testing a different stack"; fi
+fi
 if [ "$CONFIG_AT_BOOT" -eq 1 ]; then echo "  [PASS] config/commands-spy.json existed at boot, before any command ran"; else echo "  [FAIL] config/commands-spy.json did NOT exist at boot — MOD.md's \"On startup\" promise unmet on this leg"; fi
 if [ -f "$CONFIG_FILE" ] && grep -q '"blacklist": \[\]' "$CONFIG_FILE" && grep -q '"logArguments": false' "$CONFIG_FILE"; then echo "  [PASS] config/commands-spy.json auto-created with the documented initial schema"; else echo "  [FAIL] config/commands-spy.json missing or not the documented initial schema"; cat "$CONFIG_FILE" 2>/dev/null || true; fi
-if grep -q '\[CommandsSpy\] \[Server\] say$' "$LOG_FILE" && ! grep -q '\[CommandsSpy\] \[Server\] say e2e-args-probe' "$LOG_FILE"; then echo "  [PASS] logArguments=false (default): 'say e2e-args-probe' logged as bare 'say'"; else echo "  [FAIL] logArguments=false (default) not honoured for 'say e2e-args-probe'"; fi
+if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] say$" "$LOG_FILE" && ! grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] say e2e-args-probe" "$LOG_FILE"; then echo "  [PASS] logArguments=false (default): 'say e2e-args-probe' logged as bare 'say'"; else echo "  [FAIL] logArguments=false (default) not honoured for 'say e2e-args-probe'"; fi
 if [ "$PLAYER_PHASE" = "1" ]; then
   if grep -q "\[CommandsSpy\] \[Player: e2e_player1\] ${PLAYER_LIST_LITERAL}" "$LOG_FILE"; then echo "  [PASS] player command logged as [Player: e2e_player1] ${PLAYER_LIST_LITERAL}"; else echo "  [FAIL] player command not logged as [Player: e2e_player1] ${PLAYER_LIST_LITERAL}"; fi
   if [ "$PLAYER2_LINES" -eq 0 ]; then echo "  [PASS] cross-check: 0 'Player: e2e_player2' lines (silent player never attributed)"; else echo "  [FAIL] cross-check: ${PLAYER2_LINES} 'Player: e2e_player2' line(s) — silent player got attributed a command"; fi

@@ -18,7 +18,7 @@ on:
         required: true
         type: string
       loader:
-        description: "fabric, quilt, forge or neoforge — one per call, so each loader renders as its own job group in the Actions UI"
+        description: "fabric, quilt, forge, neoforge or babric — one per call, so each loader renders as its own job group in the Actions UI"
         required: true
         type: string
       config-variant:
@@ -88,6 +88,18 @@ jobs:
           mv build/libs/commandsspy-*+mc1.16.x-forge.jar forge/build/libs/
           ls -l forge/build/libs
 
+      # Same move as the Forge staging step above, for the same reason: the
+      # Babric jar comes out of the separate babric/ Gradle build, so `make`
+      # expects it under babric/build/libs. Only on the babric leg -- it is the
+      # only loader whose jar Make looks for there, and moving it
+      # unconditionally would just fail every other leg.
+      - name: "Stage the Babric jar"
+        if: inputs.loader == 'babric'
+        run: |
+          mkdir -p babric/build/libs
+          mv build/libs/commandsspy-*+mcb1.7.3-babric.jar babric/build/libs/
+          ls -l babric/build/libs
+
       # Present jar files mean Gradle is never invoked here. The JVM under test
       # lives in the Docker image, not on the runner.
       - name: "Verify prebuilt jars are in place"
@@ -98,6 +110,13 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
           test -f build/libs/commandsspy-*+mc1.20.2-26.2-neoforge.jar
+
+      # Its own step because the jar is staged elsewhere and only on this leg.
+      - name: "Verify the prebuilt Babric jar is in place"
+        if: inputs.loader == 'babric'
+        run: |
+          ls -l babric/build/libs
+          test -f babric/build/libs/commandsspy-*+mcb1.7.3-babric.jar
 
       # Keyed by MC version + loader (not Java): scripts/e2e-run-one.sh's
       # cache key is version+loader+installer, and the loader/installer

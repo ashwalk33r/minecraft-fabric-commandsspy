@@ -21,6 +21,13 @@ ARG BASE_VARIANT=jammy
 # Temurin JRE image ships no bash by default (confirmed via a real boot
 # test: without it, the container fails immediately with "exec ...: no
 # such file or directory").
+#
+# The Babric leg (java 21, so alpine) is safe on musl and needs nothing added
+# here: like Quilt, its server is installed HOST-side by scripts/e2e-run-one.sh
+# and bind-mounted in, and the Babric installer is a plain Java-8+ jar, so the
+# only things that ever enter this image for that leg are jars. Ornithe's own
+# installer would NOT be -- it is a glibc-linked ELF binary and would force a
+# jammy base -- which is exactly why the harness uses the Babric one.
 RUN if [ "$BASE_VARIANT" = "alpine" ]; then \
       apk add --no-cache curl bash; \
     else \

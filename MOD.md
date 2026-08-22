@@ -20,7 +20,10 @@ regenerates it.
 
 Short version: Fabric and Quilt share one jar per era, so a Quilt tag on a release
 listing is an accurate claim rather than a Fabric-compat assumption. Forge needs a
-different jar per mapping era. NeoForge takes a single jar across its whole history.
+different jar per mapping era. NeoForge takes a single jar across its whole history. Babric takes a single jar for a single Minecraft version, Beta 1.7.3, and it
+is the one platform where the mod hooks something other than a Brigadier
+dispatcher — Beta 1.7.3 has no Brigadier, so the jar hooks the game's two
+hand-rolled command seams instead.
 
 ## Examples
 Player "Ultra_MC" executing "/gamemode creative" command is logged without arguments in server logs when using config `"logArguments": false` (default):

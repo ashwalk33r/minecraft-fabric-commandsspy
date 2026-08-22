@@ -1,7 +1,7 @@
 # E2E harness
 
 Every supported Minecraft version boots as a real server in Docker — Fabric,
-Quilt, Forge or NeoForge, per the `LOADER` axis — receives commands over
+Quilt, Forge, NeoForge or Babric, per the `LOADER` axis — receives commands over
 console, RCON, and from a protocol-level player bot, and the log is asserted
 line by line.
 Entry points:
@@ -103,6 +103,10 @@ matching both eras — an assertion that cannot fail proves nothing.
   `chat_command` packet, whose payload has no slash, so the mod logs `list`.
 - **Mixin failure phrasing**: older Mixin reports "was not found", modern
   Mixin "could not find any targets matching"; the assert greps both.
+- **Console source name**: `CONSOLE` on Beta 1.7.3, `Server` on 1.14+. Both come
+  from the game's own `CommandOutput.getName()` rather than from this mod —
+  b1.7.3 vanilla prints `CONSOLE: Stopping the server..` for the same reason.
+  Measured on a booted b1.7.3 server, not disassembled.
 
 ## Boot-time tuning
 
@@ -291,6 +295,97 @@ than a shipped-jar list, because the jar is not the limit any more: one band jar
 covers 1.20.2-26.2, so the only way to miss is to ask for a version that has no
 NeoForge at all. Explicit failure, never a silent fallback to a jar that cannot
 load.
+
+## Babric server install
+
+`LOADER=babric` boots a real Babric server — Fabric for Minecraft Beta 1.7.3.
+The version axis has exactly one value: `b1.7.3` is the only Minecraft version
+Babric exists for, so `scripts/e2e-run-one.sh` exits non-zero on any other
+version under `LOADER=babric`, and on `b1.7.3` under any other loader. The two
+are inseparable and the check is asserted in both directions.
+
+The install happens **host-side**, the same trick the Quilt and Forge paths use,
+and for a sharper version of the same reason: nothing inside the server
+container knows where a b1.7.3 server jar lives. The Babric installer,
+`fabric-installer-1.0.0-babric.2.jar`, runs in a one-off
+`eclipse-temurin:21-jre-jammy` container as
+`java -jar installer.jar server -dir /out -mcversion b1.7.3 -loader 0.19.3
+-downloadMinecraft`. Only jars ever enter the server image, so the Java-21
+floor's alpine variant needed no change — Ornithe's installer, a glibc-linked
+ELF binary, would have forced a jammy base, which is one reason the harness uses
+the Babric one. The result is cached under `E2E_JAR_CACHE` with key
+`babric-b1.7.3-loader<N>-installer<N>`, beside the Fabric and Quilt entries, and
+bind-mounted read-only at `/babric-preinstalled`.
+
+Pins: loader `0.19.3` — **upstream `net.fabricmc:fabric-loader`, not the frozen
+`0.15.6-babric.2` babric fork** — and installer `1.0.0-babric.2`, both
+overridable via `BABRIC_LOADER_VERSION` / `BABRIC_INSTALLER_VERSION`.
+
+**The server jar is not Mojang's.** Mojang publishes no b1.7.3 server download
+at all; the installer's polyfilled manifest points at `files.betacraft.uk`, a
+single community mirror. This is the only leg in the harness that boots a server
+jar Mojang did not publish. The harness pins it: size `503100`, sha256
+`033a127e4a25a60b038f15369c89305a3d53752242a1cff11ae964954e79ba4d`, checked
+after install, and the leg fails with `babric-server-jar-hash-mismatch` on any
+other bytes. If that mirror disappears, this leg goes red — by design, because
+an unpinned fetch from a single community mirror is the failure mode the hash is
+there to make loud.
+
+`fabric-server-launch.jar` is a **thin** jar: its manifest `Class-Path` points
+into a relative `libraries/` tree, so the entrypoint copies the whole install
+tree (`cp -R /babric-preinstalled/.`) rather than just the launch jar. Copying
+the jar alone fails with `Could not find or load main class`, which reads like a
+metadata bug and is not one.
+
+Five ways a b1.7.3 server is not a modern one, each a specific branch in
+`scripts/e2e-entrypoint.sh`:
+
+1. **No `eula.txt`.** It postdates b1.7.3 (it landed in 1.7.10); the beta server
+   never reads it and never asks for it. The harness does not write one.
+2. **`server.properties` has fifteen keys and none of the modern ones.**
+   `enable-rcon`, `level-type`, `generator-settings`, `spawn-protection`,
+   `simulation-distance`, `sync-chunk-writes`,
+   `network-compression-threshold` and `generate-structures` are all absent, so
+   Babric writes its own small block instead of the modern one.
+3. **No RCON.** There is no `enable-rcon` key and no listener, so stdin is the
+   only control channel. The RCON assertion is replaced, not skipped — see
+   below.
+4. **A nanosecond ready line**: `Done (13105814836ns)!`, not
+   `Done (12.345s)!`. The boot wait greps `Done (`, which matches both
+   unchanged; only assertion text and docs need the `ns` form.
+5. **Two log formats in one file.** Loader lines are log4j
+   (`[HH:MM:SS] [Server thread/INFO]`), vanilla lines are
+   `YYYY-MM-DD HH:MM:SS [INFO]`, and the vanilla format takes over mid-log. The
+   mod's own lines come through log4j, so the `[CommandsSpy]` greps are
+   unaffected — but no grep here may be tightened to a modern timestamp shape.
+
+The player bot speaks **protocol 14** (`tools/beta.go`), a second and
+structurally different client from the modern one in `tools/table.go`: pre-Netty,
+so no VarInt length prefix, no compression, no encryption in offline mode and no
+login state machine. Protocol 14 cannot be negotiated by the modern ping path,
+so the bot takes an explicit `--protocol` flag (default `0` = negotiate, leaving
+every other loader's behaviour unchanged). The bot also sends `/me` rather than
+`/list`: on vanilla b1.7.3 `list` is a console command and never reaches the
+player seam.
+
+### Babric assertion differences
+
+Babric asserts **eleven of the twelve**, and the twelfth is *replaced*, not
+skipped. Beta 1.7.3 predates RCON, so instead of the RCON logging assertion the
+leg asserts RCON's **absence**: no `rcon.*` key in the properties file the server
+rewrites at boot, and nothing answering on the RCON port. Either appearing fails
+the leg as `babric-rcon-appeared-update-docs`. A skipped assertion is invisible
+on the wiki; an asserted absence is a row.
+
+The `preLaunch` assertion does not apply — the Babric metadata declares no such
+entrypoint, because that entrypoint exists solely to measure the Quilt pre-1.18
+gap. In its place the leg pins the loader version, asserting the banner
+`Loading Minecraft Beta 1.7.3 with Fabric Loader 0.19.3`, so toolchain drift onto
+the frozen babric fork surfaces as a named failure
+(`babric-loader-version-drift`) rather than as a passing test of something else.
+
+Console-source assertions use `CONSOLE`, not `Server` — see "Era-exact
+literals" above.
 
 ## Log capture
 

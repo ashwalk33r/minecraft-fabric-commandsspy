@@ -26,6 +26,16 @@ esac
 # HOME; consumers use the probe flags. 1.19.0 is unsupported (no ParseResults
 # overload). Rationale: the wiki, Version-Boundaries-And-Root-Causes.
 case "$VERSION" in
+  # Babric OVERRIDES the era table on both axes, exactly as NeoForge does below:
+  # its own jar instead of an era jar, and its own Java floor instead of a Fabric
+  # bytecode level. It lives IN the table rather than beside it because b1.7.3
+  # predates every band -- without a row here the table has nothing to say about
+  # it at all, and it would fall through to the modern default. Version-only, so
+  # --print-routing reports it: b1.7.3 is reachable on no other loader, and no
+  # other version is reachable on babric (both directions asserted below).
+  # 21, not the era-contemporary 8: the loader stack's floor, not the game's.
+  # See the wiki, Supported-Versions -> Babric.
+  b1.7.3)              FLOOR_JAVA=21; JAR_FAMILY=BABRIC ;;
   26*)                 FLOOR_JAVA=25; JAR_FAMILY=26 ;;
   1.20.3|1.20.4|1.20.5|1.20.6|1.21*) FLOOR_JAVA=21; JAR_FAMILY=121 ;;
   1.17*)               FLOOR_JAVA=17; JAR_FAMILY=114 ;;
@@ -163,9 +173,18 @@ esac
 
 LOADER="${LOADER:-fabric}"
 case "$LOADER" in
-  fabric|quilt|forge|neoforge) ;;
-  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge neoforge" >&2; exit 1 ;;
+  fabric|quilt|forge|neoforge|babric) ;;
+  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge neoforge babric" >&2; exit 1 ;;
 esac
+# babric and b1.7.3 are the same fact stated on two axes -- Babric is Beta 1.7.3
+# and nothing else (spec D7), and nothing else can boot b1.7.3. Asserted in BOTH
+# directions: one alone would let the other pairing pick a jar whose declared
+# minecraft version the server could never satisfy, and fail as a boot timeout.
+if { [ "$LOADER" = "babric" ] && [ "$VERSION" != "b1.7.3" ]; } \
+   || { [ "$LOADER" != "babric" ] && [ "$VERSION" = "b1.7.3" ]; }; then
+  echo "[e2e] LOADER=babric and VERSION=b1.7.3 are inseparable (got LOADER=$LOADER VERSION=$VERSION)" >&2
+  exit 1
+fi
 # FORGE_EXPECT_REFUSED/FORGE_JAR_BAND above are computed loader-independently
 # (cheap, and --print-forge-routing wants them regardless of LOADER), but the
 # out-of-range guard leg they drive only makes sense for a real Forge run —
@@ -215,6 +234,13 @@ if [ "$LOADER" = "forge" ] && [ "$FORGE_EXPECT_REFUSED" != "1" ]; then
     modern) FLOOR_JAVA=21; CEILING_JAVA="${FORGE_MODERN_JAVA_CEILING:-21}" ;;
   esac
 fi
+BABRIC_LOADER_VERSION="${BABRIC_LOADER_VERSION:-0.19.3}"
+BABRIC_INSTALLER_VERSION="${BABRIC_INSTALLER_VERSION:-1.0.0-babric.2}"
+# Mojang publishes NO server jar for b1.7.3 -- its version manifest entry carries a
+# client key only. The Babric installer's polyfilled manifest points at this community
+# mirror, and it is the single point of failure for the whole Babric leg. Pinned by hash
+# so a substituted or truncated file fails loudly here instead of booting something else.
+BABRIC_SERVER_SHA256="${BABRIC_SERVER_SHA256:-033a127e4a25a60b038f15369c89305a3d53752242a1cff11ae964954e79ba4d}"
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
 # Forge's analogue of Fabric's meta API. FORGE_BUILD pins a build explicitly;
@@ -232,6 +258,9 @@ FORGE_INSTALL_JDK="${FORGE_INSTALL_JDK:-21}"
 : "${MOD_JAR_26:?MOD_JAR_26 must be set}"
 if [ "$LOADER" = "neoforge" ]; then
   : "${MOD_JAR_NEO:?MOD_JAR_NEO must be set for LOADER=neoforge}"
+fi
+if [ "$LOADER" = "babric" ]; then
+  : "${MOD_JAR_BABRIC:?MOD_JAR_BABRIC must be set for LOADER=babric}"
 fi
 
 if [ "$LOADER" = "forge" ]; then
@@ -424,6 +453,61 @@ if [ "$LOADER" = "quilt" ]; then
   PREINSTALL_MOUNT_ARGS="-v ${QUILT_INSTALL_DIR}:/quilt-preinstalled:ro"
 fi
 
+# Babric path: the same host-side-install trick as Quilt, and for a sharper version
+# of the same reason -- the Babric installer is a Java-8+ jar, but the ONLY thing that
+# knows where a b1.7.3 server jar lives is its polyfilled manifest, so the install
+# cannot be deferred into the server container the way Fabric's self-downloading
+# launcher can. Output is cached and bind-mounted read-only exactly like Quilt's.
+if [ "$LOADER" = "babric" ]; then
+  BABRIC_CACHE_KEY="babric-b1.7.3-loader${BABRIC_LOADER_VERSION}-installer${BABRIC_INSTALLER_VERSION}"
+  if [ -n "$E2E_JAR_CACHE" ]; then
+    BABRIC_INSTALL_DIR="${E2E_JAR_CACHE}/${BABRIC_CACHE_KEY}"
+  else
+    PREINSTALL_TMP_DIR="$(mktemp -d)"
+    BABRIC_INSTALL_DIR="$PREINSTALL_TMP_DIR"
+  fi
+  mkdir -p "$BABRIC_INSTALL_DIR"
+  # fabric-server-launch.jar is a THIN jar (Main-Class + a relative Class-Path:
+  # libraries/... manifest entry), same as Quilt's -- the whole libraries/ tree must
+  # be present for the cache to count as a hit.
+  if [ -f "${BABRIC_INSTALL_DIR}/fabric-server-launch.jar" ] && [ -f "${BABRIC_INSTALL_DIR}/server.jar" ] && [ -d "${BABRIC_INSTALL_DIR}/libraries" ]; then
+    echo "[e2e] Babric install cache HIT for Minecraft $VERSION (loader $BABRIC_LOADER_VERSION, installer $BABRIC_INSTALLER_VERSION)"
+  else
+    echo "[e2e] Installing Babric server for Minecraft $VERSION (loader $BABRIC_LOADER_VERSION, installer $BABRIC_INSTALLER_VERSION)..."
+    BABRIC_STAGE_DIR="$(mktemp -d)"
+    BABRIC_INSTALLER_URL="https://maven.glass-launcher.net/babric/babric/fabric-installer/${BABRIC_INSTALLER_VERSION}/fabric-installer-${BABRIC_INSTALLER_VERSION}.jar"
+    # `server` is passed explicitly on purpose: the installer's Main forces `help`
+    # when headless AND no subcommand is given, which in a container means it exits 0
+    # having installed nothing. -downloadMinecraft is a bare FLAG, not a key/value,
+    # and -dir must already exist. --user: same host-ownership reason as Quilt above.
+    if docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        -v "${BABRIC_STAGE_DIR}:/out" \
+        eclipse-temurin:21-jre-jammy \
+        sh -c "curl -fsSL '${BABRIC_INSTALLER_URL}' -o /tmp/installer.jar && java -jar /tmp/installer.jar server -dir /out -mcversion ${VERSION} -loader ${BABRIC_LOADER_VERSION} -downloadMinecraft"; then
+      cp -R "${BABRIC_STAGE_DIR}/." "$BABRIC_INSTALL_DIR/"
+      rm -rf "$BABRIC_STAGE_DIR"
+    else
+      rm -rf "$BABRIC_STAGE_DIR"
+      printf 'E2E %s java%s FAIL babric-install-failed\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+      echo "[e2e] <- FAIL Minecraft $VERSION: Babric install failed"
+      exit 1
+    fi
+  fi
+  # Verify before anything boots it, and FAIL the leg -- never warn. This is the one
+  # jar in this repository that is not Mojang-signed: it comes from a single community
+  # mirror (files.betacraft.uk), and an unpinned fetch is how a leg starts silently
+  # asserting against different bytes. Re-checked on cache hits too, so a poisoned
+  # cache cannot survive a second run.
+  actual_sha="$(sha256sum "${BABRIC_INSTALL_DIR}/server.jar" | cut -d' ' -f1)"
+  if [ "$actual_sha" != "$BABRIC_SERVER_SHA256" ]; then
+    printf 'E2E %s java%s FAIL babric-server-jar-hash-mismatch\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+    echo "[e2e] FAIL b1.7.3 server jar hash mismatch: got $actual_sha, want $BABRIC_SERVER_SHA256" >&2
+    exit 1
+  fi
+  PREINSTALL_MOUNT_ARGS="-v ${BABRIC_INSTALL_DIR}:/babric-preinstalled:ro"
+fi
+
 # Forge path: same host-side-install trick, different installer. Forge has no
 # launcher jar to download — `--installServer` materialises a whole server tree
 # (libraries/, the vanilla jar, and a `unix_args.txt` @argfile), which is then
@@ -542,6 +626,7 @@ if docker run --rm \
     -e FABRIC_EXPECT_REFUSED="$FABRIC_EXPECT_REFUSED" \
     -e E2E_CONFIG_VARIANT="$CONFIG_VARIANT" \
     -e NEOFORGE_VERSION="$NEOFORGE_VERSION" \
+    -e BABRIC_LOADER_VERSION="$BABRIC_LOADER_VERSION" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
     "$@" \
     "$IMAGE" 2>&1 | tee "$LOG_FILE" | sed -u "s/^/[$KEY] /"; then
