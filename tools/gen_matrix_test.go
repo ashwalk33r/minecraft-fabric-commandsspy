@@ -23,6 +23,7 @@ var allKeys = []string{
 	"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26",
 	"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25",
 	"babric_java21",
+	"bta_java17",
 }
 
 func runGrid(t *testing.T, repoRoot, event, bands string) (string, map[string]string) {
@@ -110,9 +111,12 @@ var expected = map[string]map[string]int{
 	// Babric: one version, one JVM, identical on both events. declared ==
 	// sampled == deep, so there is nothing for the deep sweep to widen.
 	"babric_java21": {"pull_request": 1, "workflow_dispatch": 1},
+	// BTA: the sample is three of seven declared BTA releases -- the seam floor,
+	// the asset-rename build, and the head -- and the deep sweep boots all seven.
+	"bta_java17": {"pull_request": 3, "workflow_dispatch": 7},
 }
 
-const allBands = "t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116 neo babric"
+const allBands = "t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116 neo babric bta"
 
 func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 	_, out := runGrid(t, emptyRoot(t), "pull_request", allBands)
@@ -148,6 +152,9 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		// The whole Babric band, byte-pinned: one version, and the same one on
 		// every event.
 		"babric_java21": `["b1.7.3"]`,
+		// The BTA band, byte-pinned on both halves: the pull-request sample here,
+		// the whole declared list in TestCoverageTableAccountsForEveryDeclaredVersion.
+		"bta_java17": `["bta7.3","bta7.3_04","bta8.0.1"]`,
 	} {
 		if out[name] != want {
 			t.Errorf("%s = %s, want %s", name, out[name], want)
@@ -166,7 +173,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 			"forge_java21", "forge_legacy_java17", "forge_mc116_java8",
 			"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26",
 			"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25",
-			"babric_java21"} {
+			"babric_java21", "bta_java17"} {
 			if got, ok := out[name]; !ok || got != "[]" {
 				t.Errorf("[%s] %s = %q, want the literal []", event, name, got)
 			}
@@ -175,7 +182,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 79, "workflow_dispatch": 144}
+	totals := map[string]int{"pull_request": 82, "workflow_dispatch": 151}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge, neo and babric pairs (single-loader) plus 26 fixed
 	// jobs (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -197,7 +204,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// build-babric joined the nine build jobs. Adding a loader therefore moves
 	// this number twice, in two different places — that is what the split above
 	// is spelling out.
-	jobTotals := map[string]int{"pull_request": 144, "workflow_dispatch": 255}
+	jobTotals := map[string]int{"pull_request": 148, "workflow_dispatch": 263}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -250,15 +257,15 @@ func TestOptionCombinationTotals(t *testing.T) {
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 42, 62, 110},
-		{"t0", 26, 54, 78, 134},
-		{"t0 mc1192", 32, 65, 90, 156},
-		{"t0 mc1192 mc114", 39, 89, 104, 200},
-		{"t0 mc1192 mc114 forge", 42, 95, 107, 206},
-		{"t0 mc1192 mc114 forge forge_legacy", 53, 109, 118, 220},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 120, 129, 231},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 129, 136, 240},
-		{allBands, 79, 144, 144, 255},
+		{"", 18, 42, 63, 111},
+		{"t0", 26, 54, 79, 135},
+		{"t0 mc1192", 32, 65, 91, 157},
+		{"t0 mc1192 mc114", 39, 89, 105, 201},
+		{"t0 mc1192 mc114 forge", 42, 95, 108, 207},
+		{"t0 mc1192 mc114 forge forge_legacy", 53, 109, 119, 221},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 120, 130, 232},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 129, 137, 241},
+		{allBands, 82, 151, 148, 263},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -480,7 +487,7 @@ func TestPushEmitsEmptyBands(t *testing.T) {
 			t.Errorf("[push] %s = %q, want the literal []", name, got)
 		}
 	}
-	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=15\n", "EVENT_NAME=push\n"} {
+	for _, line := range []string{"GATED_PAIRS=0\n", "TOTAL_JOBS=16\n", "EVENT_NAME=push\n"} {
 		if !strings.Contains(stdout, line) {
 			t.Errorf("[push] summary missing %q", line)
 		}
@@ -559,6 +566,7 @@ var bandRows = map[string][]string{
 	"forge_eventbus7": {"forge_eventbus7_java21", "forge_eventbus7_java25", "forge_java26"},
 	"neo":             {"neo_java17", "neo_java21", "neo_java25", "neo_fwd_java25"},
 	"babric":          {"babric_java21"},
+	"bta":             {"bta_java17"},
 }
 
 func setOf(list []string) map[string]bool {
@@ -661,6 +669,48 @@ func TestGridBootsTheSampleThenTheDeepList(t *testing.T) {
 				t.Errorf("[%s] band %s: rows boot %v, which the table does not list", tc.event, name, extra)
 			}
 		}
+	}
+}
+
+// The BTA band's shape is a claim, not a convenience: every token must carry the
+// `bta` prefix that the routing table's both-directions invariant keys on, the
+// declared list must start at the seam floor (BTA 7.3, the first release with the
+// Brigadier CommandManager this jar mixes into), the sample must be a subset of
+// what is declared, and the deep sweep must boot the whole declared list so
+// `deep + excluded == declared` holds with nothing excluded. Prereleases are
+// never declared: none of these tokens may carry `-pre`.
+func TestBtaBandIsPrefixedExhaustiveAndFloored(t *testing.T) {
+	c, ok := coverage["bta"]
+	if !ok {
+		t.Fatal("no bta band in the coverage table")
+	}
+	if len(c.declared) == 0 || c.declared[0] != "bta7.3" {
+		t.Errorf("bta declared starts at %v, want bta7.3 -- the first release with CommandManager", c.declared)
+	}
+	declared := setOf(c.declared)
+	for _, v := range c.declared {
+		if !strings.HasPrefix(v, "bta") {
+			t.Errorf("bta declared version %q lacks the bta prefix the routing invariant keys on", v)
+		}
+		if strings.Contains(v, "-pre") {
+			t.Errorf("bta declared version %q is a prerelease; the band declares stable releases only", v)
+		}
+	}
+	for _, v := range c.sampled {
+		if !declared[v] {
+			t.Errorf("bta sampled version %q is not declared", v)
+		}
+	}
+	if len(c.deep) != len(c.declared) {
+		t.Errorf("bta deep = %v, want the whole declared list %v", c.deep, c.declared)
+	}
+	for _, v := range c.deep {
+		if !declared[v] {
+			t.Errorf("bta deep version %q is not declared", v)
+		}
+	}
+	if len(c.excluded) != 0 {
+		t.Errorf("bta excluded = %v, want empty: deep boots every declared version", c.excluded)
 	}
 }
 
