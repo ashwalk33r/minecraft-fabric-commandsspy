@@ -714,6 +714,42 @@ func TestBtaBandIsPrefixedExhaustiveAndFloored(t *testing.T) {
 	}
 }
 
+// The BTA band states the same fact in two spellings, and a sweep proved that letting
+// them drift costs four red legs: the e2e tokens name the PACKAGE to download
+// (`bta7.3_04`, which is what the release asset is called), while
+// `minecraft_range_bta` names what fabric-loader COMPARES -- and the loader normalizes
+// BTA's release name first, so `7.3_0N` is matched as `7.3.N`. Declaring the underscore
+// spelling refused the mod on four of the seven declared releases. This derives one list
+// from the other, both directions, so neither can gain or lose an entry alone.
+func TestBtaDeclaredTokensNormalizeToTheJarPredicate(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "bta", "gradle.properties"))
+	if err != nil {
+		t.Fatalf("read bta/gradle.properties: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^minecraft_range_bta=(\[.*\])$`).FindSubmatch(data)
+	if m == nil {
+		t.Fatal("bta/gradle.properties has no minecraft_range_bta line")
+	}
+	var declaredInJar []string
+	if err := json.Unmarshal(m[1], &declaredInJar); err != nil {
+		t.Fatalf("minecraft_range_bta is not a JSON array: %v", err)
+	}
+
+	// The documented normalization, and the only one: strip the axis prefix, then turn
+	// an `_0N` or `_N` suffix into `.N`.
+	underscore := regexp.MustCompile(`_0*(\d+)$`)
+	fromTokens := []string{}
+	for _, tok := range coverage["bta"].declared {
+		fromTokens = append(fromTokens, underscore.ReplaceAllString(strings.TrimPrefix(tok, "bta"), ".$1"))
+	}
+
+	missing, extra := diffSets(setOf(fromTokens), setOf(declaredInJar))
+	if len(missing) > 0 || len(extra) > 0 {
+		t.Errorf("bta declared tokens %v normalize to %v, but the jar declares %v (missing %v, extra %v)",
+			coverage["bta"].declared, fromTokens, declaredInJar, missing, extra)
+	}
+}
+
 func TestEveryRowBelongsToABand(t *testing.T) {
 	seen := map[string]int{}
 	for _, rows := range bandRows {
