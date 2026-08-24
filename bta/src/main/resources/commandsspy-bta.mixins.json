@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "pl.m2x.commandsspy.bta.mixin",
+	"compatibilityLevel": "${mixin_compat}",
+	"mixins": [
+		"CommandManagerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

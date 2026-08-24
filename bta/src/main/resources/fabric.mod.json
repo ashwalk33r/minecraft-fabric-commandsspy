@@ -1,0 +1,29 @@
+{
+	"schemaVersion": 1,
+	"id": "commandsspy",
+	"version": "${version}",
+	"name": "Commands Spy",
+	"description": "Log commands to server console.",
+	"authors": [
+		"Ultra_MC"
+	],
+	"contact": {
+		"homepage": "https://github.com/",
+		"sources": "https://github.com/"
+	},
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"pl.m2x.commandsspy.CommandsSpyBta"
+		]
+	},
+	"mixins": [
+		"commandsspy-bta.mixins.json"
+	],
+	"depends": {
+		"fabricloader": "${loader_range}",
+		"minecraft": ${minecraft_range},
+		"java": "${java_range}"
+	}
+}

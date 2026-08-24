@@ -1,0 +1,134 @@
+// "Better than Adventure!" — a FORK OF THE GAME, not another loader for Beta 1.7.3.
+// BTA ships unobfuscated classes, so there is no intermediary namespace, no mappings
+// and no remapping: mixins target real names and must set remap = false. Resolved
+// coordinates and the boot that proved them: docs/bta-toolchain-spike.md.
+plugins {
+	id 'java'
+	// BTA's Loom line. Published on the Signalum maven, not on maven.fabricmc.net.
+	id 'net.fabricmc.fabric-loom' version "${loom_version_bta}"
+}
+
+// Root .env.version stays the single MOD_VERSION source for every loader.
+def envVersionProps = new Properties()
+file("${rootDir}/../.env.version").withInputStream { envVersionProps.load(it) }
+def modVersion = envVersionProps.getProperty('MOD_VERSION')
+if (modVersion == null || modVersion.isBlank()) {
+	throw new GradleException("MOD_VERSION not found or empty in ../.env.version")
+}
+
+// One row per value, read once from gradle.properties.
+def btaVersion = project.bta_version
+def minecraftRange = project.minecraft_range_bta
+def loaderVersion = project.loader_version_bta
+def loaderRange = project.loader_range_bta
+def javaRange = project.java_range_bta
+def mixinCompat = project.mixin_compat_bta
+def btaManifestUrl = project.bta_manifest_url_bta
+
+// The target is BTA's own version line, not Minecraft's, so the filename says `bta`
+// where the other jars say `mc`. It must not read as a Minecraft version claim.
+version = "${modVersion}+bta7.3-8.0.1"
+group = 'm2x.commandsspy'
+base.archivesName = 'commandsspy'
+
+loom {
+	// BTA is not on any piston manifest; Loom reads BTA's own release metadata instead.
+	customMinecraftMetadata.set(btaManifestUrl)
+}
+
+repositories {
+	mavenCentral()
+	maven {
+		name = 'Fabric'
+		url = 'https://maven.fabricmc.net/'
+	}
+	maven {
+		name = 'SignalumInfrastructure'
+		url = 'https://maven.thesignalumproject.net/infrastructure'
+	}
+	maven {
+		name = 'SignalumReleases'
+		url = 'https://maven.thesignalumproject.net/releases'
+	}
+}
+
+// The shared, loader-agnostic core — source-included, exactly as forge/, neoforge/ and
+// babric/ do it, so all six loaders compile the same copy of CommandsSpy.java.
+sourceSets.main.java.srcDir("${rootDir}/../src/main/java")
+
+// BTA's manifest still lists Beta-era CLIENT libraries that no longer resolve anywhere
+// (lwjgl 2.9.4-babric.1, jinput, jutils, launchwrapper). A dedicated server never loads
+// them; without these excludes the build dies in dependency resolution. Same list BTA's
+// own example mod carries.
+configurations.configureEach {
+	exclude group: 'org.lwjgl.lwjgl'
+	exclude group: 'net.java.jutils'
+	exclude group: 'net.java.jinput'
+	exclude group: 'net.sf.jopt-simple'
+	exclude group: 'net.minecraft', module: 'launchwrapper'
+}
+
+dependencies {
+	minecraft "::${btaVersion}"
+	// NO `mappings` declaration at all. BTA is distributed unobfuscated, and this Loom
+	// line detects that: declaring even an empty layered set fails the build with
+	// "Cannot configure layered mappings in a non-obfuscated environment".
+	implementation "net.fabricmc:fabric-loader:${loaderVersion}"
+
+	// No Fabric API, no HalpLibe. The mod consumes no loader-exclusive API on any
+	// platform; the single mixin below hooks a BTA class directly. Mixin and
+	// MixinExtras arrive bundled inside the loader.
+
+	testImplementation "org.junit.jupiter:junit-jupiter-api:5.9.3"
+	testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.9.3"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.9.3"
+}
+
+test {
+	useJUnitPlatform()
+}
+
+processResources {
+	inputs.property "version", project.version
+	inputs.property "minecraft_range", minecraftRange
+	inputs.property "loader_range", loaderRange
+	inputs.property "java_range", javaRange
+	inputs.property "mixin_compat", mixinCompat
+
+	filesMatching("fabric.mod.json") {
+		expand "version": project.version, "minecraft_range": minecraftRange,
+				"loader_range": loaderRange, "java_range": javaRange
+	}
+
+	filesMatching("commandsspy-bta.mixins.json") {
+		expand "mixin_compat": mixinCompat
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 17
+}
+
+java {
+	withSourcesJar()
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+jar {
+	def archivesName = project.base.archivesName.get()
+	from("${rootDir}/../LICENSE") {
+		rename { "${it}_${archivesName}" }
+	}
+}
+
+// The shipped filename carries the loader, like every other jar in this repository:
+// commandsspy-<ver>+bta7.3-8.0.1-bta.jar. Loom's remapJar owns the artifact, so the
+// classifier goes there rather than into `version`, which must not repeat `bta`.
+// There is no remapJar task here -- with nothing to remap, Loom leaves the plain `jar`
+// as the shipped artifact -- so the classifier goes on `jar` itself.
+jar {
+	archiveClassifier = 'bta'
+}
