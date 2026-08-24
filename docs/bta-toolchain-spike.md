@@ -164,12 +164,38 @@ Two consequences, both measured:
    `[CommandsSpy/INFO]:` on 8.0.1 — so assertions match the message text, not the
    logger prefix.
 
-## 7. No RCON
+## 7. The declared version strings are not the release names
+
+fabric-loader **normalizes** the game version before matching a dependency
+predicate. BTA's underscore releases are named `7.3_01` … `7.3_04`, and the boot
+banner prints exactly that — but what `depends.minecraft` is compared against is
+the semver form:
+
+| BTA release | banner prints | predicate sees | e2e token |
+|---|---|---|---|
+| 7.3 | `7.3` | `7.3` | `bta7.3` |
+| 7.3_01 … 7.3_04 | `7.3_0N` | `7.3.N` | `bta7.3_0N` |
+| 8.0, 8.0.1 | `8.0`, `8.0.1` | `8.0`, `8.0.1` | `bta8.0`, `bta8.0.1` |
+
+Declaring the underscore spelling refused the mod on four of the seven declared
+releases, and the message is the one to recognise:
+
+```
+requires version 7.3, version 7.3_02, version 7.3_04, version 7.3_03, version 8.0,
+version 7.3_01 or version 8.0.1 of 'Minecraft' (minecraft),
+but only the wrong version is present: 7.3.4!
+```
+
+The e2e version tokens keep the underscore form, because they name the release
+asset to download; `tools/gen_matrix_test.go` derives one list from the other so
+the two spellings cannot drift apart.
+
+## 8. No RCON
 
 The `server.properties` BTA writes at boot carries no `rcon.*` key. Same
 proven-absence shape as the Babric row, asserted rather than skipped.
 
-## 8. The player-typed leg needed a new bot
+## 9. The player-typed leg needed a new bot
 
 `tools/beta.go`'s protocol 14 client fails immediately:
 
@@ -182,6 +208,11 @@ length prefix, no compression, no transport encryption) and changes everything
 else:
 
 - strings are `int16` **byte** count + UTF-8, not Beta's UTF-16BE code units
+- the chat packet has THREE shapes across the declared line: `7.3` writes
+  `type, UTF-8 string, encrypted`; `7.3_01`-`7.3_04` keep that order but switch the
+  string to protocol 14's UTF-16BE form; `8.0`+ renames the packet and writes
+  `type, encrypted, UTF-8 string`. The login tail moved too — `dimensionId` and
+  `worldTypeId` are bytes before 8.0 and int32s from 8.0 on
 - the protocol version is a per-release constant, not one number: `7.3`=29472,
   `7.3_01`=29441, `7.3_02`=29442, `7.3_03`=29443, `7.3_04`=29444, `8.0`=32768,
   `8.0.1`=32769. Each is the literal `PacketHandlerLogin` compares against, read
