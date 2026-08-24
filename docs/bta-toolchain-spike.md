@@ -115,12 +115,61 @@ Four consequences for the harness:
 Log format is a third variant: `[HH:MM:SS] [LogUtils/INFO]:` for the game and
 `[HH:MM:SS] [CommandsSpy/INFO]:` for the mod.
 
-## 6. No RCON
+## 6. Each BTA release bundles its own loader fork, and Java 17 is not optional
+
+The server packages do not share a loader:
+
+| BTA releases | fabric-loader fork | Mixin |
+|---|---|---|
+| 7.3, 7.3_01, 7.3_02, 7.3_03 | `0.15.6-bta.7` | 0.8.5 |
+| 7.3_04 | `0.18.4-bta.10` | 0.8.7 |
+| 8.0, 8.0.1 | `0.18.4-bta.11` | 0.8.7 |
+
+Two consequences, both measured:
+
+1. The jar's declared `fabricloader` range must floor at the **oldest** fork in the
+   declared set. Declaring `>=0.18.4-bta.11` refused the mod outright on four of the
+   seven releases:
+
+   ```
+   Mod 'Commands Spy' (commandsspy) 1.8.0+bta7.3-8.0.1 requires version
+   0.18.4-bta.11 or later of mod 'Fabric Loader', but only the wrong version is
+   present: 0.15.6-bta.7!
+   ```
+
+   The e2e leg pins the exact fork per version instead — a predicate cannot express
+   "whichever fork this package happens to ship".
+
+2. **The 0.15.6-era packages do not run on Java 21 at all**, and the failure has
+   nothing to do with this mod: HalpLibe, which BTA's own package ships in `mods/`,
+   fails to apply under Mixin 0.8.5 on a Java 21 runtime —
+
+   ```
+   Error loading class: java/lang/invoke/LambdaMetafactory
+       (java.lang.IllegalArgumentException: Unsupported class file major version 65)
+   MixinPreProcessorException: Attach error for halplibe.mixins.json:MinecraftServerMixin
+   ```
+
+   The same package on Java 17 boots clean with the mod loaded:
+
+   ```
+   [13:50:09] [main/INFO] (FabricLoader/GameProvider) Loading Minecraft 7.3 with Fabric Loader 0.15.6-bta.7
+   	- commandsspy 1.8.0+bta7.3-8.0.1
+   [13:50:09] [main/INFO] (CommandsSpy) Loading CommandsSpy by Ultra_MC.
+   [13:50:26] [Server thread/INFO] (Minecraft) Done (16545424688ns)! For help, type "help" or "?"
+   ```
+
+   So Java 17 is the JVM the band boots, not merely the version it declares. Note the
+   log decoration differs between eras too — `[main/INFO] (CommandsSpy)` on 7.3,
+   `[CommandsSpy/INFO]:` on 8.0.1 — so assertions match the message text, not the
+   logger prefix.
+
+## 7. No RCON
 
 The `server.properties` BTA writes at boot carries no `rcon.*` key. Same
 proven-absence shape as the Babric row, asserted rather than skipped.
 
-## 7. The player-typed leg needed a new bot
+## 8. The player-typed leg needed a new bot
 
 `tools/beta.go`'s protocol 14 client fails immediately:
 
@@ -133,7 +182,10 @@ length prefix, no compression, no transport encryption) and changes everything
 else:
 
 - strings are `int16` **byte** count + UTF-8, not Beta's UTF-16BE code units
-- protocol version is `32769`
+- the protocol version is a per-release constant, not one number: `7.3`=29472,
+  `7.3_01`=29441, `7.3_02`=29442, `7.3_03`=29443, `7.3_04`=29444, `8.0`=32768,
+  `8.0.1`=32769. Each is the literal `PacketHandlerLogin` compares against, read
+  out with `javap`; a mismatch is kicked as "Outdated client!"
 - the server opens with an unsolicited `0xFA` custom payload (a HalpLibe artifact,
   not protocol — skip any `0xFA` rather than expect a channel)
 - `0x01` Login carries protocol, username, a UUID, an **RSA public key string**,
