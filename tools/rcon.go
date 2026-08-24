@@ -8,10 +8,12 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
@@ -20,10 +22,18 @@ const (
 	serverdataAuth        = 3
 	serverdataExecCommand = 2
 	rconTimeout           = 10 * time.Second
+	rconAttempts          = 3
 	authID                = 1
 	cmdID                 = 2
 	sentinelID            = 3
 )
+
+// A var, not a const, purely so the retry tests do not pay three seconds.
+var rconRetryDelay = time.Second
+
+// Sentinel so the retry loop can recognise the one failure that is a verdict
+// rather than a transport hiccup.
+var errAuthFailed = errors.New("authentication failed (wrong rcon.password?)")
 
 func writePacket(w io.Writer, id, typ int32, payload string) error {
 	pkt := make([]byte, 14+len(payload)) // len | id | type | payload | \x00\x00
@@ -53,42 +63,46 @@ func readPacket(r io.Reader) (id, typ int32, payload string, err error) {
 	return id, typ, string(body[8 : n-2]), nil
 }
 
-func rconExec(addr, password, cmd string) (string, error) {
+// rconOnce is one whole conversation on one fresh connection: dial, auth, the
+// command, the sentinel. The middle return value names the phase that failed,
+// which is what makes an EOF diagnosable (issue #89 could not tell where the
+// exchange died).
+func rconOnce(addr, password, cmd string) (string, string, error) {
 	conn, err := net.DialTimeout("tcp", addr, rconTimeout)
 	if err != nil {
-		return "", err
+		return "", "dial", err
 	}
 	defer func() { _ = conn.Close() }()
 	if err := conn.SetDeadline(time.Now().Add(rconTimeout)); err != nil {
-		return "", err
+		return "", "deadline", err
 	}
 
 	if err := writePacket(conn, authID, serverdataAuth, password); err != nil {
-		return "", err
+		return "", "auth-write", err
 	}
 	for { // servers may send an empty RESPONSE_VALUE before the AUTH_RESPONSE (type 2)
 		id, typ, _, err := readPacket(conn)
 		if err != nil {
-			return "", err
+			return "", "auth-read", err
 		}
 		if typ != 2 {
 			continue
 		}
 		if id == -1 {
-			return "", fmt.Errorf("authentication failed (wrong rcon.password?)")
+			return "", "auth-read", errAuthFailed
 		}
 		break
 	}
 
 	if err := writePacket(conn, cmdID, serverdataExecCommand, cmd); err != nil {
-		return "", err
+		return "", "cmd-write", err
 	}
 	// Vanilla closes the connection if two client packets share one TCP
 	// segment, so read the first response packet before sending the sentinel.
 	var out strings.Builder
 	id, _, payload, err := readPacket(conn)
 	if err != nil {
-		return "", err
+		return "", "cmd-read", err
 	}
 	if id == cmdID {
 		out.WriteString(payload)
@@ -96,20 +110,50 @@ func rconExec(addr, password, cmd string) (string, error) {
 	// The server answers in order: everything before the sentinel's reply
 	// belongs to cmd; matched by request_id.
 	if err := writePacket(conn, sentinelID, serverdataExecCommand, ""); err != nil {
-		return "", err
+		return "", "sentinel-write", err
 	}
 	for {
 		id, _, payload, err := readPacket(conn)
 		if err != nil {
-			return "", err
+			return "", "cmd-read", err
 		}
 		if id == sentinelID {
-			return out.String(), nil
+			return out.String(), "", nil
 		}
 		if id == cmdID {
 			out.WriteString(payload)
 		}
 	}
+}
+
+// rconExec runs the conversation, retrying a connection that was ESTABLISHED
+// and then broke — the failure issue #89 saw once on 1.14.4, where the server
+// logged "Rcon connection from" and the client got EOF with no server-side
+// error. A refused dial and a rejected password are deterministic answers and
+// are returned on the first attempt: the Babric/BTA legs assert RCON's absence
+// by dialling a dead port, and that probe must stay instant.
+//
+// Every failed attempt is announced on stderr with its phase, its elapsed
+// time and the underlying error, so the flake stays countable in CI logs
+// instead of being papered over. scripts/e2e-entrypoint.sh greps for exactly
+// that line.
+func rconExec(addr, password, cmd string) (string, error) {
+	var lastErr error
+	for attempt := 1; attempt <= rconAttempts; attempt++ {
+		start := time.Now()
+		out, phase, err := rconOnce(addr, password, cmd)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = fmt.Errorf("%s: %w", phase, err)
+		if phase == "dial" || errors.Is(err, errAuthFailed) || attempt == rconAttempts {
+			break
+		}
+		fmt.Fprintf(os.Stderr, "[rcon] attempt %d/%d failed after %dms during %v; retrying in %v\n",
+			attempt, rconAttempts, time.Since(start).Milliseconds(), lastErr, rconRetryDelay)
+		time.Sleep(rconRetryDelay)
+	}
+	return "", lastErr
 }
 
 func runRcon(args []string) error {
