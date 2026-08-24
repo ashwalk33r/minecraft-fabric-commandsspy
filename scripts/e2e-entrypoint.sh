@@ -270,6 +270,10 @@ fi
 if [ "$MC_VERSION" = "1.18" ] || [ "$MC_VERSION" = "1.18.1" ]; then
   DEFAULT_MAX_HEAP=1G
 fi
+# CommandsSpy 1.9.0+ reports to bStats on boot. One export, deliberately not a seeded
+# config/bStats/config.json: it covers the default leg and the config-behaviors leg
+# alike, and it keeps scripts/test-jar-routing.sh's offline claim true.
+export BSTATS_ENABLED=false
 JAVA_FLAGS="${JAVA_FLAGS:--Xms512M -Xmx${DEFAULT_MAX_HEAP} -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
 # The fifo is held open read-write on fd 3 and handed to java as stdin directly.
 # A `tail -f console.in |` pipeline here is a trap: tail never exits, so a
