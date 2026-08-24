@@ -45,6 +45,27 @@ path that reaches `handleMessage`; the encrypted flag must be **false**, or the 
 AES-decrypts a plaintext line into garbage; and the slash is carried **in the string**,
 which is what makes the line a command rather than chat.
 
+`TestBtaPacketLayouts` also pins the login tail width: `dimensionId` and `worldTypeId` are
+bytes before 8.0 and int32s from 8.0 on, a six-byte difference.
+
+### TestBtaMessagePacketPerEra
+
+The message packet has three layouts across the seven releases and a wrong one is silent
+on the wire — the server just drops the connection — so all three are asserted byte for
+byte: 7.3 (`type`, UTF-8 string, `encrypted`), 7.3_01..7.3_04 (same order, UTF-16BE
+string), 8.0+ (`type`, `encrypted`, UTF-8 string).
+
+The last assertion in the test is the one that matters most: 7.3 and 7.3_04 must NOT
+encode identically. 7.3's protocol number is 29472, which sorts ABOVE 7.3_04's 29444, so
+anyone "tidying" the encoder's equality test into an ordered comparison silently puts 7.3
+in the wrong era. This fails when they do.
+
+### TestBtaPrintableStripsControlBytes
+
+The kick reason is the only untrusted text this client prints, and the harness greps the
+log it lands in — one control byte makes grep treat the whole capture as binary and skip
+it, costing the run its verdict.
+
 ### TestBtaKeepAliveIsABareByte
 
 Keep Alive is a bare `0x00` with no payload in both directions, inherited from Beta 1.7.3.

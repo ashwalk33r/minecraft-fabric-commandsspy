@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Protocol 32769 — "Better than Adventure!", a THIRD client next to table.go's modern
@@ -33,6 +34,14 @@ import (
 const (
 	btaProtocolVersion    = 32769 // BTA 8.0.1, the newest declared version
 	btaMinProtocolVersion = 29441 // BTA 7.3_01, the lowest number any declared version uses
+
+	// The two wire boundaries, both measured with javap over all seven server jars.
+	// Note the numbers do NOT sort by release: 7.3 is 29472, ABOVE 7.3_01..7.3_04's
+	// 29441..29444, so the older-than-8.0 test is a comparison and the 7.3 test is an
+	// equality. A predicate cannot express it; a range table would be three rows of
+	// ceremony for two branches.
+	btaProtocol73 = 29472 // BTA 7.3, the last release whose chat string is UTF-8
+	btaProtocol80 = 32768 // BTA 8.0, where the chat fields swap and the login tail widens
 )
 
 // Packet ids, serverbound unless noted.
@@ -78,6 +87,11 @@ func btaHandshakePacket(username string) []byte {
 // btaLoginPacket sends zero seed/dimension/world-type: the server ignores those on a
 // serverbound login and replies with the real values. The UUID and publicKey are NOT
 // ignored — see btaOfflineUUID and btaPublicKey.
+//
+// dimensionId and worldTypeId are BYTES before 8.0 and int32s from 8.0 on. Sending the
+// wide form to a 7.3-line server leaves six stray zero bytes in the stream, which that
+// server reads as six bare keep-alives — harmless by luck, not by design, and the luck
+// runs out the moment a non-zero value is sent.
 func btaLoginPacket(protocol int, username, publicKey string) []byte {
 	out := []byte{btaPacketLogin}
 	out = binary.BigEndian.AppendUint32(out, uint32(protocol))
@@ -86,9 +100,13 @@ func btaLoginPacket(protocol int, username, publicKey string) []byte {
 	out = append(out, uuid[:]...)
 	out = append(out, btaString(publicKey)...)
 	out = binary.BigEndian.AppendUint64(out, 0) // worldSeed
-	out = binary.BigEndian.AppendUint32(out, 0) // dimensionId
-	out = binary.BigEndian.AppendUint32(out, 0) // worldTypeId
-	out = append(out, 0x00)                     // packetDelay
+	if protocol >= btaProtocol80 {
+		out = binary.BigEndian.AppendUint32(out, 0) // dimensionId
+		out = binary.BigEndian.AppendUint32(out, 0) // worldTypeId
+	} else {
+		out = append(out, 0x00, 0x00) // dimensionId, worldTypeId
+	}
+	out = append(out, 0x00) // packetDelay
 	return out
 }
 
@@ -96,9 +114,33 @@ func btaLoginPacket(protocol int, username, publicKey string) []byte {
 // is false, which tells the server to take the string verbatim rather than AES-decrypt
 // it. Only the message FIELD is ever encrypted on this protocol, never the stream, and
 // only client→server chat may opt out — which is why this bot never needs a cipher.
-func btaMessagePacket(message string) []byte {
-	out := []byte{btaPacketMessage, btaMessageTypeChat, 0x00 /* encrypted = false */}
-	return append(out, btaString(message)...)
+//
+// This is the packet that changed most across releases — three shapes, all read off the
+// server jars rather than guessed, because a wrong one is not an error: the server drops
+// the connection the instant it arrives ("lost connection: disconnect.genericReason")
+// and the command never reaches the command manager.
+//
+//	7.3            (29472)  PacketChat:    type, string UTF-8,    encrypted
+//	7.3_01..7.3_04 (29441+)  PacketChat:    type, string UTF-16BE, encrypted
+//	8.0, 8.0.1     (32768+)  PacketMessage: type, encrypted,       string UTF-8
+//
+// The 8.0 line also reads a format short between the flag and the string, but ONLY when
+// the type byte's high bit is set. TYPE_CHAT never sets it, so this never writes one.
+func btaMessagePacket(protocol int, message string) []byte {
+	out := []byte{btaPacketMessage, btaMessageTypeChat}
+	if protocol >= btaProtocol80 {
+		out = append(out, 0x00 /* encrypted = false */)
+		return append(out, btaString(message)...)
+	}
+	// 7.3_01 switched this one field to UTF-16BE — which is protocol 14's string16
+	// exactly (an int16 count of code units, then UTF-16BE), so it borrows beta.go's
+	// encoder rather than growing a second one here.
+	if protocol == btaProtocol73 {
+		out = append(out, btaString(message)...)
+	} else {
+		out = append(out, betaString16(message)...)
+	}
+	return append(out, 0x00 /* encrypted = false */)
 }
 
 func btaKeepAlivePacket() []byte {
@@ -167,11 +209,24 @@ func btaNextPacketID(r io.Reader) (byte, error) {
 			// NUL-interleaved: unreadable, and enough to make grep call a captured log
 			// binary and skip it.
 			reason, _ := betaReadString16(r)
-			return 0, fmt.Errorf("server disconnected us: %s", reason)
+			return 0, fmt.Errorf("server disconnected us: %s", btaPrintable(reason))
 		default:
 			return id[0], nil
 		}
 	}
+}
+
+// btaPrintable drops control characters from a server-supplied string before it reaches
+// a log line. The kick reason is the only untrusted text this client prints, and the e2e
+// harness greps the log it lands in: one stray NUL makes grep call the whole capture
+// binary and skip it, costing the run its verdict.
+func btaPrintable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // btaLogin runs the whole offline-mode login: handshake, then login request. The
@@ -224,20 +279,22 @@ func btaLogin(conn net.Conn, protocol int, username string) error {
 	if _, err := btaReadString(conn); err != nil { // the server's own public key
 		return fmt.Errorf("read server public key: %w", err)
 	}
-	var tail struct {
-		WorldSeed   int64
-		DimensionID int32
-		WorldTypeID int32
-		PacketDelay int8
+	// worldSeed (int64), dimensionId, worldTypeId, packetDelay (int8) — all discarded,
+	// so only their WIDTH matters: dimensionId and worldTypeId are bytes before 8.0 and
+	// int32s from 8.0 on. Reading the wide form off a 7.3-line server would swallow six
+	// bytes of whatever came next.
+	tail := int64(8 + 1 + 1 + 1)
+	if protocol >= btaProtocol80 {
+		tail = 8 + 4 + 4 + 1
 	}
-	if err := binary.Read(conn, binary.BigEndian, &tail); err != nil {
+	if _, err := io.CopyN(io.Discard, conn, tail); err != nil {
 		return fmt.Errorf("read login tail: %w", err)
 	}
 	return nil
 }
 
-func btaSendChat(conn net.Conn, message string) error {
-	if _, err := conn.Write(btaMessagePacket(message)); err != nil {
+func btaSendChat(conn net.Conn, protocol int, message string) error {
+	if _, err := conn.Write(btaMessagePacket(protocol, message)); err != nil {
 		return fmt.Errorf("write message %q: %w", message, err)
 	}
 	return nil

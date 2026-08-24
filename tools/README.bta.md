@@ -40,10 +40,10 @@ with no second line for `e2e_player2` — the attribution cross-check.
 |---|---|---|
 | `0x02` Handshake | C→S | `byte 0x02` + `string username` |
 | `0x02` Handshake | S→C | `byte 0x02` + `string hash` — offline mode returns exactly `-` |
-| `0x01` Login | C→S | `byte 0x01` + `int protocol (per release)` + `string username` + `16 bytes uuid` + `string publicKey` + `long worldSeed (0)` + `int dimensionId (0)` + `int worldTypeId (0)` + `byte packetDelay (0)` |
+| `0x01` Login | C→S | `byte 0x01` + `int protocol (per release)` + `string username` + `16 bytes uuid` + `string publicKey` + `long worldSeed (0)` + `dimensionId` + `worldTypeId` + `byte packetDelay (0)` — the two ids are **bytes before 8.0, int32s from 8.0** |
 | `0x01` Login | S→C | `byte 0x01` + `int entityId` + `string (empty)` + `16 bytes uuid` + `string serverPublicKey` + `long worldSeed` + `int dimensionId` + `int worldTypeId` + `byte packetDelay` |
 | `0x00` Keep Alive | both | a **bare single byte**, no payload |
-| `0x03` Message | C→S | `byte 0x03` + `byte type (0 = chat)` + `byte encrypted (0)` + `string message` (a leading `/` makes it a command) |
+| `0x03` Message | C→S | three shapes, see below |
 | `0x88` AES Send Key | S→C | `byte 0x88` + `string` — the player's AES key, RSA-encrypted to the client's public key |
 | `0xFA` Custom Payload | S→C | `byte 0xFA` + `string channel` + `int size` + `size` bytes |
 | `0xFF` Disconnect | S→C | `byte 0xFF` + **`string16 reason`** — UTF-16BE, not this protocol's UTF-8 |
@@ -71,6 +71,33 @@ the caller's number straight into `btaLoginPacket`. The version→number table l
 here; `bta.go` only knows where the range starts (`btaMinProtocolVersion`), which is all
 the dispatch needs — modern protocol numbers are three digits, BTA's are five.
 
+## The message packet has three shapes
+
+This is the packet that changed most, and a wrong shape is **not an error**: the server
+drops the connection the instant it arrives (`lost connection: disconnect.genericReason`)
+and the command never reaches the command manager. All three were read off the seven
+server jars with `javap`, not guessed:
+
+| Versions | Class | Layout |
+|---|---|---|
+| 7.3 | `PacketChat` | `type`, `string UTF-8`, `encrypted` |
+| 7.3_01 … 7.3_04 | `PacketChat` | `type`, **`string UTF-16BE`**, `encrypted` |
+| 8.0, 8.0.1 | `PacketMessage` | `type`, `encrypted`, `string UTF-8` |
+
+Two things worth spelling out. **7.3 sorts above the releases that follow it** (29472 >
+29444), so the test for it is an equality and only the 8.0 test is a comparison — an
+ordered predicate over all three would put 7.3 in the wrong era. And the UTF-16BE form is
+protocol 14's `string16` *exactly* — `writeShort(String.length())` then the UTF-16BE bytes
+— so it borrows `beta.go`'s encoder instead of growing a second codec here.
+
+The 8.0 line also reads a format `short` between the flag and the string, but **only when
+the type byte's high bit is set**. `TYPE_CHAT` never sets it, so the bot never writes one.
+
+The login tail moved on the same boundary: `dimensionId` and `worldTypeId` are bytes
+before 8.0 and int32s from 8.0 on. The wide form sent to a 7.3-line server leaves six
+stray zero bytes, which that server reads as six bare keep-alives — harmless by luck, not
+by design, and the luck ends the moment a non-zero value is sent.
+
 ## The kick reason is UTF-16BE
 
 Every string on this protocol is `int16` byte count + UTF-8 — **except** the `0xFF`
@@ -83,7 +110,9 @@ server disconnected us:  O u t d a t e d
 ```
 
 — half the string, NUL-interleaved. Unreadable, and the NULs are enough to make `grep`
-call a captured e2e log binary and skip it, which costs the run its verdict line.
+call a captured e2e log binary and skip it, which costs the run its verdict line. The
+decode is the fix; `btaPrintable` then strips any control byte that survives, because
+this is the only server-supplied text the bot prints.
 
 ## The two fields that are load-bearing
 
@@ -133,13 +162,16 @@ the stream: **the verdict comes from the server log.**
 
 - `btaString(s)` / `btaReadString(r)` — the string form above, both directions.
 - `btaHandshakePacket`, `btaLoginPacket`, `btaMessagePacket`, `btaKeepAlivePacket` — one
-  function per serverbound packet, so `bta_test.go` can assert them byte for byte.
+  function per serverbound packet, so `bta_test.go` can assert them byte for byte. The
+  last two take the protocol number, because their layout depends on it.
+- `btaPrintable(s)` — strips control bytes from the one untrusted string this client
+  prints.
 - `btaOfflineUUID(username)` / `btaPublicKey()` — the two load-bearing login fields.
 - `btaNextPacketID(r)` — the next packet id, past the noise.
 - `btaLogin(conn, username)` — the whole offline-mode login: handshake, hash check, login
   request, login reply. A hash other than `-` means the server is not in offline mode and
   the leg's `server.properties` is wrong.
-- `btaSendChat(conn, message)` — one Message packet.
+- `btaSendChat(conn, protocol, message)` — one Message packet.
 
 ## Place in the package
 

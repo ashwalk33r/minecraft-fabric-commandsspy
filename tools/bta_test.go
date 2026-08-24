@@ -90,21 +90,69 @@ func TestBtaPacketLayouts(t *testing.T) {
 		}
 	})
 
-	// The header is the whole point of this subtest. The type byte selects TYPE_CHAT,
-	// the path that reaches handleMessage; the encrypted flag MUST be false, or the
-	// server AES-decrypts the plaintext line into garbage. Both failures are silent —
-	// the packet is accepted and the command simply never runs.
-	t.Run("message header is chat, unencrypted, and carries the slash", func(t *testing.T) {
-		want := []byte{0x03, 0x00, 0x00}
-		want = append(want, btaString("/me waves")...)
-		got := btaMessagePacket("/me waves")
-		if !bytes.Equal(got, want) {
-			t.Fatalf("message = % x, want % x", got, want)
+	// The 8.0-line login widened dimensionId and worldTypeId from bytes to int32s. The
+	// narrow form is six bytes shorter, and nothing else about the packet moves.
+	t.Run("login tail is narrow before 8.0", func(t *testing.T) {
+		wide := btaLoginPacket(btaProtocolVersion, "e2e_player1", "K")
+		narrow := btaLoginPacket(btaProtocol73, "e2e_player1", "K")
+		if len(wide)-len(narrow) != 6 {
+			t.Fatalf("7.3 login is %d bytes and 8.0.1's is %d — want a 6-byte difference", len(narrow), len(wide))
 		}
-		if !bytes.Contains(got, []byte("/me waves")) {
-			t.Fatalf("message %q lost the leading slash that makes it a command", got)
+		if got, want := narrow[len(narrow)-3:], []byte{0x00, 0x00, 0x00}; !bytes.Equal(got, want) {
+			t.Fatalf("7.3 login tail = % x, want three bytes: dimensionId, worldTypeId, packetDelay", got)
 		}
 	})
+}
+
+// The message packet is the one that changed most across BTA releases, and a wrong shape
+// is not an error: the server drops the connection the instant it arrives and the command
+// never runs. All three layouts are read off the server jars with javap, not guessed.
+//
+// The type byte selects TYPE_CHAT, the path that reaches the command seam; the encrypted
+// flag must be false, or the server AES-decrypts the plaintext line into garbage; and the
+// slash is carried in the string, which is what makes the line a command rather than chat.
+func TestBtaMessagePacketPerEra(t *testing.T) {
+	const line = "/me waves"
+	cases := []struct {
+		name     string
+		protocol int
+		want     []byte
+	}{
+		// PacketChat: type, string UTF-8, encrypted.
+		{"7.3", btaProtocol73, append(append([]byte{0x03, 0x00}, btaString(line)...), 0x00)},
+		// PacketChat: type, string UTF-16BE, encrypted — the codec changed in 7.3_01,
+		// and it is protocol 14's string16 exactly.
+		{"7.3_01", 29441, append(append([]byte{0x03, 0x00}, betaString16(line)...), 0x00)},
+		{"7.3_04", 29444, append(append([]byte{0x03, 0x00}, betaString16(line)...), 0x00)},
+		// PacketMessage: type, encrypted, string UTF-8. The format short between the
+		// flag and the string is read only when the type's high bit is set, and
+		// TYPE_CHAT never sets it.
+		{"8.0", btaProtocol80, append([]byte{0x03, 0x00, 0x00}, btaString(line)...)},
+		{"8.0.1", btaProtocolVersion, append([]byte{0x03, 0x00, 0x00}, btaString(line)...)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := btaMessagePacket(c.protocol, line)
+			if !bytes.Equal(got, c.want) {
+				t.Fatalf("message = % x, want % x", got, c.want)
+			}
+		})
+	}
+
+	// 7.3 sorts ABOVE the releases that follow it (29472 > 29444), so an ordered
+	// predicate would put it in the wrong era. This is the test that catches a refactor
+	// that "tidies" the equality into a comparison.
+	if bytes.Equal(btaMessagePacket(btaProtocol73, line), btaMessagePacket(29444, line)) {
+		t.Fatal("7.3 and 7.3_04 encode the same, but 7.3 is UTF-8 and 7.3_04 is UTF-16BE")
+	}
+}
+
+// The kick reason is the only untrusted text this client prints, and the harness greps
+// the log it lands in: one control byte makes grep call the capture binary and skip it.
+func TestBtaPrintableStripsControlBytes(t *testing.T) {
+	if got := btaPrintable("Outdated\x00 server!\n"); got != "Outdated server!" {
+		t.Fatalf("btaPrintable = %q, want %q", got, "Outdated server!")
+	}
 }
 
 // Keep Alive is a BARE byte in both directions — no payload at all, inherited from

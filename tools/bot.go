@@ -178,7 +178,7 @@ func runBtaBot(host string, port, protocol int, command string, deadline time.Ti
 
 	// e2e_player2 sends nothing on purpose: it is the attribution cross-check.
 	time.Sleep(min(settle, time.Until(deadline)))
-	if err := btaSendChat(first, "/"+command); err != nil {
+	if err := btaSendChat(first, protocol, "/"+command); err != nil {
 		return fmt.Errorf("bta (protocol %d): command phase: %w", protocol, err)
 	}
 	log.Printf("[bots] e2e_player1 sent /%s", command)
