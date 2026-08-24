@@ -137,6 +137,10 @@ func rconOnce(addr, password, cmd string) (string, string, error) {
 // time and the underlying error, so the flake stays countable in CI logs
 // instead of being papered over. scripts/e2e-entrypoint.sh greps for exactly
 // that line.
+//
+// If the break happens after the write already reached the server, the
+// server has likely already run cmd, so a retry can run it twice — callers
+// must only pass an idempotent cmd.
 func rconExec(addr, password, cmd string) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= rconAttempts; attempt++ {

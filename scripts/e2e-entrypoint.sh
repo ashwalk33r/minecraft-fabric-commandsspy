@@ -453,6 +453,7 @@ else
   echo "[e2e] This accuses the LOG CAPTURE, not the mod. Nothing was validly asserted."
   echo "[e2e] head of logs/latest.log:"; head -20 logs/latest.log 2>/dev/null || echo "  (absent)"
   echo "[e2e] head of server.log:";      head -20 server.log 2>/dev/null || echo "  (absent)"
+  print_warnings
   echo "E2E ${MC_VERSION} FAIL log-capture-truncated"
   exit 1
 fi

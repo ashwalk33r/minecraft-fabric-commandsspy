@@ -26,7 +26,7 @@ the wiki's [Version boundaries and root causes](https://github.com/ashwalk33r/mi
 2. **Console + RCON** — `list` via the console fifo, `save-all` via RCON. The
    RCON client retries a connection that breaks after being established, three
    attempts a second apart (issue #89); a refused dial is never retried, which
-   is what keeps the Babric/BTA absence probe below instant.
+   is what keeps the Babric/BTA absence probe (below) instant.
 3. **Player phase** (`PLAYER_PHASE=1`, the default) — the baked-in Go bot
    (`tools/`) joins two protocol-level players. `e2e_player1` sends `/list`;
    `e2e_player2` joins and sends nothing. The bot's global timeout is 150s;

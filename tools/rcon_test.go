@@ -135,7 +135,7 @@ func TestRconDoesNotRetryRefusedDial(t *testing.T) {
 	ln.Close() // nothing listens now
 	start := time.Now()
 	_, err = rconExec(addr, "pw", "save-all")
-	if err == nil || !strings.Contains(err.Error(), "dial") {
+	if err == nil || !strings.HasPrefix(err.Error(), "dial: ") {
 		t.Fatalf("want a dial error, got %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
