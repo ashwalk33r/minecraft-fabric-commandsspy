@@ -688,6 +688,17 @@ done
 # an assertion that cannot fail proves nothing.
 check "console source name b1.7.3" "CONSOLE" "$(console_of b1.7.3)"
 check "console source name 1.21"   "Server"  "$(console_of 1.21)"
+# BTA is the Beta codebase with a Brigadier dispatcher bolted on, and its
+# ConsoleCommandSource.getName() returns "Server", NOT Babric's "CONSOLE" --
+# measured, docs/bta-toolchain-spike.md. Two neighbouring Beta-1.7.3-era
+# platforms disagreeing on this token is exactly the kind of thing that rots
+# silently, so it is pinned.
+check "console source name bta8.0.1" "Server" "$(console_of bta8.0.1)"
+# era_of prints "$RCON_SOURCE_NAME $PLAYER_LIST_LITERAL". The RCON half is inert
+# on BTA -- the platform has no RCON at all and the leg asserts its absence -- so
+# what is pinned here is the player half: `me`, because BTA inherits the Beta
+# codebase's narrow player-reachable command set and strips the slash itself.
+check "player literals bta8.0.1" "Rcon me" "$(era_of bta8.0.1)"
 
 # b1.7.3's routing row: it predates every era band, and it is reachable on the
 # babric loader only. BABRIC is the JAR_FAMILY, 21 the loader stack's Java floor
@@ -714,6 +725,40 @@ check_refused() {
 }
 check_refused "LOADER=babric on 1.21 is refused"   babric 1.21
 check_refused "LOADER=fabric on b1.7.3 is refused" fabric b1.7.3
+
+# BTA's routing row. Every BTA version token carries a `bta` prefix -- a bare
+# "7.3" on an axis whose other members are 1.21.11 and 26.2 is unreadable and one
+# renumbering from a real collision -- and the whole line routes to one jar on
+# java 17, the floor the LOADER STACK imposes (the game's own classes are Java 8
+# bytecode; BTA's loader fork sets Mixin compatibilityLevel JAVA_17).
+check "bta8.0.1 routes to the BTA jar on java 17" "BTA 17" \
+      "$(MOD_JAR_BTA=x "$script_dir/e2e-run-one.sh" --print-routing bta8.0.1)"
+check "bta7.3 routes to the BTA jar on java 17" "BTA 17" \
+      "$(MOD_JAR_BTA=x "$script_dir/e2e-run-one.sh" --print-routing bta7.3)"
+
+# The same inseparability, one platform over, and it is a DIFFERENT claim from
+# Babric's: BTA is a fork of the game, so a BTA server cannot load the Babric jar
+# and a vanilla b1.7.3 server cannot load the BTA jar. Both directions asserted on
+# exit status and message, for the same reason as above.
+# The expected message differs per pairing: b1.7.3 is guarded by the BABRIC
+# inseparability rule and every bta* version by the BTA one, whichever fires
+# first. Passing the wanted message in keeps each case asserting its own refusal
+# rather than "something went wrong".
+check_refused_bta() {
+  local label="$1" loader="$2" version="$3" want="$4" out rc
+  out="$(LOADER="$loader" MOD_JAR_BTA=x MOD_JAR_BABRIC=x MOD_JAR_121=x \
+         "$script_dir/e2e-run-one.sh" "$version" 2>&1)" && rc=0 || rc=$?
+  if [[ "$rc" -ne 0 && "$out" == *"$want"* ]]; then
+    echo "  ok   $label = refused (rc=$rc)"
+  else
+    echo "  FAIL $label: expected the inseparable-pair refusal, got rc=$rc: $out"
+    failures=$((failures + 1))
+  fi
+}
+check_refused_bta "LOADER=bta on 1.21 is refused"        bta    1.21     "LOADER=bta and a bta* VERSION are inseparable"
+check_refused_bta "LOADER=bta on b1.7.3 is refused"      bta    b1.7.3   "LOADER=babric and VERSION=b1.7.3 are inseparable"
+check_refused_bta "LOADER=fabric on bta8.0.1 is refused" fabric bta8.0.1 "LOADER=bta and a bta* VERSION are inseparable"
+check_refused_bta "LOADER=babric on bta8.0.1 is refused" babric bta8.0.1 "LOADER=babric and VERSION=b1.7.3 are inseparable"
 
 echo
 if [[ "$failures" -eq 0 ]]; then

@@ -19,8 +19,11 @@ func runBot(args []string) error {
 	command := fs.String("command", "list", "command to send, without the slash")
 	// Protocol 14 (Beta 1.7.3) answers a modern status ping with 0xFF "Protocol
 	// error" — the status handshake postdates it — so that version cannot be
-	// negotiated and must be declared. 0 keeps the normal negotiate-by-ping path.
-	protocol := fs.Int("protocol", 0, "skip the status ping and assume this protocol (14 = Beta 1.7.3)")
+	// negotiated and must be declared. BTA forks that same pre-Netty framing and is
+	// declared for the same reason — and its number differs per RELEASE (29441..32769),
+	// so the caller has to name the exact one. 0 keeps the normal negotiate-by-ping
+	// path.
+	protocol := fs.Int("protocol", 0, "skip the status ping and assume this protocol (14 = Beta 1.7.3, 29441-32769 = BTA, per release)")
 	timeout := fs.Duration("timeout", 150*time.Second, "global timeout for the whole run")
 	settle := fs.Duration("settle", 3*time.Second, "settle time after join and after the command")
 	if err := fs.Parse(args); err != nil {
@@ -36,6 +39,14 @@ func runBot(args []string) error {
 	// status ping to negotiate with either. See beta.go.
 	if *protocol == betaProtocolVersion {
 		return runBetaBot(*host, *port, *command, deadline, *settle)
+	}
+	// BTA keeps Beta's framing but changes every layout above it, so it gets its own
+	// straight-line client too rather than a parameter on the one above. See bta.go.
+	// Every BTA release has its OWN protocol number (29441..32769) and the server kicks
+	// a client that offers a different one, so the whole range routes here and the
+	// number is passed through rather than assumed. Modern protocols are three digits.
+	if *protocol >= btaMinProtocolVersion {
+		return runBtaBot(*host, *port, *protocol, *command, deadline, *settle)
 	}
 
 	name, proto, err := ping(*host, *port, deadline)
@@ -129,6 +140,51 @@ func runBetaBot(host string, port int, command string, deadline time.Time, settl
 	time.Sleep(min(settle, time.Until(deadline)))
 	if !time.Now().Before(deadline) {
 		return fmt.Errorf("beta (protocol %d): global timeout", betaProtocolVersion)
+	}
+	log.Printf("[bots] done")
+	return nil
+}
+
+// runBtaBot is runBot's protocol-32769 twin: same phases, same two players, same
+// attribution cross-check, over the BTA framing in bta.go. It is separate from
+// runBetaBot rather than a parameter on it because the two protocols share only their
+// framing — string form, login layout and chat packet all differ — and two straight-line
+// clients are cheaper to read than one abstraction over both.
+func runBtaBot(host string, port, protocol int, command string, deadline time.Time, settle time.Duration) error {
+	var first net.Conn
+	for _, n := range []string{"e2e_player1", "e2e_player2"} {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), time.Until(deadline))
+		if err != nil {
+			return fmt.Errorf("bta (protocol %d): login phase, %s: %w", protocol, n, err)
+		}
+		defer func() { _ = c.Close() }()
+		if err := c.SetDeadline(deadline); err != nil {
+			return err
+		}
+		if err := btaLogin(c, protocol, n); err != nil {
+			return fmt.Errorf("bta (protocol %d): login phase, %s: %w", protocol, n, err)
+		}
+		log.Printf("[bots] %s logged in (BTA, protocol %d)", n, protocol)
+		// Drain and discard, exactly as the protocol-14 bot does: after login the
+		// server floods chunk, registry and AES-key packets this client has no parser
+		// for, and left unread they fill the socket buffer and stall the server's
+		// writer for this connection. Nothing is asserted from the stream — the
+		// verdict comes from the server log, as it does for every other loader.
+		go func() { _, _ = io.Copy(io.Discard, c) }()
+		if first == nil {
+			first = c
+		}
+	}
+
+	// e2e_player2 sends nothing on purpose: it is the attribution cross-check.
+	time.Sleep(min(settle, time.Until(deadline)))
+	if err := btaSendChat(first, protocol, "/"+command); err != nil {
+		return fmt.Errorf("bta (protocol %d): command phase: %w", protocol, err)
+	}
+	log.Printf("[bots] e2e_player1 sent /%s", command)
+	time.Sleep(min(settle, time.Until(deadline)))
+	if !time.Now().Before(deadline) {
+		return fmt.Errorf("bta (protocol %d): global timeout", protocol)
 	}
 	log.Printf("[bots] done")
 	return nil

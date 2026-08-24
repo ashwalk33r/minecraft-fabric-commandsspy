@@ -18,7 +18,7 @@ on:
         required: true
         type: string
       loader:
-        description: "fabric, quilt, forge, neoforge or babric — one per call, so each loader renders as its own job group in the Actions UI"
+        description: "fabric, quilt, forge, neoforge, babric or bta — one per call, so each loader renders as its own job group in the Actions UI"
         required: true
         type: string
       config-variant:
@@ -100,6 +100,16 @@ jobs:
           mv build/libs/commandsspy-*+mcb1.7.3-babric.jar babric/build/libs/
           ls -l babric/build/libs
 
+      # And again for BTA, whose jar comes out of the separate bta/ Gradle
+      # build and which Make therefore looks for under bta/build/libs. Only on
+      # the bta leg, for the same reason the Babric move is conditional.
+      - name: "Stage the BTA jar"
+        if: inputs.loader == 'bta'
+        run: |
+          mkdir -p bta/build/libs
+          mv build/libs/commandsspy-*+bta7.3-8.0.1-bta.jar bta/build/libs/
+          ls -l bta/build/libs
+
       # Present jar files mean Gradle is never invoked here. The JVM under test
       # lives in the Docker image, not on the runner.
       - name: "Verify prebuilt jars are in place"
@@ -117,6 +127,13 @@ jobs:
         run: |
           ls -l babric/build/libs
           test -f babric/build/libs/commandsspy-*+mcb1.7.3-babric.jar
+
+      # Its own step for the same reason as the Babric one above.
+      - name: "Verify the prebuilt BTA jar is in place"
+        if: inputs.loader == 'bta'
+        run: |
+          ls -l bta/build/libs
+          test -f bta/build/libs/commandsspy-*+bta7.3-8.0.1-bta.jar
 
       # Keyed by MC version + loader (not Java): scripts/e2e-run-one.sh's
       # cache key is version+loader+installer, and the loader/installer

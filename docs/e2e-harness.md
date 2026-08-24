@@ -1,7 +1,7 @@
 # E2E harness
 
 Every supported Minecraft version boots as a real server in Docker — Fabric,
-Quilt, Forge, NeoForge or Babric, per the `LOADER` axis — receives commands over
+Quilt, Forge, NeoForge, Babric or BTA, per the `LOADER` axis — receives commands over
 console, RCON, and from a protocol-level player bot, and the log is asserted
 line by line.
 Entry points:
@@ -386,6 +386,67 @@ the frozen babric fork surfaces as a named failure
 
 Console-source assertions use `CONSOLE`, not `Server` — see "Era-exact
 literals" above.
+
+## BTA server install
+
+`LOADER=bta` boots a real BTA server. BTA — "Better than Adventure!" — is a fork
+of the Beta 1.7.3 *game*, not another loader for it: unobfuscated classes, its
+own class layout, its own `fabric-loader` fork. Neither jar loads on the other's
+server, so the inseparability check has a second, independent pair: every
+`bta*` version is refused under any other loader, and `LOADER=bta` is refused
+with any non-`bta*` version. `scripts/test-jar-routing.sh` asserts all four
+pairings offline.
+
+The version axis is BTA's own release line, tokenised with a `bta` prefix:
+`bta7.3`, `bta7.3_01`, `bta7.3_02`, `bta7.3_03`, `bta7.3_04`, `bta8.0`,
+`bta8.0.1`. The prefix is stripped to recover the upstream version. `bta7.3` is
+a hard floor: the Brigadier `CommandManager` the jar's one mixin targets does not
+exist in BTA 7.2 and older.
+
+The install is **host-side** and needs no installer at all: BTA publishes a
+ready-made modded server package per release —
+`fabric-server-launch.jar` + `libraries/` + `server.jar` + `mods/` + `start.sh`,
+which is exactly the tree Babric's installer produces. The harness downloads the
+release zip, verifies it, unzips it into `E2E_JAR_CACHE`, and bind-mounts it
+read-only at `/bta-preinstalled`; the entrypoint copies the whole tree for the
+same thin-jar reason as Babric and drops the mod jar into `mods/` beside the
+HalpLibe jar the package already ships.
+
+**Every package is pinned by URL and sha256**, one literal row per booted
+version, and the hash is re-checked on cache hits. A mismatch fails the leg as
+`bta-package-hash-mismatch`; a failed download as `bta-install-failed`. The
+asset name changes mid-history — `bta_babric_server_<v>.zip` through 7.3_03,
+`bta_fabric_server_<v>.zip` from 7.3_04 — so the table carries whole URLs rather
+than deriving them by rule, and "latest" is never resolved.
+
+Four ways a BTA server is not a modern one, beyond what it shares with Babric:
+
+1. **No `eula.txt`**, same as Babric — the Beta codebase never reads one.
+2. **`server.properties` is BTA's own set**, with keys like `allow-drift` and
+   `world-type=minecraft:overworld.extended`, and no `rcon.*` key at all.
+3. **The ready line is nanoseconds**: `Done (13297414790ns)!`. A
+   `Done \([\d.]+s\)!` matcher never fires.
+4. **The console source name is `Server`**, like every modern loader and unlike
+   Babric's `CONSOLE` — BTA's own `ConsoleCommandSource.getName()`.
+
+### BTA assertion differences
+
+Same shape as Babric: **eleven of the twelve** standard assertions hold, and the
+twelfth — RCON — is *replaced* by an asserted absence, failing as
+`bta-rcon-appeared-update-docs`. The `preLaunch` assertion does not apply, and in
+its place the leg pins the platform: the banner
+`Loading Minecraft <ver> with Fabric Loader <BTA_LOADER_VERSION>` proves both the
+game version and the loader fork in one line, failing as
+`bta-loader-version-drift`.
+
+The player-typed leg is booted, not asserted from prose. It needs a second bot:
+BTA keeps Beta's framing but changes the string encoding, the protocol version
+(`32769`), the login packet's fields and the chat packet's header, and it opens
+with an unsolicited custom payload. `tools/bta.go` speaks it, and the bot is
+invoked with `--protocol 32769`. Like Babric it sends `/me`, because BTA
+inherited the Beta codebase's narrow player-reachable command set. A vanilla BTA
+server never logs command lines itself, so the assertion reads CommandsSpy's own
+output — which is the point of the leg.
 
 ## Log capture
 

@@ -85,7 +85,7 @@ version lists are literal and so never go empty, carry an explicit
 Stage order is popularity order: a failure in a widely-run version surfaces
 before runner minutes are spent on the long tail.
 
-1. **Tier 1: ten parallel build jobs, one jar each** (`needs: [contracts]`),
+1. **Tier 1: eleven parallel build jobs, one jar each** (`needs: [contracts]`),
    replacing the old sequential ~25-minute `build-jars` job:
    `build-mc121x`/`build-mc1192`/`build-mc114x`/`build-mc26x` (per-era
    `make build-121`/`-1192`/`-114`/`-26`), `build-neo`
@@ -93,7 +93,8 @@ before runner minutes are spent on the long tail.
    `build-forge-mc116`, `build-forge-eventbus7` — each Forge target a
    separate Gradle build (`forge/`), all in the same pinned CI image — and
    `build-babric` (the one Babric jar, from the separate `babric/` build; see
-   item 7). One
+   item 7) and `build-bta` (the one BTA jar, from the separate `bta/` build; see
+   item 8). One
    artifact per job:
    `commandsspy-jar-mc1.21.x-<sha>`, `commandsspy-jar-mc1.19-1.20.2-<sha>`,
    `commandsspy-jar-mc1.14.x-<sha>`, `commandsspy-jar-mc26.x-<sha>`,
@@ -101,7 +102,8 @@ before runner minutes are spent on the long tail.
    `commandsspy-jar-forge-modern-<sha>`,
    `commandsspy-jar-forge-legacy-<sha>`,
    `commandsspy-jar-forge-mc116-<sha>`,
-   `commandsspy-jar-forge-eventbus7-<sha>`, `commandsspy-jar-babric-<sha>`;
+   `commandsspy-jar-forge-eventbus7-<sha>`, `commandsspy-jar-babric-<sha>`,
+   `commandsspy-jar-bta-<sha>`;
    retention 30 days on push,
    1 day otherwise. The download side is unchanged: stage jobs fetch with
    pattern `commandsspy-jar-*-<sha>` + `merge-multiple`, so the split is
@@ -195,6 +197,20 @@ before runner minutes are spent on the long tail.
    one-element list and the `pull_request` and `workflow_dispatch` grids for
    this band are identical. That is the intended shape for a single-version
    Tier 1 band, not a missing deep sweep.
+
+8. **BTA stage** — one caller job, `e2e-bta-java17` ("e2e bta7.3-8.0.1 java 17
+   (bta)"), a normal `e2e-stage.yml` call with `loader: bta` reading the
+   `bta_java17` output of `tools/gen_matrix.go`. Its jar comes from
+   `build-bta` ("Build: BTA (7.3-8.0.1)"), a sixth separate Gradle build in
+   `bta/`: BTA ships **unobfuscated**, so that build resolves no mappings at all
+   and its mixin sets `remap = false`, which no other build in this repository
+   does. It uploads `commandsspy-jar-bta-<sha>` and caches on
+   `ci-gradle-bta-<hash>`. Unlike Babric this band is multi-version — BTA keeps
+   releasing — so `sampled` is three of the seven declared releases (the seam
+   floor `bta7.3`, the asset-rename build `bta7.3_04`, and the head `bta8.0.1`)
+   and the deep sweep boots all seven. Every version token carries a `bta`
+   prefix, and `scripts/e2e-run-one.sh` refuses `LOADER=bta` with anything else
+   and any `bta*` version under any other loader.
 
 Lean grid on `pull_request` (floor rows boot each band's sample, newest-Java
 coverage rows only that sample's ends), deep sweep on `workflow_dispatch`
@@ -399,7 +415,13 @@ Two rules the file encodes, so the release does not have to re-decide them:
   `fabric`, carrying the four versions Quilt Loader has no build for. Modrinth
   cannot exclude one loader from one version, and its version numbers must be
   distinct, so the `-fabric` suffix in the first column of the snapshot IS the
-  version number to type. Eleven rows, ten jar files.
+  version number to type. Twelve rows, eleven jar files.
+
+- `bta7.3-8.0.1-bta` is the one row whose `game_versions` is **not** its declared
+  list. Modrinth's loader tags carry `bta-babric`, but its game-version tags carry
+  no BTA release at all, so the row claims `b1.7.3` — BTA's base version — and the
+  jar's own enumerated `depends.minecraft` is what refuses an unbooted BTA release
+  at install time. The supported BTA range goes in that upload's changelog.
 
 Regenerate after any change to a declared range or the coverage table
 (`gen_matrix_test.go` fails until you do):

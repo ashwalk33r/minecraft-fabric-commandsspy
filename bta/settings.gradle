@@ -1,0 +1,26 @@
+// Separate Gradle build ON PURPOSE, exactly like forge/, neoforge/ and babric/: BTA's
+// Loom fork is published on the Signalum maven and owns its own `minecraft` extension,
+// and this build resolves a game jar that is not Minecraft. Isolation costs one
+// settings.gradle. See docs/bta-toolchain-spike.md for the resolved toolchain.
+pluginManagement {
+	repositories {
+		mavenCentral()
+		gradlePluginPortal()
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		// The BTA line of fabric-loom, and the BTA loader fork, are published here and
+		// nowhere the rest of this repository already resolves from.
+		maven {
+			name = 'SignalumInfrastructure'
+			url = 'https://maven.thesignalumproject.net/infrastructure'
+		}
+	}
+}
+
+plugins {
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'commandsspy-bta'

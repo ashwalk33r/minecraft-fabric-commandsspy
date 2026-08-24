@@ -85,6 +85,12 @@ func bandPresent(repoRoot, name string, forced []string) bool {
 		// question is whether the separate Gradle build ships at all.
 		st, err := os.Stat(filepath.Join(repoRoot, "babric", "build.gradle"))
 		return err == nil && !st.IsDir()
+	case "bta":
+		// Same shape as babric: the declared set is an enumerated list in
+		// bta/gradle.properties rather than an interval, so there is no range
+		// regex to match — only whether the separate Gradle build ships.
+		st, err := os.Stat(filepath.Join(repoRoot, "bta", "build.gradle"))
+		return err == nil && !st.IsDir()
 	}
 	return false
 }
@@ -416,6 +422,30 @@ var coverage = map[string]bandCoverage{
 		sampled:  []string{"b1.7.3"},
 		deep:     []string{"b1.7.3"},
 	},
+
+	// BTA — "Better than Adventure!", a fork of the GAME, not another loader for
+	// Beta 1.7.3. The axis is BTA's own version line, so every token carries a
+	// `bta` prefix: `7.3` on an axis whose other members are `1.21.11` and `26.2`
+	// would be unreadable and one renumbering from a real collision.
+	//
+	// declared is an enumerated list of BTA's stable releases from 7.3 up, and
+	// 7.3 is a hard floor: `net/minecraft/core/net/command/CommandManager.class`
+	// — the Brigadier dispatcher this jar's one mixin targets — is absent from
+	// the 7.1 and 7.2 jars. Prereleases are never declared, booted or published:
+	// a green CI run must not depend on prerelease game code, the same reason the
+	// neo band skips beta builds.
+	//
+	// The sample buys three distinct facts for three package downloads: bta7.3 is
+	// the seam floor, bta7.3_04 is both the first `bta_fabric_server_` asset name
+	// and the first underscore build the enumerated jar predicate must match, and
+	// bta8.0.1 is the head, proving the seam survived a BTA major. Everything else
+	// is a patch inside an already-proven line — what the deep sweep is for.
+	// deep == declared, so `excluded` is empty and there is no reason to write.
+	"bta": {
+		declared: []string{"bta7.3", "bta7.3_01", "bta7.3_02", "bta7.3_03", "bta7.3_04", "bta8.0", "bta8.0.1"},
+		sampled:  []string{"bta7.3", "bta7.3_04", "bta8.0.1"},
+		deep:     []string{"bta7.3", "bta7.3_01", "bta7.3_02", "bta7.3_03", "bta7.3_04", "bta8.0", "bta8.0.1"},
+	},
 }
 
 // booted returns the band's version list for this event: the sample on every
@@ -518,6 +548,11 @@ type publishedJar struct {
 	loaders string
 	bands   []string
 	quilt   bool // drop the versions Quilt Loader has no build for
+	// gameVersions overrides the store's version list instead of deriving it
+	// from the bands' declared sets. Exactly one row needs it: BTA, whose
+	// declared tokens are BTA releases and therefore name nothing Modrinth's
+	// game-version tag list contains.
+	gameVersions []string
 }
 
 var publishedJars = []publishedJar{
@@ -537,6 +572,13 @@ var publishedJars = []publishedJar{
 	{name: "mc1.21.6-26.2-forge", loaders: "forge", bands: []string{"forge_eventbus7"}},
 	{name: "mc1.20.2-26.2-neoforge", loaders: "neoforge", bands: []string{"neo"}},
 	{name: "mcb1.7.3-babric", loaders: "babric", bands: []string{"babric"}},
+	// BTA's uploads are the one place a jar's game_versions are NOT its declared
+	// list. Modrinth's loader tag list carries `bta-babric`, but its game-version
+	// list carries no BTA version at all — `b1.7.3`, BTA's base version, is the
+	// only entry that exists — so the store claim is pinned there and the jar's
+	// own enumerated depends.minecraft is what actually refuses an unbooted BTA
+	// release at install time. The changelog line carries the real range.
+	{name: "bta7.3-8.0.1-bta", loaders: "bta-babric", bands: []string{"bta"}, gameVersions: []string{"b1.7.3"}},
 }
 
 // noBuildPublished marks the exclusions that mean "the loader project shipped
@@ -547,6 +589,9 @@ const noBuildPublished = "no Forge build published:"
 
 // publishedVersions is game_versions for one uploaded jar.
 func publishedVersions(j publishedJar) []string {
+	if len(j.gameVersions) > 0 {
+		return j.gameVersions
+	}
 	out := []string{}
 	for _, b := range j.bands {
 		c := coverage[b]
@@ -901,6 +946,14 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// there is no second Java the toolchain is pinned for.
 	emit("babric_java21", band("babric", booted("babric", full)...))
 
+	// STAGE 8 — BTA. One row, one JVM. Java 17 is the LOADER STACK's floor: the
+	// game's own classes are Java 8 bytecode, but BTA's loader fork sets the Mixin
+	// compatibility level to JAVA_17 itself and BTA's own docs point users at
+	// OpenJDK 17. No coverage row above the floor -- declaring 21 would refuse the
+	// JVM the platform recommends, and booting only 21 would assert a floor CI
+	// never ran.
+	emit("bta_java17", band("bta", booted("bta", full)...))
+
 	if emitErr != nil {
 		return emitErr
 	}
@@ -938,7 +991,8 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		// _fabric suffix marks a row whose versions Quilt cannot boot at all
 		// (issue #69) — it has no quilt twin either.
 		if strings.HasPrefix(r.name, "forge") || strings.HasPrefix(r.name, "neo") ||
-			strings.HasPrefix(r.name, "babric") || strings.HasSuffix(r.name, "_fabric") {
+			strings.HasPrefix(r.name, "babric") || strings.HasPrefix(r.name, "bta") ||
+			strings.HasSuffix(r.name, "_fabric") {
 			jobs += r.n
 		} else {
 			jobs += 2 * r.n
@@ -947,9 +1001,9 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	}
 	_, _ = fmt.Fprintf(stdout, "EVENT_NAME=%s\n", eventName)
 	_, _ = fmt.Fprintf(stdout, "GATED_PAIRS=%d\n", total)
-	fixedJobs := 26
+	fixedJobs := 27
 	if push {
-		fixedJobs = 15
+		fixedJobs = 16
 	}
 	_, _ = fmt.Fprintf(stdout, "TOTAL_JOBS=%d\n", jobs+fixedJobs)
 	return nil
