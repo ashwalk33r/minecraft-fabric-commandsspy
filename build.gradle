@@ -33,12 +33,22 @@ checkstyle {
 	configFile = file("$configDir/checkstyle/checkstyle.xml")
 }
 
+// The bstats/ dir is third-party code vendored with only its package line changed;
+// bStats' terms forbid modifying it, and a lint rule is a modification. Excluded from
+// both linters, never reformatted.
+def bstatsVendored = 'pl/m2x/commandsspy/bstats/**'
+
 checkstyleMain {
-	source = fileTree('src/main/java') + fileTree('src/fabric/java') + fileTree('src/mc121/java') + fileTree('src/mc1192/java') + fileTree('src/mc114/java') + fileTree('src/mc26/java')
+	source = fileTree('src/main/java').matching { exclude bstatsVendored } + fileTree('src/fabric/java') + fileTree('src/mc121/java') + fileTree('src/mc1192/java') + fileTree('src/mc114/java') + fileTree('src/mc26/java')
 }
 
 checkstyleTest {
 	source ='src/test/java'
+}
+
+pmdMain {
+	// Same reason as checkstyleMain above; PMD otherwise picks the dir up via sourceSets.main.
+	source = source.matching { exclude bstatsVendored }
 }
 
 pmdTest {
