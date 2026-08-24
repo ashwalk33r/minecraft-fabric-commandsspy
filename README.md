@@ -3,9 +3,10 @@
 # CommandsSpy
 
 A server mod that logs every executed command with its source (player, console,
-RCON, function, command block). One shared implementation ships as ten jars —
+RCON, function, command block). One shared implementation ships as eleven jars —
 four era-correct Fabric/Quilt jars, four Forge jars split by mapping era, a
-single NeoForge band jar, and a Babric jar for Beta 1.7.3. Which versions each
+single NeoForge band jar, a Babric jar for Beta 1.7.3, and a BTA jar for
+"Better than Adventure!", the Beta 1.7.3 fork. Which versions each
 covers, and which are proven by a booted server in CI: [Supported Versions](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions).
 
 User documentation: [MOD.md](./MOD.md). Official releases:
@@ -13,7 +14,7 @@ User documentation: [MOD.md](./MOD.md). Official releases:
 
 ## Docs
 
-- [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes) — the nine jars, the loader
+- [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes) — the eleven jars, the loader
   seam in the shared core, version boundaries, Java floors, default e2e matrix.
 - [docs/testing.md](docs/testing.md) — unit suite: how it boots, isolation,
   known quirks, era-specific wiring.
@@ -39,7 +40,9 @@ make build                      # all five default jars, dockerized
 
 That is the four Fabric/Quilt era jars plus the one NeoForge band jar; the four
 Forge jars are built on demand (`make build-forge`, `build-forge-legacy`,
-`build-forge-mc116`, `build-forge-eventbus7`).
+`build-forge-mc116`, `build-forge-eventbus7`), as are the two Beta-1.7.3-era jars
+(`make build-babric`, `make build-bta`) — each of those resolves from community
+mavens the default build never touches.
 
 The first NeoForge build runs ModDevGradle's NeoForm pipeline (decompile +
 recompile Minecraft, ~8-9 minutes); it is cached in `GRADLE_USER_HOME`
@@ -109,7 +112,7 @@ make clean-e2e                      # remove logs, results, containers, images
 Knobs: `VERSIONS`, `PARALLEL` (alias `J`), `BOOT_TIMEOUT` (default 180s),
 `JAVA` (override JVM; a version has a Java floor, not a pin — except the Forge
 `modern` band, java 21 only, [#66](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/issues/66)), `LOADER`
-(`fabric` | `quilt` | `forge` | `neoforge`). Output:
+(`fabric` | `quilt` | `forge` | `neoforge` | `babric` | `bta`). Output:
 `build/e2e-logs/<key>.log` and `build/e2e-results/<key>.result`; any failure
 makes the run exit non-zero. Harness internals and verdict codes:
 [docs/e2e-harness.md](docs/e2e-harness.md). The CI grid (canary gate, staged
@@ -129,7 +132,7 @@ This file deliberately states no version ranges. They were previously duplicated
 here, in `MOD.md` and across `docs/`, and drifted: the same fact appeared with
 different values in different files, and nothing could fail when one of them went
 stale. The declared ranges themselves live in `gradle.properties`,
-`forge/gradle.properties` and `neoforge/gradle.properties`, which the build and the
-tests actually consume; the wiki page cites the commands that regenerate every
+`forge/gradle.properties`, `neoforge/gradle.properties`, `babric/gradle.properties`
+and `bta/gradle.properties`, which the build and the tests actually consume; the wiki page cites the commands that regenerate every
 figure from them.
 

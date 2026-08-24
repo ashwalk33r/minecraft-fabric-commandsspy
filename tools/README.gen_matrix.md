@@ -20,7 +20,12 @@ Key contract: the coverage table, not the emit calls, decides which versions
 a row lists. Each band states its `declared` range, its `sampled` list, its
 `deep` list and a reason for every declared version booted by neither;
 `gen_matrix_test.go` asserts `deep + excluded == declared` exactly, so a
-version can only leave the grid by acquiring a reason. Since issue #84
+version can only leave the grid by acquiring a reason.
+
+Two bands sit outside the Mojang axis entirely: `babric` (Minecraft Beta 1.7.3,
+one version) and `bta` (BTA's own release line, tokens prefixed `bta`, declared
+as an enumerated list because BTA's version strings are not semver). For both,
+`declared == deep` and `excluded` is empty. Since issue #84
 `declared` is every Mojang release the range covers — the same set published as
 Modrinth `game_versions` — so what is advertised and what CI boots are one list
 with one set of written exceptions. Background:
@@ -32,13 +37,17 @@ breaks the workflow. Two "gate canary" versions (1.21.11/java21, 26.2/java25)
 live in the workflow's gate job and are deliberately excluded from the lists
 here.
 
+`publishedJars` / `publishedVersions(j)` name the Modrinth uploads and their
+`game_versions`. One row overrides the derived list: BTA's, whose `gameVersions`
+is `["b1.7.3"]` because Modrinth's game-version tag list contains no BTA release.
+
 ## Main functions
 
 - `runGenMatrix(args)` — entry point, wired to the `gen-matrix` subcommand in
   `main.go`. Reads env vars, opens `$GITHUB_OUTPUT`, calls `genMatrix`.
 - `genMatrix(repoRoot, eventName, forceBands, stdout, ghOut)` — the real work.
   Defines the stages (mc121, mc26, t0, mc1192, mc114, forge, forge_legacy,
-  forge_mc116, forge_eventbus7, neo) and emits every row. Forge and NeoForge
+  forge_mc116, forge_eventbus7, neo, babric, bta) and emits every row. Forge and NeoForge
   rows are floor-only: no coverage rows, no lean/full split (those jars' own
   bytecode floors and, for NeoForge, its own per-line Java floors govern — not
   the Fabric era table). Testable: writers are injected.
@@ -48,8 +57,14 @@ here.
   `forge_eventbus7` check the
   `minecraft_range_modern`/`_legacy`/`_mc116`/`_eventbus7` lines in
   `forge/gradle.properties`; `neo` checks `minecraft_range_neo_all` in
-  `neoforge/gradle.properties` (one band jar, so one range key).
+  `neoforge/gradle.properties` (one band jar, so one range key); `babric` and
+  `bta` check only that their standalone `build.gradle` ships, because neither
+  declares an interval to match.
   `FORCE_BANDS` overrides for offline tests.
+- `publishedJars` / `publishedVersions(j)` — the Modrinth uploads and their
+  `game_versions`. One row overrides the derived list: BTA's, whose
+  `gameVersions` is `["b1.7.3"]`, because Modrinth's game-version tag list
+  contains no BTA release at all.
 - `ends(list)` — first and last element; the "lean" shrink.
 - `coverage` / `booted(band, full)` — the version contract per band, and the
   list to boot for this event.
