@@ -292,6 +292,16 @@ timeout "$BOOT_TIMEOUT" java $JAVA_FLAGS -Dlog4j2.configurationFile=/mc-server/e
 SERVER_PID=$!
 
 BOOTED=0
+# Warnings are NOT failures: they never touch $FAILURES and never change the
+# verdict line. They exist so a leg that only passed because something was
+# retried still says so, once, in a grep-stable form -- issue #89's objection to
+# a blind retry was that it would hide the flake's real frequency.
+WARNINGS=""
+print_warnings() {
+  if [ -n "$WARNINGS" ]; then
+    echo "[e2e] ⚠ warnings (not failures): ${WARNINGS%,}"
+  fi
+}
 CONFIG_FILE="config/commands-spy.json"
 # MOD.md: "On startup, the config file will be created automatically." Sampled
 # once, at boot, before any command runs — the only moment in this script where
@@ -341,7 +351,17 @@ if [ "$BOOTED" -eq 1 ]; then
     echo "[e2e] Skipping RCON send: $LOADER has no RCON (asserted absent below)"
   else
     echo "[e2e] Sending RCON command..."
-    /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all || echo "[e2e] ⚠ RCON client failed"
+    # stderr is captured rather than merely printed: the client retries a
+    # connection that breaks mid-exchange (issue #89), and its per-attempt line
+    # is the only record that a retry happened. Capturing it is what makes the
+    # flake countable; the file is re-emitted below so the job log still has it.
+    if ! /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all 2>rcon.err; then
+      echo "[e2e] ⚠ RCON client failed"
+    fi
+    cat rcon.err >&2 || true
+    if grep -q '^\[rcon\] attempt' rcon.err 2>/dev/null; then
+      WARNINGS="${WARNINGS}rcon-retried,"
+    fi
   fi
 
   sleep 1
@@ -433,6 +453,7 @@ else
   echo "[e2e] This accuses the LOG CAPTURE, not the mod. Nothing was validly asserted."
   echo "[e2e] head of logs/latest.log:"; head -20 logs/latest.log 2>/dev/null || echo "  (absent)"
   echo "[e2e] head of server.log:";      head -20 server.log 2>/dev/null || echo "  (absent)"
+  print_warnings
   echo "E2E ${MC_VERSION} FAIL log-capture-truncated"
   exit 1
 fi
@@ -476,6 +497,7 @@ if [ "$FORGE_EXPECT_REFUSED" = "1" ]; then
   else
     echo "  [PASS] no [CommandsSpy] line: the mod never ran"
   fi
+  print_warnings
   echo "[e2e] Full contents of $LOG_FILE:"
   cat "$LOG_FILE" || true
   if [ -z "$GUARD_FAILURES" ]; then
@@ -508,6 +530,7 @@ if [ "$FABRIC_EXPECT_REFUSED" = "1" ]; then
   if grep -qE 'Incompatible mod set|requires .*minecraft|unsupported|Mod resolution' "$LOG_FILE"; then
     echo "  [INFO] loader reported a dependency-resolution failure, as expected"
   fi
+  print_warnings
   echo "[e2e] Full contents of $LOG_FILE:"
   cat "$LOG_FILE" || true
   if [ -z "$GUARD_FAILURES" ]; then
@@ -572,6 +595,7 @@ if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
   if [ "$BOOTED" -ne 1 ]; then
     CFG_FAILURES="${CFG_FAILURES}boot-failed,"
   fi
+  print_warnings
   echo "[e2e] Full contents of $LOG_FILE:"
   cat "$LOG_FILE" || true
   if [ -z "$CFG_FAILURES" ]; then
@@ -806,6 +830,7 @@ if [ "$PLAYER_PHASE" = "1" ]; then
   if [ "$PLAYER2_LINES" -eq 0 ]; then echo "  [PASS] cross-check: 0 'Player: e2e_player2' lines (silent player never attributed)"; else echo "  [FAIL] cross-check: ${PLAYER2_LINES} 'Player: e2e_player2' line(s) — silent player got attributed a command"; fi
 fi
 
+print_warnings
 echo "[e2e] Full contents of $LOG_FILE:"
 cat "$LOG_FILE" || true
 

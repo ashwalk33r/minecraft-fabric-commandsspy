@@ -23,7 +23,10 @@ the wiki's [Version boundaries and root causes](https://github.com/ashwalk33r/mi
    (bounded by `BOOT_TIMEOUT`, default 180s) for `Done`. A JVM that dies at
    mixin/loader bootstrap can deadlock in its shutdown hooks, so a fatal
    bootstrap crash fails fast instead of waiting out the timeout.
-2. **Console + RCON** — `list` via the console fifo, `save-all` via RCON.
+2. **Console + RCON** — `list` via the console fifo, `save-all` via RCON. The
+   RCON client retries a connection that breaks after being established, three
+   attempts a second apart (issue #89); a refused dial is never retried, which
+   is what keeps the Babric/BTA absence probe (below) instant.
 3. **Player phase** (`PLAYER_PHASE=1`, the default) — the baked-in Go bot
    (`tools/`) joins two protocol-level players. `e2e_player1` sends `/list`;
    `e2e_player2` joins and sends nothing. The bot's global timeout is 150s;
@@ -88,6 +91,16 @@ The player assertions are a positive/negative pair: player1's `/list` must be
 attributed to player1, and player2 (who sent nothing) must appear in **zero**
 `[CommandsSpy]` lines. The negative half catches misattribution that the
 positive half alone would miss.
+
+Warnings are a separate channel and are not part of the verdict. A leg that
+only reached PASS because something was retried prints, immediately above the
+log dump:
+
+- `[e2e] ⚠ warnings (not failures): rcon-retried` — the RCON client had to
+  reconnect at least once. The leg still PASSes; `FAILURES` is untouched.
+  Grepping a CI run for `rcon-retried` (or, in the raw job log, for
+  `[rcon] attempt`) is how the frequency of issue #89's flake is counted
+  without needing a red build to notice it.
 
 ## Era-exact literals
 

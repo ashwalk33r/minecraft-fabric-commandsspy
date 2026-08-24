@@ -55,3 +55,41 @@ tools rcon --port 25575 --password S say hello
 
 The harness uses it to poke a running test server without needing `mcrcon`
 or similar installed.
+
+## Retry policy
+
+`rconExec` runs the whole conversation up to **3 times**, with a fixed **1 s**
+pause between attempts, and each attempt gets a fresh connection — a
+half-broken one is not reusable.
+
+Only a connection that was **established and then broke** is retried. Two
+failures are returned on the first attempt instead:
+
+- a **refused dial** (phase `dial`) — this is the expected answer on the
+  Babric/BTA e2e legs, which assert that Beta-era servers have no RCON at all
+  by dialling a port nothing is on. Retrying it would slow that probe down for
+  no information.
+- **`authentication failed`** — a rejected password is deterministic.
+
+If the break happens after the command write already reached the server, the
+server has likely already executed it, so a retry can execute that command a
+second time — the retry is therefore only safe for an idempotent command
+(the e2e harness sends `save-all`).
+
+The retry exists for [issue #89](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/issues/89):
+a 1.14.4 e2e leg saw the server log `Rcon connection from:` and the client get
+`EOF`, with no server-side error and a clean re-run.
+
+Every failed attempt prints one line to **stderr**:
+
+```
+[rcon] attempt 1/3 failed after 812ms during auth-read: EOF; retrying in 1s
+```
+
+The phase (`dial`, `deadline`, `auth-write`, `auth-read`, `cmd-write`,
+`sentinel-write`, `cmd-read`) is the diagnosis `rcon: EOF` never carried: it
+separates a server-side accept race from the two-packets-in-one-TCP-segment
+hazard above, and the elapsed time separates an instant hang-up from a stall.
+`scripts/e2e-entrypoint.sh` greps for `^\[rcon\] attempt` and reports a retried
+leg as the warning `rcon-retried` — a retry never fails a leg, but it is never
+silent either.

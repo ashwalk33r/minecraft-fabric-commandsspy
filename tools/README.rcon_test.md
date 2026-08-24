@@ -40,6 +40,32 @@ The fake server:
 The test asserts `rconExec` reassembles the fragments into the exact
 original ~7 KB string.
 
+### The multi-connection fake
+
+`fakeRCONSeq(t, handlers...)` serves one handler per connection, in order, and
+returns the address plus a counter of connections accepted. `fakeRCON` is now a
+one-handler wrapper around it, so the two tests above are unchanged.
+The counter is what the retry tests assert on: *how many times did the client
+come back?*
+
+### TestRconRetriesAfterMidExchangeClose
+
+The first connection is accepted and dropped without a byte — exactly what
+issue #89 saw as `rcon: EOF`. The second is served normally. The test asserts
+the command output survives and that the client made exactly two connections.
+
+### TestRconDoesNotRetryAuthFailure
+
+The first connection rejects the password; a healthy second handler is queued
+and must never be reached. Asserts exactly one connection: a wrong password is
+a verdict, not a hiccup.
+
+### TestRconDoesNotRetryRefusedDial
+
+Dials a port whose listener was just closed — the Babric/BTA "RCON is absent"
+probe's case — and asserts the failure arrives in under a second, i.e. without
+burning the retry schedule.
+
 ## How to run
 
 ```sh
