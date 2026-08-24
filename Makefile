@@ -54,6 +54,11 @@ MOD_JAR_NEO := build/libs/commandsspy-$(MOD_VERSION)+mc1.20.2-26.2-neoforge.jar
 # toolchain and reverse-converted. b1.7.3 only -- Babric is Beta 1.7.3 and nothing
 # else, so this is one jar for one version, not a band.
 MOD_JAR_BABRIC := babric/build/libs/commandsspy-$(MOD_VERSION)+mcb1.7.3-babric.jar
+# The BTA jar, built by the separate bta/ Gradle build. BTA is not obfuscated, so
+# there is no remapJar and this is plain `jar` output. One jar for the whole
+# declared BTA line (7.3-8.0.1): the CommandManager seam it hooks is identically
+# shaped across it. See docs/bta-toolchain-spike.md.
+MOD_JAR_BTA := bta/build/libs/commandsspy-$(MOD_VERSION)+bta7.3-8.0.1-bta.jar
 
 # Optional Java override applied to EVERY version in this run:
 #   make e2e VERSIONS="1.21.11" JAVA=25
@@ -66,7 +71,7 @@ JAVA ?=
 # adding. 11 is manual-override only.
 JAVA_VERSIONS_SUPPORTED := 8 17 21 25 26
 
-# fabric (default) | quilt | forge | neoforge | babric — which loader's server boots.
+# fabric (default) | quilt | forge | neoforge | babric | bta — which loader's server boots.
 # See docs/e2e-harness.md.
 LOADER ?= fabric
 
@@ -127,6 +132,10 @@ _neo_jars := $(if $(filter neoforge,$(LOADER)),$(MOD_JAR_NEO),)
 # Only LOADER=babric needs the Babric jar built; every other run must not pay for
 # the Ornithe/ploceus toolchain, which resolves from community mavens.
 _babric_jars := $(if $(filter babric,$(LOADER)),$(MOD_JAR_BABRIC),)
+
+# Same reasoning for BTA: its Loom line resolves from the Signalum maven and
+# materialises its own game jar, which no other loader's run should pay for.
+_bta_jars := $(if $(filter bta,$(LOADER)),$(MOD_JAR_BTA),)
 E2E_KEYS := $(addsuffix $(_cfgvar_suffix),$(if $(JAVA),$(addsuffix -java$(JAVA),$(addsuffix $(_loader_suffix),$(VERSIONS))),$(addsuffix $(_loader_suffix),$(VERSIONS))))
 
 # Pre-build the needed images SERIALLY: two concurrent `docker build` calls
@@ -201,11 +210,11 @@ e2e-images: ## pull-or-build the per-Java server Docker images serially, tag loc
 	  docker tag "$$ghcr_tag" "$$local_tag"; \
 	done
 
-e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) $(_babric_jars) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
+e2e: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) $(_babric_jars) $(_bta_jars) e2e-images ## full e2e: boot every version in VERSIONS, max parallel, console+RCON+player asserts
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),$(words $(VERSIONS)))
 
-e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) $(_babric_jars) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
+e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(_forge_jar_dep) $(_neo_jars) $(_babric_jars) $(_bta_jars) e2e-images ## bounded e2e for CI/constrained runs (PARALLEL=4 default), same assertions
 	@$(MAKE) _e2e-fanout VERSIONS="$(VERSIONS)" \
 	  PARALLEL=$(if $(_explicit_parallel),$(_explicit_parallel),4)
 
@@ -213,8 +222,8 @@ e2e-ci: clean-e2e $(MOD_JAR_121) $(MOD_JAR_1192) $(MOD_JAR_114) $(MOD_JAR_26) $(
 .PHONY: _e2e-fanout
 _e2e-fanout:
 	@case "$(LOADER)" in \
-	  fabric|quilt|forge|neoforge|babric) ;; \
-	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt forge neoforge babric"; exit 1 ;; \
+	  fabric|quilt|forge|neoforge|babric|bta) ;; \
+	  *) echo "[e2e] Unsupported LOADER=$(LOADER). Supported: fabric quilt forge neoforge babric bta"; exit 1 ;; \
 	esac
 	@echo "[e2e] Testing Minecraft versions: $(VERSIONS)"
 	@echo "[e2e] Loader: $(LOADER)"
@@ -234,6 +243,7 @@ _e2e-fanout:
 	  MOD_JAR_FORGE_MC116="$(MOD_JAR_FORGE_MC116)" \
 	  MOD_JAR_NEO="$(MOD_JAR_NEO)" \
 	  MOD_JAR_BABRIC="$(MOD_JAR_BABRIC)" \
+	  MOD_JAR_BTA="$(MOD_JAR_BTA)" \
 	  E2E_LOG_DIR="$(E2E_LOG_DIR)" \
 	  E2E_RESULT_DIR="$(E2E_RESULT_DIR)" \
 	  E2E_RUN_ID="$(E2E_RUN_ID)" \
@@ -320,6 +330,17 @@ $(MOD_JAR_BABRIC): $(shell git ls-files babric src/main/java .env.version) | ci-
 
 .PHONY: build-babric
 build-babric: $(MOD_JAR_BABRIC) ## build the Babric jar, Minecraft b1.7.3 (separate Gradle build, Ornithe toolchain)
+
+# Deliberately NOT a dependency of `build`, same reasoning as the Forge and Babric
+# jars: this one resolves fabric-loom 1.15-SNAPSHOT and BTA's loader fork from the
+# Signalum maven and materialises its own Loom cache. Built on demand and by the
+# LOADER=bta e2e legs.
+$(MOD_JAR_BTA): $(shell git ls-files bta src/main/java .env.version) | ci-image
+	@echo "[build] Building BTA jar (BTA 7.3-8.0.1, fabric-loom, not obfuscated)..."
+	@$(call in_ci_image_gradle,gradle -p bta build --no-daemon --quiet)
+
+.PHONY: build-bta
+build-bta: $(MOD_JAR_BTA) ## build the BTA jar, Better than Adventure! 7.3-8.0.1 (separate Gradle build)
 
 # Legacy jar: issue #28 task 1, SRG-reobfuscated for the pre-1.20.5 era.
 $(MOD_JAR_FORGE_LEGACY): $(shell git ls-files forge src/main/java .env.version) | ci-image

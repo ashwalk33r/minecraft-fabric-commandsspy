@@ -36,6 +36,16 @@ case "$VERSION" in
   # 21, not the era-contemporary 8: the loader stack's floor, not the game's.
   # See the wiki, Supported-Versions -> Babric.
   b1.7.3)              FLOOR_JAVA=21; JAR_FAMILY=BABRIC ;;
+  # BTA overrides the era table on both axes for the same reason Babric does, and
+  # is a SEPARATE PLATFORM from it: "Better than Adventure!" is its own game binary
+  # with its own version line (7.3 ... 8.0.1), not a Beta 1.7.3 mod loader, so its
+  # version tokens are BTA-prefixed and reachable on no other loader (both
+  # directions asserted below). 17, not the era-contemporary 8: the jar's bytecode
+  # level and the mixin compatibilityLevel, not the game's. Prefixed glob rather
+  # than seven literals -- the declared set is pinned by the package table further
+  # down, which is where an unknown version fails.
+  # See docs/bta-toolchain-spike.md.
+  bta*)                FLOOR_JAVA=17; JAR_FAMILY=BTA ;;
   26*)                 FLOOR_JAVA=25; JAR_FAMILY=26 ;;
   1.20.3|1.20.4|1.20.5|1.20.6|1.21*) FLOOR_JAVA=21; JAR_FAMILY=121 ;;
   1.17*)               FLOOR_JAVA=17; JAR_FAMILY=114 ;;
@@ -173,8 +183,8 @@ esac
 
 LOADER="${LOADER:-fabric}"
 case "$LOADER" in
-  fabric|quilt|forge|neoforge|babric) ;;
-  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge neoforge babric" >&2; exit 1 ;;
+  fabric|quilt|forge|neoforge|babric|bta) ;;
+  *) echo "[e2e] Unsupported LOADER=$LOADER. Supported: fabric quilt forge neoforge babric bta" >&2; exit 1 ;;
 esac
 # babric and b1.7.3 are the same fact stated on two axes -- Babric is Beta 1.7.3
 # and nothing else (spec D7), and nothing else can boot b1.7.3. Asserted in BOTH
@@ -183,6 +193,16 @@ esac
 if { [ "$LOADER" = "babric" ] && [ "$VERSION" != "b1.7.3" ]; } \
    || { [ "$LOADER" != "babric" ] && [ "$VERSION" = "b1.7.3" ]; }; then
   echo "[e2e] LOADER=babric and VERSION=b1.7.3 are inseparable (got LOADER=$LOADER VERSION=$VERSION)" >&2
+  exit 1
+fi
+# The same invariant, one loader over. BTA is its own game binary, so the bta* jar
+# targets classes that exist in no other Minecraft, and no other jar carries the
+# CommandManager seam BTA dispatches through. Asserted in BOTH directions for the
+# same reason as Babric's: one alone lets the other pairing pick a jar the server
+# can never load, and it surfaces as a boot timeout rather than as this message.
+if { [ "$LOADER" = "bta" ] && [ "${VERSION#bta}" = "$VERSION" ]; } \
+   || { [ "$LOADER" != "bta" ] && [ "${VERSION#bta}" != "$VERSION" ]; }; then
+  echo "[e2e] LOADER=bta and a bta* VERSION are inseparable (got LOADER=$LOADER VERSION=$VERSION)" >&2
   exit 1
 fi
 # FORGE_EXPECT_REFUSED/FORGE_JAR_BAND above are computed loader-independently
@@ -241,6 +261,33 @@ BABRIC_INSTALLER_VERSION="${BABRIC_INSTALLER_VERSION:-1.0.0-babric.2}"
 # mirror, and it is the single point of failure for the whole Babric leg. Pinned by hash
 # so a substituted or truncated file fails loudly here instead of booting something else.
 BABRIC_SERVER_SHA256="${BABRIC_SERVER_SHA256:-033a127e4a25a60b038f15369c89305a3d53752242a1cff11ae964954e79ba4d}"
+# BTA ships no installer at all -- the "install artifact" is a ready-made modded
+# server package (fabric-server-launch.jar + libraries/ + server.jar + mods/),
+# zipped, one per BTA version, published on GitHub releases. Nothing here resolves
+# "latest": every one of the seven declared versions is pinned to the exact asset
+# and its sha256, measured by downloading it (docs/bta-toolchain-spike.md). The
+# asset NAME changes mid-line -- bta_babric_server_<v> through 7.3_03, then
+# bta_fabric_server_<v> from 7.3_04 -- which is why the table carries the whole
+# filename rather than composing it from the version.
+# Two more things are PER PACKAGE rather than per line, and both live in the same
+# table because both are properties of the pinned zip and must not drift away
+# from its hash:
+#
+#   the loader version -- measured, 7.3 through 7.3_03 ship fabric-loader
+#   0.15.6-bta.7, 7.3_04 ships 0.18.4-bta.10 and 8.0/8.0.1 ship 0.18.4-bta.11.
+#   The container asserts on it as its toolchain-drift canary.
+#
+#   the wire protocol number -- BTA bumps it EVERY release (29472, 29441, 29442,
+#   29443, 29444, 32768, 32769; read out of PacketHandlerLogin's own equality
+#   check with javap), and a bot that offers the wrong one is disconnected with
+#   "Outdated server!" before it can send anything. Hardcoding 8.0.1's 32769
+#   would silently reduce the player leg to a boot test on the other six.
+#
+# BTA_LOADER_VERSION / BTA_PROTOCOL override the table for re-measuring a re-cut
+# release without editing this file.
+BTA_RELEASE_BASE="https://github.com/Turnip-Labs/bta-fabric-instance-repo/releases/download"
+BTA_LOADER_VERSION="${BTA_LOADER_VERSION:-}"
+BTA_PROTOCOL="${BTA_PROTOCOL:-}"
 QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
 # Forge's analogue of Fabric's meta API. FORGE_BUILD pins a build explicitly;
@@ -261,6 +308,9 @@ if [ "$LOADER" = "neoforge" ]; then
 fi
 if [ "$LOADER" = "babric" ]; then
   : "${MOD_JAR_BABRIC:?MOD_JAR_BABRIC must be set for LOADER=babric}"
+fi
+if [ "$LOADER" = "bta" ]; then
+  : "${MOD_JAR_BTA:?MOD_JAR_BTA must be set for LOADER=bta}"
 fi
 
 if [ "$LOADER" = "forge" ]; then
@@ -508,6 +558,70 @@ if [ "$LOADER" = "babric" ]; then
   PREINSTALL_MOUNT_ARGS="-v ${BABRIC_INSTALL_DIR}:/babric-preinstalled:ro"
 fi
 
+# BTA path: host-side like Quilt's and Babric's, but with no installer to run and
+# therefore no JDK container -- the published package IS the install, so curl and
+# unzip are the whole toolchain. Only the ZIP is cached; the unpacked tree is
+# rebuilt per run into the temp dir. That is deliberate: the tree is what the
+# container mounts and would otherwise have to be kept pristine, whereas a single
+# file has exactly one thing to verify, and re-verifying it is what makes a cache
+# hit as trustworthy as a fresh download (same reasoning as BABRIC_SERVER_SHA256).
+if [ "$LOADER" = "bta" ]; then
+  BTA_VERSION="${VERSION#bta}"
+  # Seven rows, one per declared version. sha256 measured on the downloaded asset;
+  # an unknown version dies HERE, with a named verdict, rather than 404-ing later.
+  case "$BTA_VERSION" in
+    7.3)    BTA_ASSET="bta_babric_server_7.3.zip";       BTA_PACKAGE_LOADER=0.15.6-bta.7;  BTA_PACKAGE_PROTOCOL=29472; BTA_SHA256=4acf38deaea4e72b03a9f8e28bfdcb324cc86d35bd097cfc88d6c6f86b556c10 ;;
+    7.3_01) BTA_ASSET="bta_babric_server_7.3_01.zip";    BTA_PACKAGE_LOADER=0.15.6-bta.7;  BTA_PACKAGE_PROTOCOL=29441; BTA_SHA256=9aa0c4ef496f3de913264f9f4e2f23367062e2bfcc8eb289134d52ce0be375e2 ;;
+    7.3_02) BTA_ASSET="bta_babric_server_7.3_02.zip";    BTA_PACKAGE_LOADER=0.15.6-bta.7;  BTA_PACKAGE_PROTOCOL=29442; BTA_SHA256=01394130747b6c13351b5c5c6252e05de39f6ca7e0e62c5a3943781f0d2199ed ;;
+    7.3_03) BTA_ASSET="bta_babric_server_7.3_03.zip";    BTA_PACKAGE_LOADER=0.15.6-bta.7;  BTA_PACKAGE_PROTOCOL=29443; BTA_SHA256=cf82bb06218a2dc9e945662488c95780ff651aec7731f37e882d35909e4b001c ;;
+    7.3_04) BTA_ASSET="bta_fabric_server_7.3_04.zip";    BTA_PACKAGE_LOADER=0.18.4-bta.10; BTA_PACKAGE_PROTOCOL=29444; BTA_SHA256=f91146c9f51848d9303d1052d5151f8a63311262e91fb835fdc13c88f30427a0 ;;
+    8.0)    BTA_ASSET="bta_fabric_server_8.0.zip";       BTA_PACKAGE_LOADER=0.18.4-bta.11; BTA_PACKAGE_PROTOCOL=32768; BTA_SHA256=b0e8ed27ded7b75c88b530fbb94f149075fd11296da451c91d6788c5463e8a31 ;;
+    8.0.1)  BTA_ASSET="bta_fabric_server_8.0.1.zip";     BTA_PACKAGE_LOADER=0.18.4-bta.11; BTA_PACKAGE_PROTOCOL=32769; BTA_SHA256=945ee1379cfb9f9fa5fb2a99e6aff133df28835394a44f52dde220c07518885b ;;
+    *)
+      printf 'E2E %s java%s FAIL bta-undeclared-version\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+      echo "[e2e] <- FAIL $VERSION: no pinned BTA server package (declared: bta7.3 bta7.3_01 bta7.3_02 bta7.3_03 bta7.3_04 bta8.0 bta8.0.1)"
+      exit 1 ;;
+  esac
+  BTA_LOADER_VERSION="${BTA_LOADER_VERSION:-$BTA_PACKAGE_LOADER}"
+  BTA_PROTOCOL="${BTA_PROTOCOL:-$BTA_PACKAGE_PROTOCOL}"
+  PREINSTALL_TMP_DIR="$(mktemp -d)"
+  if [ -n "$E2E_JAR_CACHE" ]; then
+    mkdir -p "$E2E_JAR_CACHE"
+    BTA_ZIP="${E2E_JAR_CACHE}/${BTA_ASSET}"
+  else
+    BTA_ZIP="${PREINSTALL_TMP_DIR}/${BTA_ASSET}"
+  fi
+  if [ -f "$BTA_ZIP" ]; then
+    echo "[e2e] BTA package cache HIT for $VERSION ($BTA_ASSET)"
+  else
+    echo "[e2e] Downloading BTA server package for $VERSION ($BTA_ASSET)..."
+    # .part + mv: parallel legs share the cache dir, and a half-written zip that
+    # another leg then hash-checks is a mismatch nobody can reproduce.
+    if ! curl -fsSL "${BTA_RELEASE_BASE}/v${BTA_VERSION}/${BTA_ASSET}" -o "${BTA_ZIP}.part.$$"; then
+      rm -f "${BTA_ZIP}.part.$$"
+      printf 'E2E %s java%s FAIL bta-install-failed\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+      echo "[e2e] <- FAIL $VERSION: BTA server package download failed"
+      exit 1
+    fi
+    mv "${BTA_ZIP}.part.$$" "$BTA_ZIP"
+  fi
+  # Re-verified on cache hits too, for the same reason the Babric server jar is:
+  # this is a community-published artifact, and a poisoned cache must not survive
+  # a second run.
+  actual_sha="$(sha256sum "$BTA_ZIP" | cut -d' ' -f1)"
+  if [ "$actual_sha" != "$BTA_SHA256" ]; then
+    printf 'E2E %s java%s FAIL bta-package-hash-mismatch\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+    echo "[e2e] FAIL $BTA_ASSET hash mismatch: got $actual_sha, want $BTA_SHA256" >&2
+    exit 1
+  fi
+  if ! unzip -q -o "$BTA_ZIP" -d "${PREINSTALL_TMP_DIR}/install"; then
+    printf 'E2E %s java%s FAIL bta-install-failed\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
+    echo "[e2e] <- FAIL $VERSION: BTA server package would not unzip"
+    exit 1
+  fi
+  PREINSTALL_MOUNT_ARGS="-v ${PREINSTALL_TMP_DIR}/install:/bta-preinstalled:ro"
+fi
+
 # Forge path: same host-side-install trick, different installer. Forge has no
 # launcher jar to download — `--installServer` materialises a whole server tree
 # (libraries/, the vanilla jar, and a `unix_args.txt` @argfile), which is then
@@ -627,6 +741,8 @@ if docker run --rm \
     -e E2E_CONFIG_VARIANT="$CONFIG_VARIANT" \
     -e NEOFORGE_VERSION="$NEOFORGE_VERSION" \
     -e BABRIC_LOADER_VERSION="$BABRIC_LOADER_VERSION" \
+    -e BTA_LOADER_VERSION="$BTA_LOADER_VERSION" \
+    -e BTA_PROTOCOL="$BTA_PROTOCOL" \
     -v "${REPO_ROOT}/${MOD_JAR}:/tmp/mod.jar:ro" \
     "$@" \
     "$IMAGE" 2>&1 | tee "$LOG_FILE" | sed -u "s/^/[$KEY] /"; then
@@ -637,7 +753,11 @@ fi
 
 # The entrypoint's final line is the authoritative verdict; it knows nothing
 # about Java, so splice the JVM in here.
-RAW_VERDICT="$(grep -E '^E2E ' "$LOG_FILE" | tail -1 || true)"
+# -a, not a plain grep: a single NUL anywhere in the captured output makes grep
+# call the whole file binary, print nothing to stdout, and hand this an empty
+# string -- which turns a leg that DID report a verdict into `no-result`.
+# Measured: a bot printing a server disconnect reason byte-for-byte was enough.
+RAW_VERDICT="$(grep -aE '^E2E ' "$LOG_FILE" | tail -1 || true)"
 if [ -z "$RAW_VERDICT" ]; then
   VERDICT="E2E ${VERSION} java${JAVA_VERSION} FAIL no-result"
   STATUS=1

@@ -24,6 +24,15 @@ NEOFORGE_VERSION="${NEOFORGE_VERSION:-}"
 # The default mirrors that script's own pin so a standalone run is not silently
 # unpinned.
 BABRIC_LOADER_VERSION="${BABRIC_LOADER_VERSION:-0.19.3}"
+# Set by scripts/e2e-run-one.sh for LOADER=bta only, and asserted for the same
+# reason as the Babric one above: BTA ships its own fabric-loader fork inside the
+# server package, so the loader version is what says WHICH stack this leg booted.
+# Default mirrors that script's pin.
+BTA_LOADER_VERSION="${BTA_LOADER_VERSION:-0.18.4-bta.11}"
+# Also per-BTA-version, and also decided by scripts/e2e-run-one.sh's package
+# table: BTA bumps its wire protocol number every release, and the bot must offer
+# the one THIS server accepts or it is disconnected before it can send anything.
+BTA_PROTOCOL="${BTA_PROTOCOL:-32769}"
 # 1 = the config-behaviors leg: seed config/commands-spy.json BEFORE boot and
 # assert blacklist suppression + logArguments:true instead of the default-leg
 # assertions. Its own boot exists because CommandsSpy.CONFIG is a static final
@@ -72,6 +81,15 @@ elif [ "$LOADER" = "babric" ]; then
   # which reads like a metadata bug and is not one.
   echo "[e2e] Copying pre-installed Babric server for Minecraft $MC_VERSION..."
   cp -R /babric-preinstalled/. .
+  SERVER_LAUNCH_ARGS="-jar fabric-server-launch.jar"
+elif [ "$LOADER" = "bta" ]; then
+  # BTA: the host unzipped a ready-made modded server package and bind-mounted it.
+  # There is no installer to run here and nothing to download -- BTA publishes the
+  # whole instance, mods/ (halplibe) included, as one release asset. Whole tree for
+  # the same reason as Babric's: fabric-server-launch.jar is a THIN jar whose
+  # manifest Class-Path points into libraries/.
+  echo "[e2e] Copying pre-installed BTA server package for $MC_VERSION..."
+  cp -R /bta-preinstalled/. .
   SERVER_LAUNCH_ARGS="-jar fabric-server-launch.jar"
 elif [ "$LOADER" = "forge" ]; then
   # Forge: same host-side-install trick as Quilt (the installer wants a modern
@@ -126,8 +144,10 @@ fi
 # test verifies.
 
 # eula.txt postdates b1.7.3 (it landed in 1.7.10). The beta server never reads it
-# and never asks for it -- verified by booting one with no eula.txt present.
-if [ "$LOADER" != "babric" ]; then
+# and never asks for it -- verified by booting one with no eula.txt present. BTA
+# forked the Beta codebase and never gained the check either; the spike booted one
+# with no eula.txt present.
+if [ "$LOADER" != "babric" ] && [ "$LOADER" != "bta" ]; then
   echo 'eula=true' > eula.txt
 fi
 
@@ -161,6 +181,32 @@ pvp=true
 allow-nether=false
 allow-flight=false
 white-list=false
+server-port=25565
+EOF
+elif [ "$LOADER" = "bta" ]; then
+  # BTA's own key set, taken verbatim from the server.properties its release package
+  # ships -- not Beta's and not the modern one. Both differ: BTA gained keys Beta
+  # never had (world-type, packet-delay, sleep-percentage) and never gained the ones
+  # the modern block below writes (level-type, generator-settings, simulation-distance,
+  # sync-chunk-writes, network-compression-threshold, generate-structures). There is
+  # still no RCON anywhere in it, which is what the absence assertion below reads.
+  # world-type is left to BTA's own default: its flat/void analogue is a named
+  # generator, not a JSON blob, and the boot cost it would save is already inside
+  # the timeout.
+  cat > server.properties <<EOF
+online-mode=false
+level-name=world
+level-seed=e2e
+max-players=5
+view-distance=3
+spawn-monsters=false
+spawn-animals=false
+pvp=true
+allow-nether=false
+allow-flight=false
+white-list=false
+spawn-protection=0
+packet-delay=20
 server-port=25565
 EOF
 else
@@ -291,8 +337,8 @@ if [ "$BOOTED" -eq 1 ]; then
   echo "say e2e-args-probe" > console.in
   sleep 2
 
-  if [ "$LOADER" = "babric" ]; then
-    echo "[e2e] Skipping RCON send: Beta 1.7.3 has no RCON (asserted absent below)"
+  if [ "$LOADER" = "babric" ] || [ "$LOADER" = "bta" ]; then
+    echo "[e2e] Skipping RCON send: $LOADER has no RCON (asserted absent below)"
   else
     echo "[e2e] Sending RCON command..."
     /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all || echo "[e2e] ⚠ RCON client failed"
@@ -311,6 +357,13 @@ if [ "$BOOTED" -eq 1 ]; then
     BOT_ARGS="--command list"
     if [ "$LOADER" = "babric" ]; then
       BOT_ARGS="--protocol 14 --command me"
+    fi
+    # BTA keeps Beta's framing but nothing else about the handshake, so it needs
+    # its own client, selected by protocol number -- which is per BTA release, not
+    # one constant, hence $BTA_PROTOCOL. --command me for the same reason as
+    # Babric: `list` never reaches the player seam on this codebase.
+    if [ "$LOADER" = "bta" ]; then
+      BOT_ARGS="--protocol ${BTA_PROTOCOL} --command me"
     fi
     # shellcheck disable=SC2086 # BOT_ARGS is a flag list; word splitting is the point
     timeout 160 /usr/local/bin/tools bot --host 127.0.0.1 --port 25565 $BOT_ARGS || echo "[e2e] ⚠ Player phase failed"
@@ -352,6 +405,14 @@ fi
 # turned a clock into four `mod-not-loaded` verdicts; picking the file that
 # provably starts at the boot banner is what makes every assertion below valid.
 BANNER='Starting minecraft server'
+# BTA renamed the line -- "Starting Better than Adventure! server for version 8.0.1"
+# -- and the vanilla literal appears nowhere in its log, so the check above would
+# reject BOTH captures and report the harness fault on a perfectly good run
+# (measured: that is exactly what the first BTA leg did). Era-exact literal for the
+# same reason the vanilla one is: a pattern loose enough to match both proves less.
+if [ "$LOADER" = "bta" ]; then
+  BANNER='Starting Better than Adventure! server'
+fi
 if [ "$BOOTED" -ne 1 ]; then
   # Never booted: the banner is legitimately absent and boot-failed already owns
   # this run. Old preference, so a bootstrap crash still reports the loader's log.
@@ -530,6 +591,10 @@ case "$MC_VERSION" in
   # makes it a command); the mod logs the bare name after normalization, which is
   # why this literal has none.
   b1.7.3)                                                      PLAYER_LIST_LITERAL="me" ;;
+  # BTA inherits that same narrow player seam from the Beta codebase, and its
+  # CommandManager strips the slash before the mod ever sees the line -- measured,
+  # docs/bta-toolchain-spike.md logs "[Player: e2e_player1] me".
+  bta*)                                                        PLAYER_LIST_LITERAL="me" ;;
   1.14|1.14.*|1.15|1.15.*|1.16|1.16.*|1.17|1.17.*|1.18|1.18.*) PLAYER_LIST_LITERAL="/list" ;;
   *)                                                           PLAYER_LIST_LITERAL="list" ;;
 esac
@@ -592,12 +657,37 @@ if [ "$LOADER" = "babric" ]; then
   fi
 fi
 
+# The same canary for BTA, and it pins TWO things at once because BTA's loader
+# prints BTA's OWN game version here, not b1.7.3: "Loading Minecraft 8.0.1 with
+# Fabric Loader 0.18.4-bta.11". So this single line proves the leg booted the
+# version it claims AND on the loader fork it was pinned to -- the server package
+# carries both, and a re-cut release could move either. ${MC_VERSION#bta} is the
+# upstream version the package table in scripts/e2e-run-one.sh keyed off.
+if [ "$LOADER" = "bta" ]; then
+  if ! grep -q "Loading Minecraft ${MC_VERSION#bta} with Fabric Loader ${BTA_LOADER_VERSION}" "$LOG_FILE"; then
+    FAILURES="${FAILURES}bta-loader-version-drift,"
+  fi
+fi
+
 # Two phrasings, era-exact: older Mixin says "was not found", modern Mixin
 # "could not find any targets matching". Fabric/Quilt only: neither Forge nor
 # NeoForge ships a mixin — both hook their platform's native CommandEvent — so
 # this grep could not fail there and would prove nothing. What proves the
 # Forge/NeoForge hook is the console/RCON/player assertions below.
-if [ "$LOADER" != "forge" ] && [ "$LOADER" != "neoforge" ] && grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then
+MIXIN_MISS_RE='was not found|could not find any targets matching'
+# BTA is the one platform whose server package ships ANOTHER mod: halplibe is
+# inside the release zip's mods/, and it declares client-only mixins that warn
+# "@Mixin target net.minecraft.client.Minecraft was not found ... from mod
+# halplibe" on every dedicated-server boot. The unqualified pattern reads those
+# as OUR missing target and fails a leg whose console command demonstrably
+# logged — measured on BTA 7.3. Mixin prints the config and the mod id on the
+# same line, so our own mod name is what separates the two. Narrowed to bta
+# alone: nothing else in the matrix has a foreign mod in mods/, and adding the
+# qualifier everywhere would weaken an assertion that is already exact there.
+if [ "$LOADER" = "bta" ]; then
+  MIXIN_MISS_RE='(was not found|could not find any targets matching).*commandsspy'
+fi
+if [ "$LOADER" != "forge" ] && [ "$LOADER" != "neoforge" ] && grep -qE "$MIXIN_MISS_RE" "$LOG_FILE"; then
   FAILURES="${FAILURES}mixin-not-applied,"
 fi
 
@@ -620,12 +710,18 @@ fi
 # rewrites at boot, and nothing must be listening on the RCON port. The failure name
 # deliberately says "update docs" -- if RCON ever appears, the wiki claim is what is
 # wrong, not the mod.
-if [ "$LOADER" = "babric" ]; then
+# BTA forked that same pre-RCON codebase and never added it back: the
+# server.properties its package ships has no rcon.* key either, and neither does the
+# one the server rewrites at boot. Same proven-absence shape, same two halves, so
+# the BTA leg carries the same number of measured behaviours as every other loader.
+# ${LOADER}- prefixes the verdict, which is what keeps the two failure names
+# distinct (babric-… / bta-…) without a second copy of the block.
+if [ "$LOADER" = "babric" ] || [ "$LOADER" = "bta" ]; then
   if grep -q '^rcon\.' server.properties 2>/dev/null; then
-    FAILURES="${FAILURES}babric-rcon-appeared-update-docs,"
+    FAILURES="${FAILURES}${LOADER}-rcon-appeared-update-docs,"
   fi
   if /usr/local/bin/tools rcon --port "$RCON_PORT" --password "$RCON_PASSWORD" save-all >/dev/null 2>&1; then
-    FAILURES="${FAILURES}babric-rcon-appeared-update-docs,"
+    FAILURES="${FAILURES}${LOADER}-rcon-appeared-update-docs,"
   fi
 elif ! grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then
   FAILURES="${FAILURES}rcon-command-not-logged,"
@@ -687,17 +783,20 @@ if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
 fi
 if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandEvent, no Mixin to apply";
 elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoForge jar has no mixin (it hooks CommandEvent)";
-elif grep -qE 'was not found|could not find any targets matching' "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
+elif grep -qE "$MIXIN_MISS_RE" "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi
 if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] list" "$LOG_FILE"; then echo "  [PASS] console command logged"; else echo "  [FAIL] console command not logged"; fi
 if grep -q "\[CommandsSpy\] \[${CONSOLE_SOURCE_NAME}\] notacommand" "$LOG_FILE"; then echo "  [PASS] non-existing command logged"; else echo "  [FAIL] non-existing command not logged"; fi
-if [ "$LOADER" = "babric" ]; then
+if [ "$LOADER" = "babric" ] || [ "$LOADER" = "bta" ]; then
   case "$FAILURES" in
-    *babric-rcon-appeared-update-docs*) echo "  [FAIL] RCON appeared on b1.7.3 — update the wiki" ;;
-    *) echo "  [PASS] b1.7.3 has no RCON, as expected (asserted absent, not skipped)" ;;
+    *rcon-appeared-update-docs*) echo "  [FAIL] RCON appeared on $MC_VERSION — update the wiki" ;;
+    *) echo "  [PASS] $MC_VERSION has no RCON, as expected (asserted absent, not skipped)" ;;
   esac
 elif grep -q "\[CommandsSpy\] \[${RCON_SOURCE_NAME}\] save-all" "$LOG_FILE"; then echo "  [PASS] rcon command logged as [${RCON_SOURCE_NAME}]"; else echo "  [FAIL] rcon command not logged as [${RCON_SOURCE_NAME}]"; fi
 if [ "$LOADER" = "babric" ]; then
   if grep -q "Loading Minecraft Beta 1.7.3 with Fabric Loader ${BABRIC_LOADER_VERSION}" "$LOG_FILE"; then echo "  [PASS] loader version pinned: Beta 1.7.3 on Fabric Loader ${BABRIC_LOADER_VERSION} (upstream, not the frozen babric fork)"; else echo "  [FAIL] loader/version banner drifted from Beta 1.7.3 + Fabric Loader ${BABRIC_LOADER_VERSION} — the leg is testing a different stack"; fi
+fi
+if [ "$LOADER" = "bta" ]; then
+  if grep -q "Loading Minecraft ${MC_VERSION#bta} with Fabric Loader ${BTA_LOADER_VERSION}" "$LOG_FILE"; then echo "  [PASS] game+loader pinned: BTA ${MC_VERSION#bta} on Fabric Loader ${BTA_LOADER_VERSION}"; else echo "  [FAIL] loader/version banner drifted from BTA ${MC_VERSION#bta} + Fabric Loader ${BTA_LOADER_VERSION} — the leg is testing a different stack"; fi
 fi
 if [ "$CONFIG_AT_BOOT" -eq 1 ]; then echo "  [PASS] config/commands-spy.json existed at boot, before any command ran"; else echo "  [FAIL] config/commands-spy.json did NOT exist at boot — MOD.md's \"On startup\" promise unmet on this leg"; fi
 if [ -f "$CONFIG_FILE" ] && grep -q '"blacklist": \[\]' "$CONFIG_FILE" && grep -q '"logArguments": false' "$CONFIG_FILE"; then echo "  [PASS] config/commands-spy.json auto-created with the documented initial schema"; else echo "  [FAIL] config/commands-spy.json missing or not the documented initial schema"; cat "$CONFIG_FILE" 2>/dev/null || true; fi
