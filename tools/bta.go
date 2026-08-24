@@ -20,9 +20,20 @@ import (
 // public key, and chat is a message packet with a type byte and an encrypted flag.
 //
 // Not cited from a spec page: BTA publishes no protocol documentation. Every layout here
-// was verified empirically against a booted BTA 8.0.1 server, which logged the bot in and
+// was verified empirically against booted BTA servers, which logged the bot in and
 // processed its command. See docs/bta-toolchain-spike.md §7.
-const btaProtocolVersion = 32769
+//
+// The protocol number is PER RELEASE, not per fork, and the caller supplies it: 7.3 is
+// 29472, 7.3_01..7.3_04 are 29441..29444, 8.0 is 32768 and 8.0.1 is 32769 (read out of
+// each package's PacketHandlerLogin equality check). Offering the wrong one gets the
+// server to kick the bot during login with "Outdated server!". The version→number table
+// lives in scripts/e2e-run-one.sh beside each package's hash, so it is not duplicated
+// here; this file only needs to know where the range starts, to tell a BTA protocol
+// number apart from a modern one (three digits) on the command line.
+const (
+	btaProtocolVersion    = 32769 // BTA 8.0.1, the newest declared version
+	btaMinProtocolVersion = 29441 // BTA 7.3_01, the lowest number any declared version uses
+)
 
 // Packet ids, serverbound unless noted.
 const (
@@ -67,9 +78,9 @@ func btaHandshakePacket(username string) []byte {
 // btaLoginPacket sends zero seed/dimension/world-type: the server ignores those on a
 // serverbound login and replies with the real values. The UUID and publicKey are NOT
 // ignored — see btaOfflineUUID and btaPublicKey.
-func btaLoginPacket(username, publicKey string) []byte {
+func btaLoginPacket(protocol int, username, publicKey string) []byte {
 	out := []byte{btaPacketLogin}
-	out = binary.BigEndian.AppendUint32(out, uint32(btaProtocolVersion))
+	out = binary.BigEndian.AppendUint32(out, uint32(protocol))
 	out = append(out, btaString(username)...)
 	uuid := btaOfflineUUID(username)
 	out = append(out, uuid[:]...)
@@ -150,7 +161,12 @@ func btaNextPacketID(r io.Reader) (byte, error) {
 				return 0, fmt.Errorf("custom payload body (%d bytes): %w", size, err)
 			}
 		case btaPacketDisconnect:
-			reason, _ := btaReadString(r)
+			// The kick reason is protocol 14's UTF-16BE string16, NOT the UTF-8 form
+			// every other string on this protocol uses — measured, and the reason this
+			// borrows beta.go's reader. Read as UTF-8 it comes out as " O u t d a t e d",
+			// NUL-interleaved: unreadable, and enough to make grep call a captured log
+			// binary and skip it.
+			reason, _ := betaReadString16(r)
 			return 0, fmt.Errorf("server disconnected us: %s", reason)
 		default:
 			return id[0], nil
@@ -161,7 +177,7 @@ func btaNextPacketID(r io.Reader) (byte, error) {
 // btaLogin runs the whole offline-mode login: handshake, then login request. The
 // server's handshake reply is exactly "-" in offline mode; anything else means the
 // server wants authentication and the leg's server.properties is wrong.
-func btaLogin(conn net.Conn, username string) error {
+func btaLogin(conn net.Conn, protocol int, username string) error {
 	if _, err := conn.Write(btaHandshakePacket(username)); err != nil {
 		return fmt.Errorf("write handshake: %w", err)
 	}
@@ -184,7 +200,7 @@ func btaLogin(conn net.Conn, username string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := conn.Write(btaLoginPacket(username, publicKey)); err != nil {
+	if _, err := conn.Write(btaLoginPacket(protocol, username, publicKey)); err != nil {
 		return fmt.Errorf("write login: %w", err)
 	}
 	id, err = btaNextPacketID(conn)

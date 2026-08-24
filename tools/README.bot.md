@@ -38,12 +38,16 @@ so a failure line tells you exactly where it died.
 | `-command` | `list` | command to send, without the slash |
 | `-timeout` | `150s` | hard deadline for the entire run |
 | `-settle` | `3s` | pause after joins and after the command |
-| `-protocol` | `0` | skip the status ping and assume this protocol; `14` = Beta 1.7.3, `32769` = BTA |
+| `-protocol` | `0` | skip the status ping and assume this protocol; `14` = Beta 1.7.3, `29441`-`32769` = BTA (per release) |
 
 `-protocol` exists for the two pre-Netty loaders. A Beta 1.7.3 server answers
 the modern status ping with `0xFF` + `"Protocol error"` — the status handshake
 postdates it — so protocol 14 cannot be negotiated and must be declared; BTA
-forks that same framing and is declared for the same reason. Every other loader
+forks that same framing and is declared for the same reason. Each BTA release
+has its own protocol number and kicks a client that offers a different one, so
+the whole range dispatches to `runBtaBot` and the number is passed through to
+the login packet rather than assumed — the version→number table lives in
+`scripts/e2e-run-one.sh`. Every other loader
 still negotiates by ping, which is why the flag defaults to 0.
 
 Each declared protocol short-circuits `runBot` into its own client, before the
@@ -52,7 +56,7 @@ status-ping phase:
 | `-protocol` | Function | Wire code |
 |---|---|---|
 | `14` | `runBetaBot` | `beta.go` |
-| `32769` | `runBtaBot` | `bta.go` |
+| `29441`-`32769` | `runBtaBot` | `bta.go` |
 
 Both twins run the same phases as `runBot` — two players, one command, the same
 attribution cross-check — but over framing that shares nothing with `mc.go`: no

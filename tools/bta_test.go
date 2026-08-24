@@ -72,7 +72,7 @@ func TestBtaPacketLayouts(t *testing.T) {
 		const pub = "TESTKEY"
 		var want []byte
 		want = append(want, 0x01)
-		want = append(want, 0x00, 0x00, 0x80, 0x01) // int32 protocol 32769
+		want = append(want, 0x00, 0x00, 0x80, 0x01) // int32 protocol, as passed in
 		want = append(want, 0x00, 0x0b)
 		want = append(want, "e2e_player1"...)
 		uuid := md5.Sum([]byte("OfflinePlayer:e2e_player1"))
@@ -85,7 +85,7 @@ func TestBtaPacketLayouts(t *testing.T) {
 		want = append(want, 0, 0, 0, 0)             // int32 dimensionId
 		want = append(want, 0, 0, 0, 0)             // int32 worldTypeId
 		want = append(want, 0x00)                   // int8 packetDelay
-		if got := btaLoginPacket("e2e_player1", pub); !bytes.Equal(got, want) {
+		if got := btaLoginPacket(btaProtocolVersion, "e2e_player1", pub); !bytes.Equal(got, want) {
 			t.Fatalf("login = % x, want % x", got, want)
 		}
 	})
@@ -154,10 +154,13 @@ func TestBtaNextPacketIDSkipsNoise(t *testing.T) {
 	// A 0xFF must surface the server's own kick reason rather than a framing error:
 	// that string is the only diagnosis an e2e failure gets.
 	t.Run("reports a disconnect with its reason", func(t *testing.T) {
-		stream := append([]byte{0xFF}, btaString("Outdated client!")...)
-		if _, err := btaNextPacketID(bytes.NewReader(stream)); err == nil ||
-			!strings.Contains(err.Error(), "Outdated client!") {
+		stream := append([]byte{0xFF}, betaString16("Outdated server!")...)
+		_, err := btaNextPacketID(bytes.NewReader(stream))
+		if err == nil || !strings.Contains(err.Error(), "Outdated server!") {
 			t.Fatalf("btaNextPacketID error = %v, want it to carry the kick reason", err)
+		}
+		if strings.ContainsRune(err.Error(), 0) {
+			t.Fatalf("kick reason %q still carries NUL bytes — decoded as UTF-8, not UTF-16BE", err)
 		}
 	})
 }
@@ -189,5 +192,26 @@ func TestBtaOfflineUUIDIsPerPlayer(t *testing.T) {
 	}
 	if one[6]&0xf0 != 0x30 || one[8]&0xc0 != 0x80 {
 		t.Fatalf("uuid % x is not a version-3 RFC 4122 uuid", one)
+	}
+}
+
+// Every BTA release has its own protocol number and the server kicks a client that
+// offers a different one, so the dispatch in bot.go routes the whole range to runBtaBot
+// rather than the newest number alone. The gap between the two forks is enormous — three
+// digits versus five — so a floor is enough to tell them apart.
+func TestBtaProtocolRangeIsAboveEveryModernOne(t *testing.T) {
+	// The seven declared versions, read out of each package's PacketHandlerLogin.
+	for _, p := range []int{29472, 29441, 29442, 29443, 29444, 32768, btaProtocolVersion} {
+		if p < btaMinProtocolVersion {
+			t.Fatalf("BTA protocol %d is below the dispatch floor %d — bot.go would send it to the modern client", p, btaMinProtocolVersion)
+		}
+	}
+	if betaProtocolVersion >= btaMinProtocolVersion {
+		t.Fatalf("protocol %d would dispatch to the BTA client", betaProtocolVersion)
+	}
+	for _, r := range rows {
+		if r.proto >= btaMinProtocolVersion {
+			t.Fatalf("table row %s (protocol %d) would dispatch to the BTA client", r.name, r.proto)
+		}
 	}
 }

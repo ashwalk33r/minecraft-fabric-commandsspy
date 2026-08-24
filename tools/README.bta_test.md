@@ -60,8 +60,10 @@ feeds a stream of `0xFA` + keep-alive + `0xFA` + the real handshake reply and as
 **both** the returned id and that the `"-"` after it still reads back correctly — the
 second half is what proves the skip landed on a packet boundary.
 
-The second subtest pins that a `0xFF` surfaces the server's own kick reason: that string
-is the only diagnosis an e2e failure gets.
+The second subtest pins that a `0xFF` surfaces the server's own kick reason — decoded.
+That string is the only diagnosis an e2e failure gets, and it is the one field on this
+protocol encoded as UTF-16BE rather than UTF-8, so it asserts both that the text is there
+and that no NUL survived: NULs make `grep` treat a captured log as binary and skip it.
 
 ### TestBtaPublicKeyFitsTheServerCap
 
@@ -69,6 +71,14 @@ The login packet's key must be a real 2048-bit X.509/SPKI key or the server's lo
 handler throws and the connection dies. Base64 of a 2048-bit SPKI is exactly 392 chars,
 which is also the server's `MAX_AES_KEY_SIZE` — a length check catches both a wrong key
 size and a wrong encoding.
+
+### TestBtaProtocolRangeIsAboveEveryModernOne
+
+Each BTA release has its own protocol number and kicks a client offering a different one,
+so `bot.go` dispatches on the whole range rather than on 8.0.1's number alone. This walks
+the seven declared numbers against the dispatch floor, and walks protocol 14 and every
+row of `table.go` the other way — nothing that should reach another client may fall into
+the BTA range.
 
 ### TestBtaOfflineUUIDIsPerPlayer
 

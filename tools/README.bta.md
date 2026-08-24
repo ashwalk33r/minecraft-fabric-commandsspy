@@ -11,7 +11,8 @@ cannot be a table row; the changes are why it is not a flag on `beta.go`:
 
 | | protocol 14 (`beta.go`) | protocol 32769 (`bta.go`) |
 |---|---|---|
-| string form | `int16` UTF-16 **code units** + UTF-16BE | `int16` UTF-8 **bytes** + UTF-8 |
+| string form | `int16` UTF-16 **code units** + UTF-16BE | `int16` UTF-8 **bytes** + UTF-8 (except the kick reason) |
+| protocol number | 14, one fork-wide | **one per release**, 29441..32769 |
 | login fields | protocol, name, seed, dimension | protocol, name, **uuid**, **RSA public key**, seed, dimension, world type, packet delay |
 | chat packet | `0x03` + string | `0x03` + **type byte** + **encrypted flag** + string |
 | login noise | none | unsolicited `0xFA` custom payloads |
@@ -39,17 +40,50 @@ with no second line for `e2e_player2` — the attribution cross-check.
 |---|---|---|
 | `0x02` Handshake | C→S | `byte 0x02` + `string username` |
 | `0x02` Handshake | S→C | `byte 0x02` + `string hash` — offline mode returns exactly `-` |
-| `0x01` Login | C→S | `byte 0x01` + `int protocol (=32769)` + `string username` + `16 bytes uuid` + `string publicKey` + `long worldSeed (0)` + `int dimensionId (0)` + `int worldTypeId (0)` + `byte packetDelay (0)` |
+| `0x01` Login | C→S | `byte 0x01` + `int protocol (per release)` + `string username` + `16 bytes uuid` + `string publicKey` + `long worldSeed (0)` + `int dimensionId (0)` + `int worldTypeId (0)` + `byte packetDelay (0)` |
 | `0x01` Login | S→C | `byte 0x01` + `int entityId` + `string (empty)` + `16 bytes uuid` + `string serverPublicKey` + `long worldSeed` + `int dimensionId` + `int worldTypeId` + `byte packetDelay` |
 | `0x00` Keep Alive | both | a **bare single byte**, no payload |
 | `0x03` Message | C→S | `byte 0x03` + `byte type (0 = chat)` + `byte encrypted (0)` + `string message` (a leading `/` makes it a command) |
 | `0x88` AES Send Key | S→C | `byte 0x88` + `string` — the player's AES key, RSA-encrypted to the client's public key |
 | `0xFA` Custom Payload | S→C | `byte 0xFA` + `string channel` + `int size` + `size` bytes |
-| `0xFF` Disconnect | S→C | `byte 0xFF` + `string reason` |
+| `0xFF` Disconnect | S→C | `byte 0xFF` + **`string16 reason`** — UTF-16BE, not this protocol's UTF-8 |
 
 `worldSeed` / `dimensionId` / `worldTypeId` on the serverbound login are ignored by the
 server, which replies with the real values. Two fields on that packet are **not** ignored,
 and each cost a failed run to learn:
+
+## The protocol number is per RELEASE
+
+There is no single BTA protocol number. Each release compares the client's against its
+own and kicks a mismatch during login, before anything can be sent:
+
+| Version | Protocol | | Version | Protocol |
+|---|---|---|---|---|
+| 7.3 | 29472 | | 7.3_04 | 29444 |
+| 7.3_01 | 29441 | | 8.0 | 32768 |
+| 7.3_02 | 29442 | | 8.0.1 | 32769 |
+| 7.3_03 | 29443 | | | |
+
+(read out of each package's `PacketHandlerLogin` equality check). So the number is a
+**parameter**, not a constant: `bot.go` routes the whole range to `runBtaBot` and passes
+the caller's number straight into `btaLoginPacket`. The version→number table lives in
+`scripts/e2e-run-one.sh` next to each package's hash and is deliberately not duplicated
+here; `bta.go` only knows where the range starts (`btaMinProtocolVersion`), which is all
+the dispatch needs — modern protocol numbers are three digits, BTA's are five.
+
+## The kick reason is UTF-16BE
+
+Every string on this protocol is `int16` byte count + UTF-8 — **except** the `0xFF`
+disconnect reason, which is protocol 14's UTF-16BE `string16`. That is why
+`btaNextPacketID` reaches over to `beta.go`'s `betaReadString16` for that one field.
+Read with the wrong decoder, `Outdated server!` prints as:
+
+```
+server disconnected us:  O u t d a t e d
+```
+
+— half the string, NUL-interleaved. Unreadable, and the NULs are enough to make `grep`
+call a captured e2e log binary and skip it, which costs the run its verdict line.
 
 ## The two fields that are load-bearing
 
@@ -109,7 +143,7 @@ the stream: **the verdict comes from the server log.**
 
 ## Place in the package
 
-`bot.go` dispatches here when `--protocol 32769` is given, next to its protocol-14 branch.
-That flag exists because this protocol **cannot be negotiated**: like Beta 1.7.3, BTA
+`bot.go` dispatches here when `--protocol` names any number in the BTA range, next to its
+protocol-14 branch. That flag exists because this protocol **cannot be negotiated**: like Beta 1.7.3, BTA
 predates the modern status handshake, so `ping()` in `mc.go` can never learn the version.
 Every other loader still negotiates by ping.
