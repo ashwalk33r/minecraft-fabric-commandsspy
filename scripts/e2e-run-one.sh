@@ -285,6 +285,19 @@ BABRIC_SERVER_SHA256="${BABRIC_SERVER_SHA256:-033a127e4a25a60b038f15369c89305a3d
 #
 # BTA_LOADER_VERSION / BTA_PROTOCOL override the table for re-measuring a re-cut
 # release without editing this file.
+# BTA's older packages have a CEILING as well as a floor, and it is the same
+# number. The bundled sponge-mixin is 0.12.4+mixin.0.8.5 through 7.3_03 and
+# 0.8.7 from 7.3_04 on; 0.8.5 predates Java 21 class files, so halplibe's own
+# MinecraftServerMixin -- shipped inside the server package, nothing to do with
+# our jar -- dies with "Unsupported class file major version 65" before the
+# server starts. Measured on both sides: BTA 7.3 crashes on java 21, and
+# bta8.0.1 boots and passes every assertion on it. Set here rather than in the
+# package table below because the ceiling guard runs long before the install.
+if [ "$LOADER" = "bta" ]; then
+  case "$VERSION" in
+    bta7.3|bta7.3_0[1-3]) CEILING_JAVA=17 ;;
+  esac
+fi
 BTA_RELEASE_BASE="https://github.com/Turnip-Labs/bta-fabric-instance-repo/releases/download"
 BTA_LOADER_VERSION="${BTA_LOADER_VERSION:-}"
 BTA_PROTOCOL="${BTA_PROTOCOL:-}"
