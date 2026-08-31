@@ -589,7 +589,7 @@ if [ "$LOADER" = "bta" ]; then
     7.3_03) BTA_ASSET="bta_babric_server_7.3_03.zip";    BTA_PACKAGE_LOADER=0.15.6-bta.7;  BTA_PACKAGE_PROTOCOL=29443; BTA_SHA256=cf82bb06218a2dc9e945662488c95780ff651aec7731f37e882d35909e4b001c ;;
     7.3_04) BTA_ASSET="bta_fabric_server_7.3_04.zip";    BTA_PACKAGE_LOADER=0.18.4-bta.10; BTA_PACKAGE_PROTOCOL=29444; BTA_SHA256=f91146c9f51848d9303d1052d5151f8a63311262e91fb835fdc13c88f30427a0 ;;
     8.0)    BTA_ASSET="bta_fabric_server_8.0.zip";       BTA_PACKAGE_LOADER=0.18.4-bta.11; BTA_PACKAGE_PROTOCOL=32768; BTA_SHA256=b0e8ed27ded7b75c88b530fbb94f149075fd11296da451c91d6788c5463e8a31 ;;
-    8.0.1)  BTA_ASSET="bta_fabric_server_8.0.1.zip";     BTA_PACKAGE_LOADER=0.18.4-bta.11; BTA_PACKAGE_PROTOCOL=32769; BTA_SHA256=945ee1379cfb9f9fa5fb2a99e6aff133df28835394a44f52dde220c07518885b ;;
+    8.0.1)  BTA_ASSET="bta_fabric_server_8.0.1.zip";     BTA_PACKAGE_LOADER=0.18.4-bta.11; BTA_PACKAGE_PROTOCOL=32769; BTA_SHA256=18a8dc132e9c08f9cc6928ac00cd05d2d9450fd98cb26eb8fb732455bf9011f4 ;;
     *)
       printf 'E2E %s java%s FAIL bta-undeclared-version\n' "$VERSION" "$JAVA_VERSION" > "$RESULT_FILE"
       echo "[e2e] <- FAIL $VERSION: no pinned BTA server package (declared: bta7.3 bta7.3_01 bta7.3_02 bta7.3_03 bta7.3_04 bta8.0 bta8.0.1)"
