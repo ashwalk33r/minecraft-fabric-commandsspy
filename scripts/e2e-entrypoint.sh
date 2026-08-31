@@ -565,9 +565,6 @@ esac
 if [ "$E2E_CONFIG_VARIANT" = "1" ]; then
   echo "[e2e] Assertion results (config-behaviors leg: blacklist + logArguments:true):"
   CFG_FAILURES=""
-  # No QUILT_ENTRYPOINT_GAP guard here (unlike the default leg below): this
-  # check assumes an era where the entrypoint banner fires. Only safe while
-  # every config-behaviors CI leg is pinned >=1.18 (see ci.yml).
   if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
     echo "  [PASS] mod loaded (Loading CommandsSpy)"
   else
@@ -623,52 +620,20 @@ case "$MC_VERSION" in
   *)                                                           PLAYER_LIST_LITERAL="list" ;;
 esac
 
-# quilt-loader never invokes the ModInitializer "main" entrypoint on dedicated
-# servers below 1.18.2 — silently, no crash. The boundary was believed to be
-# 1.18 until the #84 sweep booted 1.18 and 1.18.1 for the first time (run
-# 32576161823): both loaded the mod, applied the mixins and passed every
-# functional assertion — console, RCON, config-at-boot, player command — with
-# the "main" banner the only thing missing, exactly like 1.17.1 below them. Mixins still apply, so every
-# functional assertion below is unaffected; only the startup banner is missing.
-# See the wiki, Version-Boundaries-And-Root-Causes -> "Quilt: the pre-1.18.2 entrypoint gap".
-# Asserted as EXPECTED-ABSENT, not skipped, so CI
-# reports it the day upstream fixes this.
-QUILT_ENTRYPOINT_GAP=0
-if [ "$LOADER" = "quilt" ]; then
-  case "$MC_VERSION" in
-    1.14|1.14.*|1.15|1.15.*|1.16|1.16.*|1.17|1.17.*|1.18|1.18.1) QUILT_ENTRYPOINT_GAP=1 ;;
-  esac
-fi
-
 FAILURES=""
 
-if [ "$QUILT_ENTRYPOINT_GAP" = "1" ]; then
-  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
-    FAILURES="${FAILURES}quilt-entrypoint-gap-closed-update-docs,"
-  fi
-elif ! grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
+# Unconditional on every loader and version. It was not always: quilt-loader
+# below 0.30.1 silently never invoked the "main" entrypoint on dedicated servers
+# under Minecraft 1.18.2, so this leg carried an inverted expected-absent
+# assertion for the quilt 1.14-1.18.1 band. Filed as QuiltMC/quilt-loader#500,
+# fixed in 0.30.1, and the mod now declares >=0.30.1 (gradle.properties), so
+# there is no accepted loader left on which the banner can be missing.
+if ! grep -q 'Loading CommandsSpy' "$LOG_FILE"; then
   FAILURES="${FAILURES}mod-not-loaded,"
 fi
 
-# The gap above is specific to the "main" entrypoint's call site. preLaunch is a
-# different one — Knot invokes it before the game's main class loads — and it fires
-# on EVERY version, quilt 1.14-1.17 included, where "main" never does. Measured on
-# quilt-loader 0.30.0: on 1.16.5 this line appears 25s before "Done (" while the
-# "main" banner never appears at all, in the same boot. That is what puts config
-# auto-creation back at boot time there. Deliberately its own gate and NOT
-# QUILT_ENTRYPOINT_GAP: same version boundary today, but two independent upstream
-# facts, and that flag's [FAIL] text tells whoever sees the "main" gap close to
-# delete it — which would silently invert this assertion. Forge and NeoForge ship
-# neither manifest and could never emit the string.
-if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
-  if ! grep -q 'CommandsSpy preLaunch: config loaded\.' "$LOG_FILE"; then
-    FAILURES="${FAILURES}prelaunch-entrypoint-not-invoked,"
-  fi
-fi
-
-# Babric declares no preLaunch entrypoint -- that one exists solely to measure the
-# Quilt pre-1.18.2 gap -- so the guard above already excludes it. This takes its place,
-# and it is a canary for toolchain drift rather than for the mod: the mod loads
+# Babric gets a canary of its own, because the banner assertion above is a test of
+# the mod and this is a test of the toolchain under it: the mod loads
 # identically on the frozen babric-fork loader (0.15.6-babric.2) and on upstream
 # 0.19.3, so without pinning the version the leg could silently start testing a
 # different stack after any upstream drift. Pinned to what the spike actually booted.
@@ -753,10 +718,10 @@ fi
 
 # MOD.md's "On startup" half, sampled at boot before any command ran.
 # Unconditional on purpose: every loader's entrypoint touches CommandsSpy before
-# the server is ready — Fabric/Quilt via the preLaunch entrypoint (measured, incl.
-# quilt below 1.18.2 where "main" never fires), Forge/NeoForge via the @Mod
-# constructor's CommandsSpy.init(). A red leg here is a finding to investigate,
-# never a reason to narrow this check to a subset of loaders.
+# the server is ready — Fabric/Quilt via the "main" entrypoint, Forge/NeoForge
+# via the @Mod constructor, both calling CommandsSpy.init(). A red leg here is a
+# finding to investigate, never a reason to narrow this check to a subset of
+# loaders.
 if [ "$CONFIG_AT_BOOT" -ne 1 ]; then
   FAILURES="${FAILURES}config-not-created-at-boot,"
 fi
@@ -799,12 +764,7 @@ if [ "$BOOTED" -ne 1 ]; then
 fi
 
 echo "[e2e] Assertion results:"
-if [ "$QUILT_ENTRYPOINT_GAP" = "1" ]; then
-  if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [FAIL] quilt pre-1.18.2 entrypoint gap has closed upstream — update the wiki's Version-Boundaries-And-Root-Causes and drop QUILT_ENTRYPOINT_GAP"; else echo "  [PASS] quilt pre-1.18.2: entrypoint banner absent as expected (mixins still asserted below)"; fi
-elif grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [PASS] mod loaded (Loading CommandsSpy)"; else echo "  [FAIL] mod not loaded (Loading CommandsSpy)"; fi
-if [ "$LOADER" = "fabric" ] || [ "$LOADER" = "quilt" ]; then
-  if grep -q 'CommandsSpy preLaunch: config loaded\.' "$LOG_FILE"; then echo "  [PASS] preLaunch entrypoint invoked (config pulled up to boot)"; else echo "  [FAIL] preLaunch entrypoint NOT invoked — the preLaunch call site regressed"; fi
-fi
+if grep -q 'Loading CommandsSpy' "$LOG_FILE"; then echo "  [PASS] mod loaded (Loading CommandsSpy)"; else echo "  [FAIL] mod not loaded (Loading CommandsSpy)"; fi
 if [ "$LOADER" = "forge" ]; then echo "  [SKIP] mixin check: Forge uses CommandEvent, no Mixin to apply";
 elif [ "$LOADER" = "neoforge" ]; then echo "  [SKIP] mixin assertion: the NeoForge jar has no mixin (it hooks CommandEvent)";
 elif grep -qE "$MIXIN_MISS_RE" "$LOG_FILE"; then echo "  [FAIL] mixin not applied (injection target missing)"; else echo "  [PASS] mixin applied (no missing-target report)"; fi

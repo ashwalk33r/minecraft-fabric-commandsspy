@@ -1,28 +1,26 @@
-# Upstream report: quilt-loader's pre-1.18.2 entrypoint gap
+# quilt-loader's pre-1.18.2 entrypoint gap — filed, fixed, closed
 
-This file is a **bug report for quilt-loader, written to be pasted into
-QuiltMC's tracker by a human**. It has not been filed. Nothing has been sent
-to QuiltMC, to any maintainer, or to any forum, Discord or tracker.
+**Status: closed.** Filed upstream as
+[QuiltMC/quilt-loader#500](https://github.com/QuiltMC/quilt-loader/issues/500)
+and fixed in quilt-loader **0.30.1**, whose changelog reads *"[#500] Fixed
+server entrypoints not being invoked for `<1.18`"*. This project now pins
+0.30.1 in its e2e harness (`scripts/e2e-run-one.sh`) and declares
+`quilt_loader >=0.30.1` in `quilt.mod.json` (`gradle.properties`), so there is
+no accepted loader left on which the gap can appear.
 
-It lives here because the defect is upstream and not ours to fix, but the
-evidence for it is ours and is expensive to reassemble: it comes out of this
-repo's e2e matrix, which boots real dedicated servers across nine Minecraft
-versions on two loaders. Writing it down once means whoever decides to file
-does not have to re-derive it.
+This file is kept as the record of what was measured, because the evidence came
+out of this repo's e2e matrix — real dedicated servers across nine Minecraft
+versions on two loaders — and is expensive to reassemble. It is no longer
+something to paste anywhere.
 
-**Before pasting this anywhere, work through
-[the pre-filing checklist](#pre-filing-checklist-for-whoever-files-this) at
-the end.** It is short, and every item on it is something that goes stale.
+For this repo's own view of the same defect, see the wiki,
+[Quilt: the pre-1.18.2 entrypoint gap](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes#quilt-the-pre-1182-entrypoint-gap),
+and its two follow-on subsections, "The gap is specific to the `main` call
+site" and "Why a Quilt-native entrypoint cannot close this gap".
 
-Everything from the next heading to the end of the file is the report. Select
-from there and paste; nothing above it is meant to travel.
-
-For this repo's own view of the same defect — what it costs us and how CI
-holds it — see the wiki, [Quilt: the pre-1.18.2 entrypoint gap](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes#quilt-the-pre-1182-entrypoint-gap), and its
-two follow-on subsections, "The gap is specific to the `main` call site" and
-"Why a Quilt-native entrypoint cannot close this gap". That link is one-way:
-this file quotes the version matrix, the version matrix does not yet point
-back here.
+Everything below the next heading is the report as it was filed, in the past
+tense it has now earned. The measurements stand; the asks at the end were
+answered by the fix.
 
 ---
 
@@ -46,14 +44,14 @@ metadata and acted on most of it — one stage, `main`, is silently skipped.
 
 | Component | Version |
 | --- | --- |
-| quilt-loader | `0.30.0` |
+| quilt-loader | `0.30.0` (the last affected release; fixed in `0.30.1`) |
 | quilt-installer | `0.15.1` |
 
-Both are pinned in this project's e2e harness at
-`scripts/e2e-run-one.sh:159-160`:
+`0.30.0` is what every measurement below was taken on. The harness has since
+moved to `0.30.1`; the pins live in `scripts/e2e-run-one.sh`:
 
 ```sh
-QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
+QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.1}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
 ```
 
@@ -470,42 +468,62 @@ To be clear about what is and is not at stake:
   asking for a backport. We ship these versions today with full functional
   coverage in CI.
 
-This is filed — if it is filed — because a silent no-op is worth knowing
-about, not because it is hurting us.
+This was filed because a silent no-op is worth knowing about, not because it
+was hurting us.
 
-### A note for whoever fixes this
+### How it was closed
 
-If this is fixed in a quilt-loader newer than 0.30.0, our CI will not notice.
-The harness pins the loader version (`scripts/e2e-run-one.sh:159`), and our
-assertion is *inverted* on the affected versions — we assert the banner is
-**absent**, and fail the build if it ever appears
-(`quilt-entrypoint-gap-closed-update-docs` in `scripts/e2e-entrypoint.sh`).
-That tripwire only fires against the pinned loader. **Bumping the pin is
-therefore the moment to re-test this**, and the moment our CI will tell us the
-gap has closed.
+The tripwire worked exactly as designed. The harness pinned the loader version
+and the banner assertion was *inverted* on the affected versions — CI failed the
+build if the banner ever appeared — so bumping the pin was the moment the gap's
+closure became visible.
 
-### Pre-filing checklist for whoever files this
+On quilt-loader **0.30.1**, with `QUILT_LOADER_VERSION=0.30.1` and nothing else
+changed, all four corners of the failing band now print the banner — both JVMs
+(Java 8 and Java 17) and both ends of the version range:
 
-Do not paste this report without walking these. Each one is something that was
-true when this was written and may not be true now.
+```
+E2E 1.14.4 java8  FAIL quilt-entrypoint-gap-closed-update-docs
+E2E 1.16.5 java8  FAIL quilt-entrypoint-gap-closed-update-docs
+E2E 1.17.1 java17 FAIL quilt-entrypoint-gap-closed-update-docs
+E2E 1.18.1 java17 FAIL quilt-entrypoint-gap-closed-update-docs
+```
 
-- [ ] **Re-search the tracker.** A search of
-      <https://github.com/QuiltMC/quilt-loader/issues> for *EntrypointPatch*,
-      *entrypoint*, *legacy*, *1.16*, *1.17* and *onInitialize* found nothing.
-      That search carries **no date** and was not re-run before you read this.
-      Search again, including closed issues and discussions.
-- [ ] **Re-test against the newest quilt-loader**, not 0.30.0. Recipe A takes
-      about ten minutes. If it now passes, do not file — instead bump
-      `QUILT_LOADER_VERSION` in `scripts/e2e-run-one.sh`, let the tripwire
-      fire, and update the wiki's Version-Boundaries-And-Root-Causes.
-- [ ] **Check whether quilt-loader has since published a minimum-supported
-      Minecraft version.** If it has, and 1.17.1 is below it, ask #2 is
-      already answered and there may be nothing to file.
-- [ ] **Substitute your own environment details** — your OS, your JVM vendor
-      and build, your exact loader and installer versions. The numbers above
-      are this project's CI, not yours, and a maintainer will ask.
-- [ ] **Re-read the "what was not done" list** and keep it in. Do not upgrade
-      the `EntrypointPatch` analysis into a claim of measurement while
-      trimming the report for length.
-- [ ] **Confirm the download link in Recipe A still resolves** to a
-      Quilt-tagged `mc1.14.x` file.
+That 1.18.1 line matters on its own: upstream's changelog says `<1.18`, but the
+band this repo measured ran to 1.18.1. The fix covers it.
+
+```
+[main/INFO]: Loading Minecraft 1.18.1 with Quilt Loader 0.30.1
+[main/INFO]: Loading CommandsSpy by Ultra_MC.
+```
+
+Every other assertion on those legs — console, RCON, mixin, config-at-boot,
+player command — passed unchanged, as it had while the gap was open.
+
+What followed, and what this file is the tail of:
+
+1. `scripts/e2e-run-one.sh` pins quilt-loader `0.30.1`.
+2. `gradle.properties` raises `quilt_loader_range_*` to `>=0.30.1` on all four
+   eras, so the fix is a declared requirement rather than a hope. The cost: a
+   user still on `0.30.0` gets a loader-version refusal instead of a silently
+   missing banner.
+3. `QUILT_ENTRYPOINT_GAP` and its inverted assertion are gone from
+   `scripts/e2e-entrypoint.sh`; the banner is now asserted present on every
+   loader and every version.
+4. The `preLaunch` probe (`CommandsSpyFabricPreLaunch`) is deleted along with its
+   `fabric.mod.json` and `quilt.mod.json` declarations. It existed only to
+   measure this gap — `main` firing again restores config-creation-at-boot on
+   its own.
+5. The user-facing caveat is out of `MOD.md`, and the wiki's
+   Version-Boundaries-And-Root-Causes section is rewritten as history.
+
+### What upstream did
+
+AlexIIL's fix landed as *"Fixed the minecraft jar added through the transform
+cache not overriding the original one, if the game provider needed to add one
+that was prefix-restricted"*, described on the issue as making
+`KnotClassDelegate` multi-URL aware. Note that this is **not** where the
+"an earlier lead" section above pointed: `EntrypointPatch` was a dead end, and
+the "adapter path that bridges a Fabric-typed entrypoint interface" suspicion
+was wrong too. The measurements were sound; the diagnosis was not. That is the
+one lesson worth carrying out of this file.

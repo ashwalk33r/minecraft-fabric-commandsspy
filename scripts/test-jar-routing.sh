@@ -401,11 +401,11 @@ fi
 # no e2e leg can catch its absence, because Quilt's fabric-compat layer would
 # silently load a fabric.mod.json-only jar and every assertion would still pass.
 echo "== fabric/quilt jar metadata"
-# The entrypoint check compares the actual class lists, not counts: both files
-# now declare main AND preLaunch, and CommandsSpyFabricPreLaunch contains the
-# substring CommandsSpyFabric, so any count-based proxy is either blind to
-# preLaunch or trivially equal. Empty extraction is a failure, not a pass —
-# hence the distinct :- fallbacks, which can never compare equal.
+# The entrypoint check compares the actual class lists, not counts: a count-based
+# proxy stays equal while the two files drift onto different classes, and it would
+# go blind again the moment either file declares a second entrypoint. Empty
+# extraction is a failure, not a pass — hence the distinct :- fallbacks, which can
+# never compare equal.
 for era in mc1.14.x mc1.19-1.20.2 mc1.21.x mc26.x; do
   era_jar="$(find build/libs -maxdepth 1 -name "commandsspy-*+${era}.jar" 2>/dev/null | head -1)"
   if [ -z "$era_jar" ]; then
@@ -654,6 +654,26 @@ booted="$( { printf '%s\n' "$grid_output" | cut -d= -f2- | grep -oE '"[^"]+"' | 
 unaccounted="$(printf '%s\n' "$named" \
   | grep -vxF -f <(printf '%s\n' "$booted"; printf '%s\n' $WAIVED) | tr '\n' ' ')"
 check "named versions with no CI leg and no waiver" "" "${unaccounted% }"
+
+# The declared Quilt Loader floor must be a version the harness actually boots.
+# It is a load-bearing claim, not a label: quilt-loader below 0.30.1 silently
+# never invoked the "main" entrypoint on dedicated servers under Minecraft
+# 1.18.2 (QuiltMC/quilt-loader#500), so `>=0.30.1` is what makes every doc's
+# startup promise true on Quilt. Nothing else ties the two numbers together —
+# the floor lives in gradle.properties and the pin in e2e-run-one.sh, and a
+# lowered pin or a raised floor would leave the mod declaring a requirement no
+# CI leg exercises. String equality on purpose: a range test would accept a pin
+# ABOVE the floor, which is exactly the drift this exists to catch.
+echo "== declared Quilt Loader floor vs the version e2e boots"
+# shellcheck disable=SC2016 # the ${...} is a sed-pattern literal, not an expansion
+quilt_pin="$(sed -n 's/^QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-\(.*\)}"$/\1/p' \
+             "$script_dir/e2e-run-one.sh")"
+check "e2e-run-one.sh pins a quilt-loader version" "1" \
+      "$(printf '%s\n' "$quilt_pin" | grep -c '^[0-9]')"
+for era in 121 26 1192 114; do
+  declared="$(sed -n "s/^quilt_loader_range_${era}=>=//p" "$repo_root/gradle.properties")"
+  check "quilt_loader_range_${era} floor == e2e pin" "$quilt_pin" "${declared:-<unset>}"
+done
 
 # Probe 4 — the era-literal cases in scripts/e2e-entrypoint.sh: the three
 # `case "$MC_VERSION"` blocks are lifted VERBATIM and executed via eval.

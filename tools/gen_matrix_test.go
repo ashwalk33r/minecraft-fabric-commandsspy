@@ -80,15 +80,15 @@ var expected = map[string]map[string]int{
 	// only (pre-1.20.3 bands have no 25/26 rows).
 	"mc1192_java17": {"pull_request": 4, "workflow_dispatch": 7},
 	"mc1192_java21": {"pull_request": 2, "workflow_dispatch": 4},
-	// mc114 = 1.14.4 1.15.2 1.16.5 | 1.17.1 1.18.2: split floors
+	// mc114 = 1.14.4 1.15.2 1.16.5 | 1.17.1 1.18 1.18.1 1.18.2: split floors
 	// 8 / 17, coverage 21 across the whole band.
 	"mc114_java8": {"pull_request": 3, "workflow_dispatch": 10},
 	// Versions Quilt Loader has no build for, so they get a fabric-only leg
 	// (issue #69): 1.14-1.14.3, the whole span below Quilt's 1.14.4 floor.
 	// Empty on pull_request — all four are deep-only.
 	"mc114_java8_fabric": {"pull_request": 0, "workflow_dispatch": 4},
-	"mc114_java17":       {"pull_request": 2, "workflow_dispatch": 5},
-	"mc114_java21":       {"pull_request": 2, "workflow_dispatch": 5},
+	"mc114_java17":       {"pull_request": 4, "workflow_dispatch": 5},
+	"mc114_java21":       {"pull_request": 2, "workflow_dispatch": 7},
 	// Forge bands: floor rows plus the one forward-JVM row, no lean/full split
 	// except where the deep sweep widens the band's own version list.
 	"forge_java21":           {"pull_request": 4, "workflow_dispatch": 7},
@@ -129,7 +129,7 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		"t0_java21":     `["1.20.3","1.20.4","1.20.5","1.20.6"]`,
 		"mc1192_java17": `["1.19.2","1.19.4","1.20.1","1.20.2"]`,
 		"mc114_java8":   `["1.14.4","1.15.2","1.16.5"]`,
-		"mc114_java17":  `["1.17.1","1.18.2"]`,
+		"mc114_java17":  `["1.17.1","1.18","1.18.1","1.18.2"]`,
 		// Forge literals, formerly hand-listed in e2e.yml — byte-pinned so a
 		// coverage change is a deliberate edit here, not drift.
 		"forge_java21":           `["1.20.4","1.20.6","1.21.1","1.21.5"]`,
@@ -182,7 +182,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 82, "workflow_dispatch": 151}
+	totals := map[string]int{"pull_request": 84, "workflow_dispatch": 153}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge, neo and babric pairs (single-loader) plus 26 fixed
 	// jobs (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -191,7 +191,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*39 + 32 + 7 + 1 + 26 = 144. Dispatch: 2*75 + 4 + 40 + 14 + 1 + 26 + 1 = 255
+	// PR: 2*41 + 32 + 7 + 1 + 26 = 148. Dispatch: 2*77 + 4 + 40 + 14 + 1 + 26 + 1 = 259
 	// — the `+ 4` term is mc114_java8_fabric, four versions Quilt has no build
 	// for, so they spawn ONE caller job each instead of two (issue #84 widened
 	// it from one version to four)
@@ -204,7 +204,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// build-babric joined the nine build jobs. Adding a loader therefore moves
 	// this number twice, in two different places — that is what the split above
 	// is spelling out.
-	jobTotals := map[string]int{"pull_request": 148, "workflow_dispatch": 263}
+	jobTotals := map[string]int{"pull_request": 152, "workflow_dispatch": 267}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -260,12 +260,12 @@ func TestOptionCombinationTotals(t *testing.T) {
 		{"", 18, 42, 63, 111},
 		{"t0", 26, 54, 79, 135},
 		{"t0 mc1192", 32, 65, 91, 157},
-		{"t0 mc1192 mc114", 39, 89, 105, 201},
-		{"t0 mc1192 mc114 forge", 42, 95, 108, 207},
-		{"t0 mc1192 mc114 forge forge_legacy", 53, 109, 119, 221},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 64, 120, 130, 232},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 71, 129, 137, 241},
-		{allBands, 82, 151, 148, 263},
+		{"t0 mc1192 mc114", 41, 91, 109, 205},
+		{"t0 mc1192 mc114 forge", 44, 97, 112, 211},
+		{"t0 mc1192 mc114 forge forge_legacy", 55, 111, 123, 225},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 66, 122, 134, 236},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 73, 131, 141, 245},
+		{allBands, 84, 153, 152, 267},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -353,7 +353,7 @@ func TestBandDetection(t *testing.T) {
 		if want := `["1.14.4","1.15.2","1.16.5"]`; out["mc114_java8"] != want {
 			t.Errorf("mc114_java8 = %s, want %s", out["mc114_java8"], want)
 		}
-		if want := `["1.17.1","1.18.2"]`; out["mc114_java17"] != want {
+		if want := `["1.17.1","1.18","1.18.1","1.18.2"]`; out["mc114_java17"] != want {
 			t.Errorf("mc114_java17 = %s, want %s", out["mc114_java17"], want)
 		}
 	})

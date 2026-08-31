@@ -324,9 +324,17 @@ var coverage = map[string]bandCoverage{
 	// matters for the reason it is in test-jar-routing.sh's EXPECTED table:
 	// 1.15.2|1.16 is the exact edge where the RCON source name flips from Recon
 	// to Rcon.
+	// 1.18 and 1.18.1 are sampled, not deep-only, and that is deliberate: they
+	// were the last two versions of the band where quilt-loader silently never
+	// invoked the "main" entrypoint (QuiltMC/quilt-loader#500, fixed in 0.30.1).
+	// While the gap was open the banner was asserted expected-absent on them and
+	// nothing on a pull request booted them, so the assertion that matters most
+	// there ran only on a manual dispatch. Now that the banner is asserted
+	// PRESENT on every version, every version the gap ever covered boots on
+	// every pull request.
 	"mc114": {
 		declared: releasesIn(">=1.14 <1.19"),
-		sampled:  []string{"1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2"},
+		sampled:  []string{"1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18", "1.18.1", "1.18.2"},
 		deep:     releasesIn(">=1.14 <1.19"),
 	},
 

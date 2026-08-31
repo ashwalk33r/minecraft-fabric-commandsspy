@@ -38,10 +38,8 @@ command still produces a `[CommandsSpy]` line; with `logArguments: false`
 (the default) an argument-bearing command is logged with the bare command
 name and not its arguments; and `config/commands-spy.json` matches the
 documented initial schema. The schema check reads the file from disk after
-the run completes, so on `LOADER=quilt` below 1.18.2 — where the mod's
-initializer entrypoint never fires and `CommandsSpyConfig.load()` runs
-lazily on the first executed command instead — it only proves the file was
-created by the end of the run, not that it existed at server startup.
+the run completes, so it proves content, not timing; the separate
+config-at-boot assertion is what proves the file existed at server startup.
 
 Verdict line grammar (the final line of container output is authoritative):
 
@@ -159,10 +157,18 @@ server container at `/quilt-preinstalled`; `scripts/e2e-entrypoint.sh`'s
 launches `quilt-server-launch.jar` exactly like the Fabric path launches
 `fabric-server-launch.jar` — same console-fifo boot wait, same RCON/player
 assertions, all of which are loader-agnostic. Default pins:
-`QUILT_LOADER_VERSION=0.30.0`, `QUILT_INSTALLER_VERSION=0.15.1` (both
+`QUILT_LOADER_VERSION=0.30.1`, `QUILT_INSTALLER_VERSION=0.15.1` (both
 hardcoded in `scripts/e2e-run-one.sh`, mirroring how the Fabric harness's
 own `LOADER_VERSION`/`INSTALLER_VERSION` defaults live in
 `scripts/e2e-entrypoint.sh` rather than in `gradle.properties`).
+
+The loader pin is not free-floating: `scripts/test-jar-routing.sh` asserts it
+equals the `quilt_loader_range_*` floor declared for all four eras in
+`gradle.properties`. That floor is `>=0.30.1` because every quilt-loader below
+it silently never invoked the `main` entrypoint on dedicated servers under
+Minecraft 1.18.2 (QuiltMC/quilt-loader#500), so the mod's startup promise only
+holds on 0.30.1 and up. Bumping one number without the other now fails the
+offline contract instead of leaving a declared requirement that no leg boots.
 
 ## Forge server install
 
@@ -383,16 +389,14 @@ player seam.
 
 ### Babric assertion differences
 
-Babric asserts **eleven of the twelve**, and the twelfth is *replaced*, not
+Babric asserts **ten of the eleven**, and the eleventh is *replaced*, not
 skipped. Beta 1.7.3 predates RCON, so instead of the RCON logging assertion the
 leg asserts RCON's **absence**: no `rcon.*` key in the properties file the server
 rewrites at boot, and nothing answering on the RCON port. Either appearing fails
 the leg as `babric-rcon-appeared-update-docs`. A skipped assertion is invisible
 on the wiki; an asserted absence is a row.
 
-The `preLaunch` assertion does not apply — the Babric metadata declares no such
-entrypoint, because that entrypoint exists solely to measure the Quilt pre-1.18.2
-gap. In its place the leg pins the loader version, asserting the banner
+The leg then adds a row of its own, pinning the loader version: the banner
 `Loading Minecraft Beta 1.7.3 with Fabric Loader 0.19.3`, so toolchain drift onto
 the frozen babric fork surfaces as a named failure
 (`babric-loader-version-drift`) rather than as a passing test of something else.
@@ -444,10 +448,10 @@ Four ways a BTA server is not a modern one, beyond what it shares with Babric:
 
 ### BTA assertion differences
 
-Same shape as Babric: **eleven of the twelve** standard assertions hold, and the
-twelfth — RCON — is *replaced* by an asserted absence, failing as
-`bta-rcon-appeared-update-docs`. The `preLaunch` assertion does not apply, and in
-its place the leg pins the platform: the banner
+Same shape as Babric: **ten of the eleven** standard assertions hold, and the
+eleventh — RCON — is *replaced* by an asserted absence, failing as
+`bta-rcon-appeared-update-docs`. It adds the same kind of extra row Babric does,
+pinning the platform: the banner
 `Loading Minecraft <ver> with Fabric Loader <BTA_LOADER_VERSION>` proves both the
 game version and the loader fork in one line, failing as
 `bta-loader-version-drift`.
