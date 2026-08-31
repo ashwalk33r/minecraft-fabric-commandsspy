@@ -8,9 +8,6 @@
 		"entrypoints": {
 			"main": [
 				"pl.m2x.commandsspy.CommandsSpyFabric"
-			],
-			"preLaunch": [
-				"pl.m2x.commandsspy.CommandsSpyFabricPreLaunch"
 			]
 		},
 		"depends": [

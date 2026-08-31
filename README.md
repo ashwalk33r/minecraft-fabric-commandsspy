@@ -24,8 +24,8 @@ User documentation: [MOD.md](./MOD.md). Official releases:
 - [docs/protocol-table.md](docs/protocol-table.md) — the Go bot's per-version
   protocol reference.
 - [docs/quilt-entrypoint-gap-upstream.md](docs/quilt-entrypoint-gap-upstream.md)
-  — an unfiled, paste-ready bug report for quilt-loader's pre-1.18.2 entrypoint
-  gap, with two reproduction recipes.
+  — the closed-out report on quilt-loader's pre-1.18.2 entrypoint gap: what was
+  measured, what was filed as QuiltMC/quilt-loader#500, and how 0.30.1 closed it.
 
 ## Build
 

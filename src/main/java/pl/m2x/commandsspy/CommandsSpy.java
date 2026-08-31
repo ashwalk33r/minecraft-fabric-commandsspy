@@ -10,9 +10,9 @@ import org.apache.logging.log4j.Logger;
  */
 public class CommandsSpy {
 	// log4j-API type on purpose, NOT org.apache.logging.log4j.core.Logger. This field
-	// initializer runs inside CommandsSpy's class initializer, and CommandsSpyFabricPreLaunch
-	// triggers that before the game's main class is loaded. On the 1.14-1.16 band (log4j
-	// 2.8.1, see build.gradle) a failed core cast there would poison the class for the JVM's
+	// initializer runs inside CommandsSpy's class initializer, which every loader's
+	// entrypoint triggers early in boot. On the 1.14-1.16 band (log4j 2.8.1, see
+	// build.gradle) a failed core cast there would poison the class for the JVM's
 	// lifetime, so every later mixin hook would get NoClassDefFoundError rather than the mod
 	// merely missing a banner. Tests that need the core API cast locally; see
 	// CommandsSpyTestSupport.

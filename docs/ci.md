@@ -56,7 +56,9 @@ Tier 0 is four cheap parallel gates:
 - **contracts** — `scripts/verify-action-pins.sh` (asserts every third-party
   action is pinned to a full commit SHA), Gradle wrapper validation, the grid
   count assertions (`make ci-tools-test`), the offline routing contract
-  (`scripts/test-jar-routing.sh`), and `make ci-gen-matrix` — the single
+  (`scripts/test-jar-routing.sh` — which also pins the declared Quilt Loader
+  floor to the version the e2e harness boots, so `quilt_loader_range_*` cannot
+  drift away from `QUILT_LOADER_VERSION`), and `make ci-gen-matrix` — the single
   source of stage definitions, whose 18 band outputs every stage job reads
   as `needs.contracts.outputs.*`. It restores the `ci-go` cache read-only;
   `go-quality` owns the save (its `make ci` populates the richer cache, and
@@ -220,6 +222,15 @@ per-patch, JVM breaks are per-JVM, so a band's ends cover the real variable on
 higher JVMs. Which versions are in the sample, which are deep-only, and why a
 declared version is in neither, are data in `tools/gen_matrix.go`'s coverage
 table — see the wiki, ["The denominator, settled"](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Supported-Versions#the-denominator-settled).
+
+The mc114 sample is the one place that rule is deliberately widened past a
+band's ends. It carries `1.14.4 1.15.2 1.16.5 1.17.1 1.18 1.18.1 1.18.2` — seven
+versions, not the usual few — because `1.14.4` through `1.18.1` is the exact band
+where quilt-loader silently never invoked the `main` entrypoint
+(QuiltMC/quilt-loader#500, fixed in 0.30.1). Every version that gap ever covered
+now boots on both loaders on every pull request, so a regression in the fix
+cannot reach `main` through a version only the deep sweep boots. `1.18` and
+`1.18.1` were exactly that blind spot while the gap was open.
 
 Stages chain via `needs:`. Each stage's job body is defined once, in
 `e2e-stage.yml`, and reused by every stage — only the version list per stage
@@ -433,8 +444,7 @@ cd tools && REPO_ROOT=.. go run . gen-matrix --publish > ../docs/modrinth-versio
 Caveats belong in the Modrinth **description**, not in a version list. They are
 written once, in `MOD.md` under "About the version lists on the download page" —
 the Forge `mc1.21.x` Java 21 ceiling (#66), the missing Quilt builds below
-1.14.4 and why `mc1.14.x` ships as two listings, the absent startup banner on
-Quilt below 1.18.2, and the beta-only NeoForge lines. **The project description
-is `MOD.md`**: paste it whole when it changes. Modrinth's API refuses project
-edits to a token with only version scopes, so this step is a paste in the web
-UI unless the token carries project write.
+1.14.4 and why `mc1.14.x` ships as two listings, and the beta-only NeoForge
+lines. **The project description is `MOD.md`**: paste it whole when it changes.
+Modrinth's API refuses project edits to a token with only version scopes, so
+this step is a paste in the web UI unless the token carries project write.

@@ -301,7 +301,7 @@ fi
 BTA_RELEASE_BASE="https://github.com/Turnip-Labs/bta-fabric-instance-repo/releases/download"
 BTA_LOADER_VERSION="${BTA_LOADER_VERSION:-}"
 BTA_PROTOCOL="${BTA_PROTOCOL:-}"
-QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.0}"
+QUILT_LOADER_VERSION="${QUILT_LOADER_VERSION:-0.30.1}"
 QUILT_INSTALLER_VERSION="${QUILT_INSTALLER_VERSION:-0.15.1}"
 # Forge's analogue of Fabric's meta API. FORGE_BUILD pins a build explicitly;
 # empty means "ask the feed for <mc>-recommended, else <mc>-latest".
