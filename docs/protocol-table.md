@@ -1,4 +1,4 @@
-# Per-version protocol table, 1.14 – 26.2
+# Per-version protocol table, 1.14 – 26.3
 
 Protocol reference for the Go e2e bot (`tools/`). Scope: every version the e2e grid can
 boot on any event — the Makefile's default `VERSIONS` list, plus the versions the
@@ -26,14 +26,15 @@ Sources, abbreviated in the tables:
   Some versions alias to a neighbouring dump; the alias is named where it applies.
 - **wiki (776)** — <https://minecraft.wiki/w/Java_Edition_protocol/Packets>, which documents
   protocol 776 / Minecraft 26.2.
-- **probed** — established empirically against a live server. minecraft-data has **no 26.2
-  dump**, so the 26.2 row rests on wiki + live probing; re-probe it on any change.
+- **generated (777)** — the vanilla 26.3 server's own data generator (`--reports`, `packets.json`).
+- **probed** — established empirically against a live server. minecraft-data has **no 26.2 or
+  26.3 dump**, so those rows rest on wiki or the generator plus live probing; re-probe them on any change.
 
 ## Cross-range constants (stated once, not tabulated)
 
-Constant for the entire 1.14.4 (498) → 26.2 (776) range, verified at both ends:
+Constant for the entire 1.14.4 (498) → 26.3 (777) range, verified at both ends:
 
-| Packet | State / direction | Id | Verified at 1.14.4 | Verified at 26.2 |
+| Packet | State / direction | Id | Verified at 1.14.4 | Verified at 26.2 and 26.3 |
 |---|---|---|---|---|
 | Login Start | login C→S | `0x00` | md `pc/1.14.4` | md `pc/26.1` = wiki (776); exercised by live login |
 | Login Success | login S→C | `0x02` | md `pc/1.14.4` | md `pc/26.1` = wiki (776); exercised live |
@@ -93,6 +94,7 @@ trigger.
 | 1.21.11 | 774 | yes | req | none | chat_command | 0x06 | 0x2B / 0x1B | 0x30 | md `pc/1.21.11` |
 | 26.1 | 775 | yes | req | none | chat_command | 0x07 | 0x2C / 0x1C | 0x31 | md `pc/26.1` |
 | **26.2** | **776** | yes | req | none | chat_command | **0x07** | **0x2C / 0x1C** | **0x31** | wiki (776) + **probed** |
+| **26.3** | **777** | yes | req | none | chat_command | **0x07** | **0x2D / 0x1C** | **0x32** | generated (777) + **probed** |
 
 All protocol numbers verified against minecraft-data
 `data/pc/common/protocolVersions.json`. Shared-protocol pairs (1.20.3/1.20.4,
@@ -116,6 +118,7 @@ Configuration → C→S Acknowledge Finish Configuration → play.
 | 1.21.9–1.21.11 (773–774) | 0x03 / 0x03 | 0x04 / 0x04 | 0x0E / 0x07 | 0x13 / 0x09 | md `pc/1.21.9`, `pc/1.21.11` |
 | 26.1 (775) | 0x03 / 0x03 | 0x04 / 0x04 | 0x0E / 0x07 | 0x13 / 0x09 | md `pc/26.1` |
 | 26.2 (776) | 0x03 / 0x03 | 0x04 / 0x04 | 0x0E / 0x07 | 0x13 / 0x09 | wiki (776); finish/KA exercised by live login |
+| 26.3 (777) | 0x03 / 0x03 | 0x04 / 0x04 | 0x0F / 0x07 | 0x14 / 0x09 | generated (777); `post_effects` inserted at 0x0A shifts later clientbound ids by one; exercised by live login |
 
 Everything shifted by one between 764/765 and 766+ because `cookie_request 0x00` was
 inserted at the front of the clientbound list in 1.20.5 — hence finish `0x02` → `0x03`.

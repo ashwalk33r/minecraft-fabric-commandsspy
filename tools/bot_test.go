@@ -65,3 +65,11 @@ func TestCommandBytesLegacy1182(t *testing.T) {
 		t.Fatalf("chat bytes\n got %x\nwant %x", got, want)
 	}
 }
+
+// 26.3 inserted a configuration packet, so its known-packs and code-of-conduct ids differ from 26.2.
+func TestConfigIDsShiftAt26_3(t *testing.T) {
+	r26_2, r26_3 := rows[776].cfg(), rows[777].cfg()
+	if r26_2.knownCB != 0x0E || r26_3.knownCB != 0x0F || r26_3.cocCB != 0x14 {
+		t.Errorf("26.2 known=%#x, 26.3 known=%#x coc=%#x", r26_2.knownCB, r26_3.knownCB, r26_3.cocCB)
+	}
+}

@@ -1,7 +1,7 @@
 # tools/main.go
 
-The entry point of the `tools` binary. One binary, three subcommands — a small
-toolbox for the e2e harness instead of three separate programs.
+The entry point of the `tools` binary. One binary, four subcommands, a small
+toolbox for the e2e harness instead of four separate programs.
 
 ## What it does
 
@@ -16,6 +16,9 @@ toolbox for the e2e harness instead of three separate programs.
      server commands.
    - `gen-matrix` → `runGenMatrix` (gen_matrix.go) — emits the e2e version
      matrix consumed by `.github/workflows/e2e.yml`.
+   - `upstream-drift` → `runUpstreamDrift` (upstream.go), which fails when an
+     upstream stable version is neither declared nor excluded. See
+     [README.upstream.md](README.upstream.md).
 3. Passes the remaining arguments (`os.Args[2:]`) to that function untouched.
 
 Each subcommand parses its own flags with its own `flag.FlagSet`. `main.go`
@@ -24,7 +27,7 @@ defines no flags of its own.
 ## Usage
 
 ```
-tools <bot|rcon|gen-matrix> [args]
+tools <bot|rcon|gen-matrix|upstream-drift> [args]
 ```
 
 ## Exit codes

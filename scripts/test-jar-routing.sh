@@ -50,13 +50,14 @@ declare -A EXPECTED=(
   [1.21.11]="121 21 Rcon list"
   [26.1]="26 25 Rcon list"
   [26.2]="26 25 Rcon list"
+  [26.3]="26 25 Rcon list"
 )
 # Deterministic iteration order (associative-array order is arbitrary).
 ALL_VERSIONS="1.14.4 1.15.2 1.16.5 1.17.1 1.18.2 \
 1.19.2 1.19.4 1.20.1 1.20.2 \
 1.20.3 1.20.4 1.20.5 1.20.6 \
 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5 1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 \
-26.1 26.2"
+26.1 26.2 26.3"
 
 # Boundary probes outside the default matrix: 1.16 pins the exact edge its
 # predecessor sits against (Recon->Rcon flip), 1.19.1 pins the mc1192 jar's
@@ -140,7 +141,7 @@ for v in $ALL_VERSIONS; do
   read -r family floor _rest <<< "${EXPECTED[$v]}"
   case "$v" in
     # The two gate canaries are MOVED to e2e-gate, never in a floor row.
-    1.21.11|26.2) check "grid canary $v not in any floor row" "absent" "$(grid_floor_of "$v")" ;;
+    1.21.11|26.3) check "grid canary $v not in any floor row" "absent" "$(grid_floor_of "$v")" ;;
     *)
       got="$(grid_floor_of "$v")"
       band="${got%% *}"
@@ -155,7 +156,7 @@ done
 # The canaries still get their newest-Java coverage rows.
 check "grid 1.21.11 in mc121_java25 coverage" "true" "$(grid_has mc121_java25 1.21.11)"
 check "grid 1.21.11 in mc121_java26 coverage" "true" "$(grid_has mc121_java26 1.21.11)"
-check "grid 26.2 in mc26_java26 coverage" "true" "$(grid_has mc26_java26 26.2)"
+check "grid 26.3 in mc26_java26 coverage" "true" "$(grid_has mc26_java26 26.3)"
 
 # The gate itself lives in ci.yml as four literal include rows (two
 # canaries x two loaders); each canary must run on exactly the floor the
@@ -183,14 +184,18 @@ check "sweep concurrency group is event-keyed (#73)" "1" \
       "$(grep -cF 'group: ci-${{ github.ref }}-${{ github.event_name }}' "$gate_yml")"
 check "no ref-only concurrency group survives" "0" \
       "$(grep -cE '^  group: ci-\$\{\{ github\.ref \}\}$' "$gate_yml")"
+# upstream-drift is a required check only while the Build aggregator needs it.
+check "build-summary needs upstream-drift" "1" \
+      "$(awk '/^  build-summary:$/ { inb = 1; next } inb && /^  [^ ]/ { exit } inb' "$gate_yml" \
+         | grep -cE '^    needs: \[.*\bupstream-drift,')"
 check "gate pair 1.21.11/java21/fabric" "1" \
       "$(grep -cF '{ mc: "1.21.11", java: "21", loader: "fabric" }' "$gate_yml")"
 check "gate pair 1.21.11/java21/quilt" "1" \
       "$(grep -cF '{ mc: "1.21.11", java: "21", loader: "quilt" }' "$gate_yml")"
-check "gate pair 26.2/java25/fabric" "1" \
-      "$(grep -cF '{ mc: "26.2", java: "25", loader: "fabric" }' "$gate_yml")"
-check "gate pair 26.2/java25/quilt" "1" \
-      "$(grep -cF '{ mc: "26.2", java: "25", loader: "quilt" }' "$gate_yml")"
+check "gate pair 26.3/java25/fabric" "1" \
+      "$(grep -cF '{ mc: "26.3", java: "25", loader: "fabric" }' "$gate_yml")"
+check "gate pair 26.3/java25/quilt" "1" \
+      "$(grep -cF '{ mc: "26.3", java: "25", loader: "quilt" }' "$gate_yml")"
 
 # Probe 3a — LOADER=forge routing (legacy vs modern jar, and the
 # out-of-range refusal flag), via the --print-forge-routing probe. Offline:
@@ -204,7 +209,7 @@ echo "== LOADER=forge routing (mc116/legacy/modern/eventbus7, refusal flag)"
 FORGE_MC116_VERSIONS="1.14.4 1.15 1.15.1 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5"
 FORGE_LEGACY_VERSIONS="1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4"
 FORGE_MODERN_VERSIONS="1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5"
-FORGE_EB7_VERSIONS="1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2"
+FORGE_EB7_VERSIONS="1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2 26.3"
 # The two interior holes between the four declared Forge ranges: 1.17 sits
 # between the mc116 ceiling (<1.17) and the legacy floor (>=1.17.1), 1.20.5
 # between the legacy ceiling (<1.20.5) and the modern floor (>=1.20.6). Both
@@ -256,8 +261,8 @@ check "modern 1.20.6 on java 26 is refused with a named verdict" \
 # these get past the guard and fail later, on the absent jar.
 check "modern 1.21.5 on java 21 is not refused by the ceiling" \
       "E2E 1.21.5 java21 FAIL mod-jar-missing" "$(ceiling_probe 21 1.21.5)"
-check "eventbus7 26.2 on java 26 is not refused by the ceiling" \
-      "E2E 26.2 java26 FAIL mod-jar-missing" "$(ceiling_probe 26 26.2)"
+check "eventbus7 26.3 on java 26 is not refused by the ceiling" \
+      "E2E 26.3 java26 FAIL mod-jar-missing" "$(ceiling_probe 26 26.3)"
 # FORGE_MODERN_JAVA_CEILING keeps the java-21-only claim falsifiable: raise it
 # and the same java-25 run that was refused above now gets past the guard
 # (proving the override reaches the guard, not that java 25 actually boots --
@@ -279,7 +284,7 @@ forge_declared_range() { sed -n "s/^minecraft_range_$1=//p" "$forge_gp"; }
 check "minecraft_range_mc116"     "[1.14.4,1.17)"    "$(forge_declared_range mc116)"
 check "minecraft_range_legacy"    "[1.17.1,1.20.5)"  "$(forge_declared_range legacy)"
 check "minecraft_range_modern"    "[1.20.6,1.21.6)"  "$(forge_declared_range modern)"
-check "minecraft_range_eventbus7" "[1.21.6,26.3)"    "$(forge_declared_range eventbus7)"
+check "minecraft_range_eventbus7" "[1.21.6,26.4)"    "$(forge_declared_range eventbus7)"
 
 # Probe 3a-bis — LOADER=fabric/quilt routing and the out-of-range refusal flag.
 # This is the always-on half of the Fabric guard: it fails in `contracts`,
@@ -289,7 +294,7 @@ echo "== LOADER=fabric routing (band + refusal flag)"
 FABRIC_114_VERSIONS="1.14.4 1.16.5 1.18.2"
 FABRIC_1192_VERSIONS="1.19.1 1.19.2 1.20.2"
 FABRIC_121_VERSIONS="1.20.3 1.21 1.21.11"
-FABRIC_26_VERSIONS="26.1 26.2"
+FABRIC_26_VERSIONS="26.1 26.2 26.3"
 # The crack between the mc114 ceiling (<1.19) and the mc1192 floor (>=1.19.1).
 FABRIC_OUT_OF_RANGE_VERSIONS="1.19 1.19.0"
 for v in $FABRIC_114_VERSIONS; do
@@ -322,7 +327,7 @@ declared_range() { sed -n "s/^minecraft_range_$1=//p" "$gp"; }
 check "minecraft_range_114"  ">=1.14 <1.19"     "$(declared_range 114)"
 check "minecraft_range_1192" ">=1.19.1 <1.20.3" "$(declared_range 1192)"
 check "minecraft_range_121"  ">=1.20.3 <1.22"   "$(declared_range 121)"
-check "minecraft_range_26"   ">=26.1 <26.3"     "$(declared_range 26)"
+check "minecraft_range_26"   ">=26.1 <26.4"     "$(declared_range 26)"
 
 # Probe 3b — LOADER=neoforge. ONE band jar spans every Minecraft version
 # NeoForge publishes for (1.20.2 up); what still varies per version is the
@@ -340,6 +345,7 @@ check "neoforge 1.21.1 routes"  "21.1.248 21"      "$(neo_route 1.21.1)"
 check "neoforge 1.21.11 routes" "21.11.45 21"      "$(neo_route 1.21.11)"
 check "neoforge 26.1 routes"    "26.1.0.19-beta 25" "$(neo_route 26.1)"
 check "neoforge 26.2 routes"    "26.2.0.64 25"     "$(neo_route 26.2)"
+check "neoforge 26.3 routes"    "26.3.0.92 25"     "$(neo_route 26.3)"
 check "neoforge 1.20.1 refused" "unsupported 0"    "$(neo_route 1.20.1)"
 check "neoforge 1.16.5 refused" "unsupported 0"    "$(neo_route 1.16.5)"
 check "neoforge 1.14.4 refused" "unsupported 0"    "$(neo_route 1.14.4)"
@@ -378,7 +384,7 @@ check "neoforge 1.16.5 refused by name" \
 # because each major reads the filename it knows and ignores the other.
 echo "== neoforge band jar metadata"
 # find, not ls: shellcheck SC2012, and the glob may legitimately match nothing.
-neo_jar="$(find build/libs -maxdepth 1 -name 'commandsspy-*+mc1.20.2-26.2-neoforge.jar' 2>/dev/null | head -1)"
+neo_jar="$(find build/libs -maxdepth 1 -name 'commandsspy-*+mc1.20.2-26.3-neoforge.jar' 2>/dev/null | head -1)"
 if [ -n "$neo_jar" ]; then
   check "band jar has META-INF/mods.toml" "present" \
         "$(unzip -l "$neo_jar" | grep -q 'META-INF/mods.toml' && echo present || echo absent)"

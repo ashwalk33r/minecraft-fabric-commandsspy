@@ -15,11 +15,11 @@ help: ## list every documented target with its description
 # Default matrix: sampled per band — rationale in the wiki, Supported-Versions
 # -> "The Makefile's default version list".
 # Suspect versions can be run explicitly, e.g.:
-#   make e2e VERSIONS="26.1 26.1.1 26.1.2 26.2"
+#   make e2e VERSIONS="26.1 26.1.1 26.1.2 26.2 26.3"
 #   make e2e VERSIONS="1.19.1 1.19.3 1.20 1.14.4 1.15.2"
 VERSIONS ?= 1.20.3 1.20.4 1.20.5 1.20.6 \
             1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5 1.21.6 1.21.7 1.21.8 \
-            1.21.9 1.21.10 1.21.11 26.1 26.2 \
+            1.21.9 1.21.10 1.21.11 26.1 26.2 26.3 \
             1.19.2 1.19.4 1.20.1 1.20.2 \
             1.16.5 1.17.1 1.18.2
 
@@ -43,13 +43,13 @@ MOD_JAR_26 := build/libs/commandsspy-$(MOD_VERSION)+mc26.x.jar
 # (default 'modern'). See the wiki, Supported-Versions -> "Forge".
 MOD_JAR_FORGE := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.x-forge.jar
 MOD_JAR_FORGE_LEGACY := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.17-1.20.4-forge.jar
-MOD_JAR_FORGE_EB7 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.6-26.2-forge.jar
+MOD_JAR_FORGE_EB7 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.21.6-26.3-forge.jar
 MOD_JAR_FORGE_MC116 := forge/build/libs/commandsspy-$(MOD_VERSION)+mc1.16.x-forge.jar
 # NeoForge band jar: ONE jar spanning the measured range, built by the
 # standalone neoforge/ Gradle build. NeoForge has no SRG era, so the range is
 # bounded by what booted, not by mappings; see the wiki,
 # Version-Boundaries-And-Root-Causes -> "Why one jar spans the whole NeoForge history".
-MOD_JAR_NEO := build/libs/commandsspy-$(MOD_VERSION)+mc1.20.2-26.2-neoforge.jar
+MOD_JAR_NEO := build/libs/commandsspy-$(MOD_VERSION)+mc1.20.2-26.3-neoforge.jar
 # The Babric jar, built by the separate babric/ Gradle build against the Ornithe
 # toolchain and reverse-converted. b1.7.3 only -- Babric is Beta 1.7.3 and nothing
 # else, so this is one jar for one version, not a band.
@@ -357,7 +357,7 @@ $(MOD_JAR_FORGE_EB7): $(shell git ls-files forge src/main/java .env.version) | c
 	@$(call in_ci_image_gradle,gradle -p forge build -PforgeTarget=eventbus7 --no-daemon --quiet)
 
 .PHONY: build-forge-eventbus7
-build-forge-eventbus7: $(MOD_JAR_FORGE_EB7) ## build the EventBus-7 Forge jar, MC 1.21.6-26.2 (host gradlew + ForgeGradle 7)
+build-forge-eventbus7: $(MOD_JAR_FORGE_EB7) ## build the EventBus-7 Forge jar, MC 1.21.6-26.3 (host gradlew + ForgeGradle 7)
 
 # mc116 jar: issue #30, SRG-reobfuscated for the pre-1.17 era (its own
 # entrypoint source too, compiled against pre-1.17 class names -- see
@@ -377,7 +377,7 @@ build-forge-mc116: $(MOD_JAR_FORGE_MC116) ## build the mc116 Forge jar, MC 1.16.
 # NeoForge build's own inputs, not MOD_SOURCES: a Fabric-only source change must
 # not trigger the NeoForm pipeline.
 $(MOD_JAR_NEO): $(shell git ls-files neoforge src/main/java .env.version) | ci-image
-	@echo "[build] Building NeoForge band jar (MC 1.20.2-26.2, anchor 20.4.251)..."
+	@echo "[build] Building NeoForge band jar (MC 1.20.2-26.3, anchor 20.4.251)..."
 	@$(call in_ci_image_gradle,gradle -p neoforge build -PneoTarget=all --no-daemon --quiet)
 
 .PHONY: build
@@ -390,7 +390,7 @@ build-121: $(MOD_JAR_121) ## build only the 1.21.x jar (dockerized)
 build-1192: $(MOD_JAR_1192) ## build only the 1.19-1.20.2 jar (dockerized)
 build-114: $(MOD_JAR_114) ## build only the 1.14.x jar, MC 1.14-1.18 (dockerized)
 build-26: $(MOD_JAR_26) ## build only the 26.x jar (dockerized)
-build-neo: $(MOD_JAR_NEO) ## build only the NeoForge band jar, MC 1.20.2-26.2 (dockerized)
+build-neo: $(MOD_JAR_NEO) ## build only the NeoForge band jar, MC 1.20.2-26.3 (dockerized)
 
 .PHONY: test
 test: ci-image ## offline suite: routing contract + 41 unit tests on all four targets (dockerized)
@@ -433,6 +433,16 @@ ci-gen-matrix: ci-image ## compute the e2e version-matrix GitHub Actions outputs
 	  -e GOPROXY -e REPO_ROOT=/work -e EVENT_NAME -e FORCE_BANDS \
 	  $(if $(GITHUB_OUTPUT),-e GITHUB_OUTPUT -v "$(GITHUB_OUTPUT):$(GITHUB_OUTPUT)",) \
 	  $(CI_IMAGE) go run . gen-matrix
+
+.PHONY: ci-upstream-drift
+ci-upstream-drift: ci-image ## fail when an upstream stable Minecraft/loader version is neither declared nor excluded (dockerized; needs network)
+	@docker run --rm \
+	  --user "$$(id -u):$$(id -g)" \
+	  -v "$(PWD):/work" -w /work/tools \
+	  -v "$(GIT_COMMON_DIR):$(GIT_COMMON_DIR):ro" \
+	  -v "$(if $(CI_CACHE_DIR),$(CI_CACHE_DIR),/tmp/commandsspy-ci-cache):/ci-cache" \
+	  -e GOPROXY \
+	  $(CI_IMAGE) go run . upstream-drift
 
 # make ci = the one fast gate (excludes e2e and the Gradle build). See docs/ci.md.
 GOLANGCI_LINT_VERSION := 2.12.2

@@ -311,7 +311,7 @@ installer exited non-zero; its log tail is printed) and
 for, i.e. below its 1.20.2 floor. The message names that floor
 (`NeoForge publishes no line for it (its floor is Minecraft 1.20.2)`) rather
 than a shipped-jar list, because the jar is not the limit any more: one band jar
-covers 1.20.2-26.2, so the only way to miss is to ask for a version that has no
+covers 1.20.2-26.3, so the only way to miss is to ask for a version that has no
 NeoForge at all. Explicit failure, never a silent fallback to a jar that cannot
 load.
 

@@ -37,7 +37,7 @@ def minecraftVersion = project.getProperty("minecraft_version_${neoTarget}")
 // downward).
 def javaRelease = (project.getProperty("java_release_${neoTarget}") as String) as Integer
 
-// minecraft_version_<band> is the band's SPAN ("1.20.2-26.2"), not one version,
+// minecraft_version_<band> is the band's SPAN ("1.20.2-26.3"), not one version,
 // so this names the range the jar was measured across.
 version = "${modVersion}+mc${minecraftVersion}-neoforge"
 group = 'm2x.commandsspy'

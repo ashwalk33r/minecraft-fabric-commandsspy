@@ -21,7 +21,7 @@ Constants `era759`, `era760`, `era761`, `eraPlain`, `eraChat` classify how a com
 ## Types and functions
 
 - `row` — one version's facts: protocol number, human-readable name, era, play-state keep_alive ids (both directions), and the serverbound command packet id.
-- `rows` — map from protocol number to `row`. Covers 498 (1.14.4) through 776 (26.2).
+- `rows` — map from protocol number to `row`. Covers 498 (1.14.4) through 777 (26.3).
 - `rowFor(proto)` — lookup with an ok flag. `bot.go` calls it once at connect time; unknown protocol means unsupported version.
 - `row.config()` — true for 764+ (1.20.2 introduced the configuration state).
 - `cfgIDs` — configuration-state packet ids, clientbound and serverbound. `-1` means the packet does not exist on that version, chosen so it can never match a real received id.
