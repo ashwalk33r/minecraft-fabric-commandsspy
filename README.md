@@ -66,7 +66,7 @@ wrapper; era toolchains (e.g. JDK 25 for 26.x) are then auto-provisioned:
 supported in one project), driven with `-p`:
 
 ```bash
-./gradlew -p neoforge build -PneoTarget=all # +mc1.20.2-26.2-neoforge (the band jar)
+./gradlew -p neoforge build -PneoTarget=all # +mc1.20.2-26.3-neoforge (the band jar)
 ```
 
 `all` is the default and the only jar that ships. `-PneoTarget=121`/`=26` still
@@ -98,13 +98,13 @@ that a silent second player is never attributed a command.
 
 ```bash
 make e2e                            # full default matrix, all at once
-make e2e VERSIONS="1.21 26.2"       # quick check
+make e2e VERSIONS="1.21 26.3"       # quick check
 make e2e-ci                         # bounded variant (PARALLEL=4)
 make e2e VERSIONS="1.21.11" JAVA=25 # prove a newer JVM
 make e2e LOADER=quilt               # same assertions on Quilt Loader
 make e2e VERSIONS="1.20.2" LOADER=neoforge JAVA=17  # NeoForge band floor
 make e2e VERSIONS="1.21.1" LOADER=neoforge JAVA=21  # same jar, mid-band
-make e2e VERSIONS="26.2"   LOADER=neoforge JAVA=25  # same jar, band ceiling
+make e2e VERSIONS="26.3"   LOADER=neoforge JAVA=25  # same jar, band ceiling
 make e2e-times                      # per-version boot times
 make clean-e2e                      # remove logs, results, containers, images
 ```

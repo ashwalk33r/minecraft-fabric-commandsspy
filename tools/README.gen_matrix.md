@@ -33,7 +33,7 @@ with one set of written exceptions. Background:
 
 Second contract: every output name is written on every run, even as a literal
 `[]`. A missing output becomes `''` in GitHub expressions and `fromJSON('')`
-breaks the workflow. Two "gate canary" versions (1.21.11/java21, 26.2/java25)
+breaks the workflow. Two "gate canary" versions (1.21.11/java21, 26.3/java25)
 live in the workflow's gate job and are deliberately excluded from the lists
 here.
 

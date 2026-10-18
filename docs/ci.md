@@ -37,7 +37,7 @@ Docker-unavailable escape hatch for these three (unlike `ci-host`): run
 `./gradlew` directly against a local JDK instead.
 
 `make build` builds all five jars (four Fabric/Quilt eras + the single
-NeoForge band jar, Minecraft 1.20.2-26.2); the Forge jars (a separate Gradle build in `forge/`) are
+NeoForge band jar, Minecraft 1.20.2-26.3); the Forge jars (a separate Gradle build in `forge/`) are
 `make build-forge`/`make build-forge-legacy`/`make build-forge-mc116`/
 `make build-forge-eventbus7`, on demand — not part of the default
 `make build`/`make ci` path.
@@ -82,6 +82,38 @@ every other band), and `e2e-gate` plus the four config-behaviors legs, whose
 version lists are literal and so never go empty, carry an explicit
 `github.event_name != 'push'` guard.
 
+## The upstream-drift check
+
+The `upstream-drift` job runs `make ci-upstream-drift`, which runs
+`go run . upstream-drift` from `tools/` inside the pinned CI image. It runs on
+`pull_request`, on push to `main`, and on `workflow_dispatch`. It has no
+`schedule:` trigger, for the reasons the `wiki-links` job records in
+`ci.yml`. `Build` lists it in `needs`, so it's a required check.
+
+The check fetches each upstream feed and compares its stable versions with the
+declared lists in `tools/gen_matrix.go`:
+
+| Backend | Feed | Stable filter |
+|---|---|---|
+| Fabric | `meta.fabricmc.net/v2/versions/game` | `stable` is `true` |
+| Quilt | `meta.quiltmc.org/v3/versions/game` | Mojang's `version_manifest_v2.json` lists it with `type` `release` |
+| Forge | `files.minecraftforge.net/.../promotions_slim.json` | The version has a `-latest` or `-recommended` promotion |
+| NeoForge | `maven.neoforged.net/.../maven-metadata.xml` | The build has no `-beta` or `-alpha` suffix |
+| BTA | `downloads.betterthanadventure.net/bta-client/release/` | Every `vN.N` release directory |
+| Babric | `meta.babric.glass-launcher.net/v2/versions/game` | `stable` is `true`, and the version must be `b1.7.3` |
+
+The check passes when every stable upstream version at or above the backend's
+lowest declared version is declared, or is listed in `upstreamExcluded` in
+`tools/upstream.go` with a non-empty reason. Otherwise it prints a
+`DRIFT BACKEND VERSION` line for each gap and exits with status 1. An
+unreachable, malformed, or empty feed also exits with status 1, because a
+check that skips proves nothing.
+
+When Mojang or a loader publishes a new stable version, every pull request
+fails this check until the declared range covers the version or the version
+gets an `upstreamExcluded` reason. To run the check locally, run
+`make ci-upstream-drift`.
+
 ## The staged e2e matrix
 
 Stage order is popularity order: a failure in a widely-run version surfaces
@@ -117,7 +149,7 @@ before runner minutes are spent on the long tail.
    alongside the root build files, because the first Forge build of each
    target decompiles Minecraft and is slow on a cold cache.
 2. **e2e-gate** — `needs` all four Tier 0 gates and all ten build jobs:
-   two canary pairs (1.21.11/java21, 26.2/java25), each
+   two canary pairs (1.21.11/java21, 26.3/java25), each
    crossed with `loader: fabric` and `loader: quilt` via `matrix.include`, so
    four canary jobs run. `fail-fast` is off so all four always report.
 3. **Forge stages** — six caller jobs (`e2e-forge-java21`,
@@ -133,7 +165,7 @@ before runner minutes are spent on the long tail.
    are what decide the floor rows, and the Fabric per-band coverage-row
    pattern — a whole band re-run one JVM up — still must not be reused with
    `loader: forge`. What `forge_java26` adds is narrower: one above-floor
-   boot for the eventbus7 era (26.2 on java 26). The modern band gets none:
+   boot for the eventbus7 era (26.3 on java 26). The modern band gets none:
    its bootstrap cannot start on **java 24+** at all (measured boot-failed on
    both 25 and 26), because `nimbus-jose-jwt` requires `jdk.crypto.ec`,
    removed from the JDK in 24 (issue #66) — the same class of JVM-internals
@@ -244,10 +276,10 @@ The legs are **generated**, exactly like the Forge bands: `neo_java17`,
 `minecraft_range_neo_all` line in `neoforge/gradle.properties`, and each leg is
 an ordinary `e2e-stage.yml` call reading `needs.contracts.outputs.*`. The first
 three are
-floor rows, not a cross-jar stability proof: one band jar covers 1.20.2-26.2, so
+floor rows, not a cross-jar stability proof: one band jar covers 1.20.2-26.3, so
 there is no second jar whose overlap could drift. What those three lists sample
 is
-the band's edges (1.20.2, 26.2), the three Java floors NeoForge itself changes
+the band's edges (1.20.2, 26.3), the three Java floors NeoForge itself changes
 at, and 1.21.1 as the modpack-dominant interior line. `neo_fwd_java25` is the
 one above-floor leg (#58): 1.21.1, a java-21 line, booted on java 25, because
 until it existed the band jar's "java-17 bytecode boots anywhere across the

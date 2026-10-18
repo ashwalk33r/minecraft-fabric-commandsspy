@@ -69,9 +69,9 @@ var expected = map[string]map[string]int{
 	"mc121_java21": {"pull_request": 11, "workflow_dispatch": 11},
 	"mc121_java25": {"pull_request": 2, "workflow_dispatch": 12},
 	"mc121_java26": {"pull_request": 2, "workflow_dispatch": 12},
-	// 26.x floor 25 (canary 26.2 moved to gate)
-	"mc26_java25": {"pull_request": 1, "workflow_dispatch": 3},
-	"mc26_java26": {"pull_request": 2, "workflow_dispatch": 4},
+	// 26.x floor 25 (canary 26.3 moved to gate)
+	"mc26_java25": {"pull_request": 2, "workflow_dispatch": 4},
+	"mc26_java26": {"pull_request": 3, "workflow_dispatch": 5},
 	// t0 = 1.20.3-1.20.6: floor 21, coverage 25/26
 	"t0_java21": {"pull_request": 4, "workflow_dispatch": 4},
 	"t0_java25": {"pull_request": 2, "workflow_dispatch": 4},
@@ -95,7 +95,7 @@ var expected = map[string]map[string]int{
 	"forge_legacy_java17":    {"pull_request": 10, "workflow_dispatch": 13},
 	"forge_mc116_java8":      {"pull_request": 7, "workflow_dispatch": 9},
 	"forge_eventbus7_java21": {"pull_request": 6, "workflow_dispatch": 6},
-	"forge_eventbus7_java25": {"pull_request": 4, "workflow_dispatch": 4},
+	"forge_eventbus7_java25": {"pull_request": 5, "workflow_dispatch": 5},
 	// The forward-JVM row (#58): the eventbus7 band's ceiling alone, on the
 	// newest JVM the harness has. The modern band is deliberately absent — its
 	// bootstrap cannot boot above its java-21 floor at all (issue #66), so
@@ -106,7 +106,7 @@ var expected = map[string]map[string]int{
 	// row (#58), 1.21.1 (floor 21) booted on 25.
 	"neo_java17":     {"pull_request": 2, "workflow_dispatch": 2},
 	"neo_java21":     {"pull_request": 3, "workflow_dispatch": 9},
-	"neo_java25":     {"pull_request": 1, "workflow_dispatch": 2},
+	"neo_java25":     {"pull_request": 2, "workflow_dispatch": 3},
 	"neo_fwd_java25": {"pull_request": 1, "workflow_dispatch": 1},
 	// Babric: one version, one JVM, identical on both events. declared ==
 	// sampled == deep, so there is nothing for the deep sweep to widen.
@@ -136,18 +136,18 @@ func TestKeysAlwaysPresentAndBandLists(t *testing.T) {
 		"forge_legacy_java17":    `["1.17.1","1.18","1.18.1","1.18.2","1.19.1","1.19.2","1.20.1","1.20.2","1.20.3","1.20.4"]`,
 		"forge_mc116_java8":      `["1.14.4","1.15.2","1.16.1","1.16.2","1.16.3","1.16.4","1.16.5"]`,
 		"forge_eventbus7_java21": `["1.21.6","1.21.7","1.21.8","1.21.9","1.21.10","1.21.11"]`,
-		"forge_eventbus7_java25": `["26.1","26.1.1","26.1.2","26.2"]`,
+		"forge_eventbus7_java25": `["26.1","26.1.1","26.1.2","26.2","26.3"]`,
 		// The forward-JVM row: the eventbus7 band's ceiling on java 26. Not the
 		// modern band's — it has no above-floor JVM (issue #66).
-		"forge_java26": `["26.2"]`,
+		"forge_java26": `["26.3"]`,
 		// NeoForge band-jar legs: edges + the three NeoForge Java floors +
-		// 1.21.1. 1.21.11 and 26.2 are gate canaries on FABRIC only, so they
+		// 1.21.1. 1.21.11 and 26.3 are gate canaries on FABRIC only, so they
 		// belong here without duplicating the gate. neo_fwd_java25 is the
 		// forward-JVM row and is deliberately outside the neo_java<N> naming
 		// so floors_test's floor equality keeps applying to floor rows only.
 		"neo_java17":     `["1.20.2","1.20.4"]`,
 		"neo_java21":     `["1.20.6","1.21.1","1.21.11"]`,
-		"neo_java25":     `["26.2"]`,
+		"neo_java25":     `["26.2","26.3"]`,
 		"neo_fwd_java25": `["1.21.1"]`,
 		// The whole Babric band, byte-pinned: one version, and the same one on
 		// every event.
@@ -182,7 +182,7 @@ func TestAbsentBandsEmitEmptyArrayLiteral(t *testing.T) {
 }
 
 func TestSubmatrixCountsAndTotals(t *testing.T) {
-	totals := map[string]int{"pull_request": 84, "workflow_dispatch": 153}
+	totals := map[string]int{"pull_request": 88, "workflow_dispatch": 157}
 	// TOTAL_JOBS = 2*fabric pairs (each band key feeds a -fabric AND a -quilt
 	// caller job) + forge, neo and babric pairs (single-loader) plus 26 fixed
 	// jobs (contracts, go-quality, lint-java, unit-tests, the 10 build jobs, the
@@ -191,7 +191,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// quilt on 1.19.0, forge on 1.21.6 handed the modern jar); on push only 14
 	// of these run — gate, config-behaviors and the refusal guards are
 	// event-skipped). The NeoForge legs are generated now, not fixed jobs.
-	// PR: 2*41 + 32 + 7 + 1 + 26 = 148. Dispatch: 2*77 + 4 + 40 + 14 + 1 + 26 + 1 = 259
+	// PR and dispatch totals are recomputed from the grid below.
 	// — the `+ 4` term is mc114_java8_fabric, four versions Quilt has no build
 	// for, so they spawn ONE caller job each instead of two (issue #84 widened
 	// it from one version to four)
@@ -204,7 +204,7 @@ func TestSubmatrixCountsAndTotals(t *testing.T) {
 	// build-babric joined the nine build jobs. Adding a loader therefore moves
 	// this number twice, in two different places — that is what the split above
 	// is spelling out.
-	jobTotals := map[string]int{"pull_request": 152, "workflow_dispatch": 267}
+	jobTotals := map[string]int{"pull_request": 158, "workflow_dispatch": 273}
 	for _, event := range []string{"pull_request", "workflow_dispatch"} {
 		stdout, out := runGrid(t, emptyRoot(t), event, allBands)
 		total := 0
@@ -257,15 +257,15 @@ func TestOptionCombinationTotals(t *testing.T) {
 		lean, full         int
 		leanJobs, fullJobs int
 	}{
-		{"", 18, 42, 63, 111},
-		{"t0", 26, 54, 79, 135},
-		{"t0 mc1192", 32, 65, 91, 157},
-		{"t0 mc1192 mc114", 41, 91, 109, 205},
-		{"t0 mc1192 mc114 forge", 44, 97, 112, 211},
-		{"t0 mc1192 mc114 forge forge_legacy", 55, 111, 123, 225},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 66, 122, 134, 236},
-		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 73, 131, 141, 245},
-		{allBands, 84, 153, 152, 267},
+		{"", 20, 44, 67, 115},
+		{"t0", 28, 56, 83, 139},
+		{"t0 mc1192", 34, 67, 95, 161},
+		{"t0 mc1192 mc114", 43, 93, 113, 209},
+		{"t0 mc1192 mc114 forge", 46, 99, 116, 215},
+		{"t0 mc1192 mc114 forge forge_legacy", 57, 113, 127, 229},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7", 69, 125, 139, 241},
+		{"t0 mc1192 mc114 forge forge_legacy forge_eventbus7 forge_mc116", 76, 134, 146, 250},
+		{allBands, 88, 157, 158, 273},
 	}
 	for _, c := range cases {
 		for event, want := range map[string][2]int{
@@ -296,8 +296,8 @@ func TestCanariesMovedNotDuplicated(t *testing.T) {
 			}
 		}
 		for _, v := range versionsOf(t, out["mc26_java25"]) {
-			if v == "26.2" {
-				t.Errorf("[%s] 26.2 must not appear in mc26_java25", event)
+			if v == "26.3" {
+				t.Errorf("[%s] 26.3 must not appear in mc26_java25", event)
 			}
 		}
 	}
@@ -404,12 +404,12 @@ func TestBandDetection(t *testing.T) {
 		if want := `["1.21.6","1.21.7","1.21.8","1.21.9","1.21.10","1.21.11"]`; out["forge_eventbus7_java21"] != want {
 			t.Errorf("forge_eventbus7_java21 = %s, want %s", out["forge_eventbus7_java21"], want)
 		}
-		if want := `["26.1","26.1.1","26.1.2","26.2"]`; out["forge_eventbus7_java25"] != want {
+		if want := `["26.1","26.1.1","26.1.2","26.2","26.3"]`; out["forge_eventbus7_java25"] != want {
 			t.Errorf("forge_eventbus7_java25 = %s, want %s", out["forge_eventbus7_java25"], want)
 		}
 		// The forward-JVM row's eventbus7 half rides this band; its modern
 		// half needs minecraft_range_modern, which this fixture omits.
-		if want := `["26.2"]`; out["forge_java26"] != want {
+		if want := `["26.3"]`; out["forge_java26"] != want {
 			t.Errorf("forge_java26 = %s, want %s", out["forge_java26"], want)
 		}
 		// The other Forge bands stay empty without their own range keys.
@@ -445,7 +445,7 @@ func TestBandDetection(t *testing.T) {
 		for name, want := range map[string]string{
 			"neo_java17":     `["1.20.2","1.20.4"]`,
 			"neo_java21":     `["1.20.6","1.21.1","1.21.11"]`,
-			"neo_java25":     `["26.2"]`,
+			"neo_java25":     `["26.2","26.3"]`,
 			"neo_fwd_java25": `["1.21.1"]`,
 		} {
 			if out[name] != want {
@@ -515,29 +515,29 @@ func TestNeoRowsCountAsOneJobEach(t *testing.T) {
 	for name, want := range map[string]string{
 		"neo_java17":     `["1.20.2","1.20.4"]`,
 		"neo_java21":     `["1.20.6","1.21.1","1.21.11"]`,
-		"neo_java25":     `["26.2"]`,
+		"neo_java25":     `["26.2","26.3"]`,
 		"neo_fwd_java25": `["1.21.1"]`,
 	} {
 		if out[name] != want {
 			t.Errorf("%s = %s, want %s", name, out[name], want)
 		}
 	}
-	if got := jobs("neo") - jobs(""); got != 7 {
-		t.Errorf("the neo band adds %d jobs, want 7 (one per version, the #58 forward-JVM row included; 14 means the fabric -quilt doubling leaked in)", got)
+	if got := jobs("neo") - jobs(""); got != 8 {
+		t.Errorf("the neo band adds %d jobs, want 8 (one per version, the #58 forward-JVM row included; 14 means the fabric -quilt doubling leaked in)", got)
 	}
 }
 
 // The human summary keeps its exact printf shape.
 func TestSummaryLineFormat(t *testing.T) {
 	stdout, _ := runGrid(t, emptyRoot(t), "pull_request", "")
-	want := "mc26_java25:       1  [\"26.1\"]\n"
+	want := "mc26_java25:       2  [\"26.1\",\"26.2\"]\n"
 	if !strings.Contains(stdout, want) {
 		t.Errorf("summary missing the %%-16s %%3d line %q in:\n%s", want, stdout)
 	}
 	// The neo_* names must stay inside the %-16s column, or the whole summary
 	// loses its alignment the way the forge_eventbus7_* names already do.
 	stdout, _ = runGrid(t, emptyRoot(t), "pull_request", allBands)
-	want = "neo_java25:        1  [\"26.2\"]\n"
+	want = "neo_java25:        2  [\"26.2\",\"26.3\"]\n"
 	if !strings.Contains(stdout, want) {
 		t.Errorf("summary missing the %%-16s %%3d line %q in:\n%s", want, stdout)
 	}
@@ -950,4 +950,19 @@ func repoRootForTest(t *testing.T) string {
 		root = ".."
 	}
 	return root
+}
+
+// Every release on the axis needs a protocol row, or the bot cannot join a server the jars claim to support.
+func TestProtocolTableCoversTheAxis(t *testing.T) {
+	named := map[string]bool{}
+	for _, r := range rows {
+		for _, v := range strings.Split(r.name, "/") {
+			named[v] = true
+		}
+	}
+	for _, v := range mojangAxis {
+		if cmpVer(v, "1.14") >= 0 && !named[v] {
+			t.Errorf("%s is on mojangAxis but has no rows entry in table.go", v)
+		}
+	}
 }

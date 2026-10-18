@@ -7,9 +7,10 @@ import (
 )
 
 var subcommands = map[string]func(args []string) error{
-	"bot":        runBot,
-	"rcon":       runRcon,
-	"gen-matrix": runGenMatrix,
+	"bot":            runBot,
+	"rcon":           runRcon,
+	"gen-matrix":     runGenMatrix,
+	"upstream-drift": runUpstreamDrift,
 }
 
 func main() {
@@ -30,5 +31,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: tools <bot|rcon|gen-matrix> [args]")
+	fmt.Fprintln(os.Stderr, "usage: tools <bot|rcon|gen-matrix|upstream-drift> [args]")
 }

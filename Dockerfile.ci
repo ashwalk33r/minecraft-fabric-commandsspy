@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Go toolchain: EXACT version. go.mod's `go 1.23` is a floor, not a pin;
 # gofmt output is only stable per toolchain release, so the release is
 # pinned here and nowhere else.
-ARG GO_VERSION=1.26.6
+ARG GO_VERSION=1.26.9
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
       | tar -xz -C /usr/local \
     && ln -s /usr/local/go/bin/go /usr/local/bin/go \

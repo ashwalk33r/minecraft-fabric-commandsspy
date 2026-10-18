@@ -83,3 +83,20 @@ PMD runs the same categories on tests, with two rules excluded in
 `config/pmd/test-ruleset.xml`: `UnitTestContainsTooManyAsserts` (caps a test
 at one assertion) and `UnitTestAssertionsShouldIncludeMessage`. Everything
 else still applies to test code. Coverage (jacoco) is deliberately off.
+
+## Upstream drift tests
+
+`tools/upstream_test.go` tests the `upstream-drift` check offline. Each test
+serves fixture feeds from an `httptest` server, so `make ci` makes no network
+call. The tests assert the following:
+
+- A fixture that publishes 26.3 while the declared lists stop at 26.2 fails,
+  and names Fabric, Quilt, Forge, and NeoForge.
+- The same fixture passes when each gap has an `upstreamExcluded` reason.
+- An `upstreamExcluded` entry with an empty reason fails.
+- `26.3-rc-1`, `26.4-snapshot-1`, `26.3.0.5-beta`, and a Forge key with no
+  promotion are ignored.
+- An unreachable, malformed, or empty feed fails.
+
+The live check runs in the `upstream-drift` CI job. See
+[The upstream-drift check](ci.md#the-upstream-drift-check).

@@ -9,7 +9,7 @@ package main
 //   - EVERY output name is emitted on EVERY run — the literal [] for an absent
 //     band. A missing output evaluates to '' in GitHub expressions and
 //     fromJSON('') hard-errors a matrix.
-//   - The two gate canaries (1.21.11/java21, 26.2/java25) are moved to the
+//   - The two gate canaries (1.21.11/java21, 26.3/java25) are moved to the
 //     gate, never duplicated here — that is a FABRIC-loader rule; the gate
 //     runs those two versions on fabric/quilt only, so the forge and neoforge
 //     rows below list them without duplicating anything.
@@ -50,7 +50,7 @@ var forgeRangeRe = map[string]*regexp.Regexp{
 
 // The NeoForge band jar is keyed off its declared range line in
 // neoforge/gradle.properties, same idiom as the Forge bands above. One band
-// row only: a single jar covers 1.20.2-26.2.
+// row only: a single jar covers 1.20.2-26.3.
 var neoRangeRe = regexp.MustCompile(`(?m)^minecraft_range_neo_all=`)
 
 // bandPresent reports whether a band's build target exists in the tree.
@@ -149,7 +149,7 @@ var mojangAxis = []string{
 	"1.20", "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6",
 	"1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5", "1.21.6",
 	"1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
-	"26.1", "26.1.1", "26.1.2", "26.2",
+	"26.1", "26.1.1", "26.1.2", "26.2", "26.3",
 }
 
 // cmpVer orders two dotted numeric Minecraft versions. Field-wise integer
@@ -291,13 +291,13 @@ var coverage = map[string]bandCoverage{
 	// the rest by the floor row, so the deep sweep adds nothing here.
 	"mc121": {declared: all121, sampled: all121, deep: all121},
 
-	// >=26.1 <26.3. Every release in the interval, all booted by the deep
+	// >=26.1 <26.4. Every release in the interval, all booted by the deep
 	// sweep since issue #84: the two patch releases used to be excluded as a
 	// budget call, and they were published on Modrinth all the same.
 	"mc26": {
-		declared: releasesIn(">=26.1 <26.3"),
-		sampled:  []string{"26.1", "26.2"},
-		deep:     []string{"26.1", "26.1.1", "26.1.2", "26.2"},
+		declared: releasesIn(">=26.1 <26.4"),
+		sampled:  []string{"26.1", "26.2", "26.3"},
+		deep:     []string{"26.1", "26.1.1", "26.1.2", "26.2", "26.3"},
 	},
 
 	// The 1.20.x half of minecraft_range_121: four versions, all booted.
@@ -384,18 +384,18 @@ var coverage = map[string]bandCoverage{
 		},
 	},
 
-	// Forge eventbus7, [1.21.6,26.3). Every measured version is sampled — the
+	// Forge eventbus7, [1.21.6,26.4). Every measured version is sampled — the
 	// proof is that one official-name jar fires across Forge majors 56-65 —
 	// so the deep sweep adds nothing.
 	"forge_eventbus7": {
-		declared: releasesIn("[1.21.6,26.3)"),
+		declared: releasesIn("[1.21.6,26.4)"),
 		sampled: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
-			"26.1", "26.1.1", "26.1.2", "26.2"},
+			"26.1", "26.1.1", "26.1.2", "26.2", "26.3"},
 		deep: []string{"1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11",
-			"26.1", "26.1.1", "26.1.2", "26.2"},
+			"26.1", "26.1.1", "26.1.2", "26.2", "26.3"},
 	},
 
-	// NeoForge, [1.20.2,26.3) — one band jar, so the sample is the band edges
+	// NeoForge, [1.20.2,26.4) — one band jar, so the sample is the band edges
 	// plus NeoForge's own three Java floors plus the modpack-dominant 1.21.1.
 	// The eight exclusions are the lines whose newest NeoForge build is a
 	// BETA: booting a beta build would make CI's green depend on prerelease
@@ -404,10 +404,10 @@ var coverage = map[string]bandCoverage{
 	// scripts/test-jar-routing.sh so the list cannot go stale when NeoForge
 	// promotes one of them.
 	"neo": {
-		declared: releasesIn("[1.20.2,26.3)"),
-		sampled:  []string{"1.20.2", "1.20.4", "1.20.6", "1.21.1", "1.21.11", "26.2"},
+		declared: releasesIn("[1.20.2,26.4)"),
+		sampled:  []string{"1.20.2", "1.20.4", "1.20.6", "1.21.1", "1.21.11", "26.2", "26.3"},
 		deep: []string{"1.20.2", "1.20.4", "1.20.6", "1.21", "1.21.1", "1.21.3",
-			"1.21.4", "1.21.5", "1.21.8", "1.21.10", "1.21.11", "26.1.2", "26.2"},
+			"1.21.4", "1.21.5", "1.21.8", "1.21.10", "1.21.11", "26.1.2", "26.2", "26.3"},
 		excluded: map[string]string{
 			"1.20.3": "newest NeoForge build for this line is 20.3.8-beta",
 			"1.20.5": "newest NeoForge build for this line is 20.5.21-beta",
@@ -577,8 +577,8 @@ var publishedJars = []publishedJar{
 	{name: "mc1.16.x-forge", loaders: "forge", bands: []string{"forge_mc116"}},
 	{name: "mc1.17-1.20.4-forge", loaders: "forge", bands: []string{"forge_legacy"}},
 	{name: "mc1.21.x-forge", loaders: "forge", bands: []string{"forge"}},
-	{name: "mc1.21.6-26.2-forge", loaders: "forge", bands: []string{"forge_eventbus7"}},
-	{name: "mc1.20.2-26.2-neoforge", loaders: "neoforge", bands: []string{"neo"}},
+	{name: "mc1.21.6-26.3-forge", loaders: "forge", bands: []string{"forge_eventbus7"}},
+	{name: "mc1.20.2-26.3-neoforge", loaders: "neoforge", bands: []string{"neo"}},
 	{name: "mcb1.7.3-babric", loaders: "babric", bands: []string{"babric"}},
 	// BTA's uploads are the one place a jar's game_versions are NOT its declared
 	// list. Modrinth's loader tag list carries `bta-babric`, but its game-version
@@ -751,7 +751,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 		emit("mc121_java26", ends(mc121))
 	}
 
-	// 26.2 is the java-25 gate canary and must not appear in the java-25 list.
+	// 26.3 is the java-25 gate canary and must not appear in the java-25 list.
 	mc26 := booted("mc26", full)
 	emit("mc26_java25", mc26[:len(mc26)-1])
 	emit("mc26_java26", mc26)
@@ -818,7 +818,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// gets an above-floor data point instead of the two that used to fall out
 	// incidentally (1.20.4's legacy jar riding the java-21 job, and
 	// eventbus7's java-21 bytecode on the 26.x era's java 25): forge_java26
-	// boots 26.2 on the newest JVM the harness has. The MODERN band gets
+	// boots 26.3 on the newest JVM the harness has. The MODERN band gets
 	// none, at any JVM: its bootstrap cannot resolve modules on java 24+
 	// (issue #66; see the row's comment below). One row, not a per-band pair,
 	// because what is being probed is the JVM.
@@ -868,7 +868,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// forge_legacy_guard_java8 leg (1.16.5 expected REFUSED) flipped to an
 	// in-range PASS here.
 	//
-	// EventBus-7 band (1.21.6-26.2, Forge 56-65): EVERY measured version,
+	// EventBus-7 band (1.21.6-26.3, Forge 56-66): EVERY measured version,
 	// same reasoning as legacy — the measurement's point was that one
 	// official-name java-21 jar registers and fires across ten consecutive
 	// EventBus-7 Forge major branches (56-65), so a floor+ceiling pair would
@@ -885,7 +885,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	eb7 := band("forge_eventbus7", booted("forge_eventbus7", full)...)
 	emit("forge_eventbus7_java21", pick(eb7, func(v string) bool { return !is26(v) }))
 	emit("forge_eventbus7_java25", pick(eb7, is26))
-	// The forward-JVM row (issue #58). One version: 26.2, the eventbus7 band's
+	// The forward-JVM row (issue #58). One version: 26.3, the eventbus7 band's
 	// ceiling, on the newest JVM the harness has. The modern band has no
 	// java-26 probe and cannot have one at any JVM: its bootstrap has ZERO
 	// forward headroom above its java-21 floor. nimbus-jose-jwt's module-info
@@ -906,7 +906,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// stands because Forge row names have never promised a floor (forge_java21
 	// already carries 1.20.4, whose Forge floor is 17); floors_test checks the
 	// row against --print-forge-routing.
-	emit("forge_java26", band("forge_eventbus7", "26.2"))
+	emit("forge_java26", band("forge_eventbus7", "26.3"))
 
 	// NEOFORGE — floor rows plus one forward-JVM row, like Forge, but the
 	// floor rows are floor rows for a different reason than Forge's: ONE
@@ -914,7 +914,7 @@ func genMatrix(repoRoot, eventName, forceBands string, stdout, ghOut io.Writer) 
 	// mods.toml+mandatory vs FML 3.x+ neoforge.mods.toml+type — is handled by
 	// shipping both files in the one jar). So these legs are NOT the
 	// cross-major stability proof the Forge legs are; there is no second jar
-	// whose overlap could drift. They are the band EDGES (1.20.2, 26.2) plus
+	// whose overlap could drift. They are the band EDGES (1.20.2, 26.3) plus
 	// the three Java floors NEOFORGE ITSELF changes at (17 up to line 20.4, 21
 	// through 21.11, 25 on 26.x — e2e-run-one.sh's neo routing table, NOT the
 	// Fabric era table, which reports 21 for 1.20.4), plus 1.21.1, the

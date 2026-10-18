@@ -113,7 +113,7 @@ fi
 FORGE_KNOWN_GOOD_MC116="${FORGE_KNOWN_GOOD_MC116:-1.14.4 1.15 1.15.1 1.15.2 1.16.1 1.16.2 1.16.3 1.16.4 1.16.5}"
 FORGE_KNOWN_GOOD_LEGACY="${FORGE_KNOWN_GOOD_LEGACY:-1.17.1 1.18 1.18.1 1.18.2 1.19.1 1.19.2 1.19.3 1.19.4 1.20 1.20.1 1.20.2 1.20.3 1.20.4}"
 FORGE_KNOWN_GOOD_MODERN="${FORGE_KNOWN_GOOD_MODERN:-1.20.6 1.21 1.21.1 1.21.2 1.21.3 1.21.4 1.21.5}"
-FORGE_KNOWN_GOOD_EB7="${FORGE_KNOWN_GOOD_EB7:-1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2}"
+FORGE_KNOWN_GOOD_EB7="${FORGE_KNOWN_GOOD_EB7:-1.21.6 1.21.7 1.21.8 1.21.9 1.21.10 1.21.11 26.1 26.1.1 26.1.2 26.2 26.3}"
 case "$FORGE_JAR_BAND" in
   mc116)     FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_MC116" ;;
   legacy)    FORGE_KNOWN_GOOD="$FORGE_KNOWN_GOOD_LEGACY" ;;
@@ -165,6 +165,7 @@ case "$VERSION" in
   26.1.1)  NEOFORGE_VERSION="26.1.1.15-beta"; NEO_FLOOR_JAVA=25 ;;
   26.1.2)  NEOFORGE_VERSION="26.1.2.97";      NEO_FLOOR_JAVA=25 ;;
   26.2)    NEOFORGE_VERSION="26.2.0.64";      NEO_FLOOR_JAVA=25 ;;
+  26.3)    NEOFORGE_VERSION="26.3.0.92";      NEO_FLOOR_JAVA=25 ;;
 esac
 
 case "$PROBE" in
@@ -662,7 +663,7 @@ if [ "$LOADER" = "forge" ]; then
 
   # Each jar's mods.toml declares its own minecraft range -- mc116
   # [1.14.4,1.17), legacy [1.17.1,1.20.5), modern [1.20.6,1.21.6),
-  # eventbus7 [1.21.6,26.3).
+  # eventbus7 [1.21.6,26.4).
   # Outside its own jar's range
   # Forge MUST refuse to load the mod: the selected jar's official-name
   # (modern) or SRG-name (legacy) calls would resolve to nothing on a

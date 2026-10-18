@@ -53,8 +53,9 @@ var rows = map[int]row{
 	772: {772, "1.21.7/1.21.8", eraPlain, 0x26, 0x1B, 0x06},
 	773: {773, "1.21.9/1.21.10", eraPlain, 0x2B, 0x1B, 0x06},
 	774: {774, "1.21.11", eraPlain, 0x2B, 0x1B, 0x06},
-	775: {775, "26.1", eraPlain, 0x2C, 0x1C, 0x07},
+	775: {775, "26.1/26.1.1/26.1.2", eraPlain, 0x2C, 0x1C, 0x07},
 	776: {776, "26.2", eraPlain, 0x2C, 0x1C, 0x07},
+	777: {777, "26.3", eraPlain, 0x2D, 0x1C, 0x07},
 }
 
 func rowFor(proto int) (row, bool) {
@@ -73,6 +74,13 @@ type cfgIDs struct {
 }
 
 func (r row) cfg() cfgIDs {
+	if r.proto >= 777 {
+		// 26.3 inserted post_effects at 0x0A, shifting the later clientbound ids by one.
+		return cfgIDs{
+			discCB: 0x02, finishCB: 0x03, kaCB: 0x04, pingCB: 0x05, knownCB: 0x0F, cocCB: 0x14,
+			kaSB: 0x04, pongSB: 0x05, finishSB: 0x03, knownSB: 0x07, acceptSB: 0x09,
+		}
+	}
 	if r.proto >= 766 {
 		// cookie_request was inserted at the front in 1.20.5, shifting
 		// everything by one; select_known_packs is 1.20.5+, code_of_conduct

@@ -215,6 +215,8 @@ enable-rcon=true
 rcon.port=${RCON_PORT}
 rcon.password=${RCON_PASSWORD}
 online-mode=false
+# 26.3 flipped the vanilla default to true, which rejects both bots at login.
+white-list=false
 # --- minimal footprint: smallest world and least work to reach "Done (...)" ---
 level-type=flat
 # Void world: nothing to generate. Tuning rationale in docs/e2e-harness.md.

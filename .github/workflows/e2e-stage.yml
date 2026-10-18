@@ -84,7 +84,7 @@ jobs:
           mkdir -p forge/build/libs
           mv build/libs/commandsspy-*+mc1.21.x-forge.jar forge/build/libs/
           mv build/libs/commandsspy-*+mc1.17-1.20.4-forge.jar forge/build/libs/
-          mv build/libs/commandsspy-*+mc1.21.6-26.2-forge.jar forge/build/libs/
+          mv build/libs/commandsspy-*+mc1.21.6-26.3-forge.jar forge/build/libs/
           mv build/libs/commandsspy-*+mc1.16.x-forge.jar forge/build/libs/
           ls -l forge/build/libs
 
@@ -119,7 +119,7 @@ jobs:
           test -f build/libs/commandsspy-*+mc1.19-1.20.2.jar
           test -f build/libs/commandsspy-*+mc1.14.x.jar
           test -f build/libs/commandsspy-*+mc26.x.jar
-          test -f build/libs/commandsspy-*+mc1.20.2-26.2-neoforge.jar
+          test -f build/libs/commandsspy-*+mc1.20.2-26.3-neoforge.jar
 
       # Its own step because the jar is staged elsewhere and only on this leg.
       - name: "Verify the prebuilt Babric jar is in place"
