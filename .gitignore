@@ -38,3 +38,4 @@ babric/build/
 # bta/ likewise -- a sixth standalone build, and Loom writes a cache under bta/.gradle.
 bta/build/
 bta/.gradle/
+wiki/
