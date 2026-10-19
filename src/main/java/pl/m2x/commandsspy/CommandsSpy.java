@@ -21,12 +21,51 @@ public class CommandsSpy {
 	public static final CommandsSpyBlacklist BLACKLIST = new CommandsSpyBlacklist(CONFIG.blacklist);
 
 	/**
+	 * Not volatile: loader entrypoint dispatch is single-threaded, and the worst a race
+	 * could cost is one duplicate submit registration. Same reasoning as
+	 * CommandsSpyFabricPreLaunch's `fired`.
+	 */
+	private static boolean metricsStarted;
+
+	/**
 	 * Called once by each loader's entrypoint. Named (rather than left as an incidental
 	 * LOGGER dereference) so it stays obvious that this call is what pulls CONFIG and
 	 * BLACKLIST up at boot instead of on the first executed command.
 	 */
 	public static void init() {
 		LOGGER.info("Loading CommandsSpy by Ultra_MC.");
+	}
+
+	/**
+	 * Starts bStats reporting. Called by each loader's entrypoint, deliberately NOT by
+	 * {@link #init()}: the unit suite calls init() and must stay offline. Telemetry may
+	 * never take the mod down, so every failure is a warning and nothing more.
+	 *
+	 * @param loader loader name as it should appear on the bStats "loader" chart
+	 * @param modVersion this mod's version, for the Plugin Version chart
+	 * @param mcVersion the Minecraft version the loader reports
+	 */
+	@SuppressWarnings("PMD.AvoidCatchingGenericException") // the point of the guard: any failure here must stay a warning
+	public static void startMetrics(String loader, String modVersion, String mcVersion) {
+		if (metricsStarted) {
+			return;
+		}
+		metricsStarted = true;
+		try {
+			CommandsSpyMetrics.start(loader, modVersion, mcVersion);
+		} catch (RuntimeException e) {
+			// RuntimeException, not Exception: CommandsSpyMetrics.start throws nothing checked,
+			// and PMD rejects the broader catch. Telemetry must never take the mod down.
+			LOGGER.warn("[CommandsSpy] bStats metrics failed to start.", e);
+		}
+	}
+
+	static boolean isMetricsStarted() {
+		return metricsStarted;
+	}
+
+	static void resetMetricsForTests() {
+		metricsStarted = false;
 	}
 
 	public static void logCommand(String command, String source) {

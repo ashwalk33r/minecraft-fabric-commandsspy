@@ -16,6 +16,8 @@ User documentation: [MOD.md](./MOD.md). Official releases:
 
 - [Version boundaries and root causes](https://github.com/ashwalk33r/minecraft-fabric-commandsspy/wiki/Version-Boundaries-And-Root-Causes) — the eleven jars, the loader
   seam in the shared core, version boundaries, Java floors, default e2e matrix.
+- [MOD.md § Metrics](./MOD.md#metrics-bstats) — what CommandsSpy reports to
+  bStats, why, and the three ways to turn it off.
 - [docs/testing.md](docs/testing.md) — unit suite: how it boots, isolation,
   known quirks, era-specific wiring.
 - [docs/e2e-harness.md](docs/e2e-harness.md) — Docker e2e: phases,

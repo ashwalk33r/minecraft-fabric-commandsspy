@@ -79,6 +79,71 @@ Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a`
 To log arguments of all commands, use `"logArguments": true`.
 Example: `/a b c` - `[CommandsSpy] [Player: Ultra_MC] a b c`
 
+## Metrics (bStats)
+
+CommandsSpy reports anonymous usage statistics to
+[bStats](https://bstats.org/plugin/bukkit/CommandsSpy/33622). **It is enabled by
+default.**
+
+### Why
+
+Download counts say how many people fetched a file, not how many run it. CommandsSpy
+ships as eleven jars across six loaders and four Minecraft eras, and bStats is what says
+which of them are actually in use - which loaders and Minecraft versions are worth the
+maintenance, and which can be retired without stranding anyone.
+
+### What is sent
+
+The full list, nothing else:
+
+| Field | Example |
+|---|---|
+| A random server identifier, generated on first boot | `9f2e...` |
+| Mod version | `1.9.0` |
+| Loader | `Fabric`, `Quilt`, `Forge`, `NeoForge`, `Babric`, `BTA` |
+| Minecraft version | `1.21.1` |
+| Java version | `21.0.5` |
+| Operating system name, version and architecture | `Linux`, `6.6.87`, `amd64` |
+| CPU core count | `4` |
+
+Not sent: player names, player counts, chat, command text, IP addresses, world data,
+config contents, mod lists.
+
+### How to turn it off
+
+Any **one** of these is enough; the environment variable and the system property win over
+the config file.
+
+1. **The config file** - `config/bStats/config.json`, created next to
+   `config/commands-spy.json` on first boot. Set `enabled` to `false` and restart:
+
+   ```
+   {
+     "enabled": false,
+     "serverUuid": "generated-on-first-boot"
+   }
+   ```
+
+   `serverUuid` is the random identifier described above; deleting the file simply
+   generates a new one.
+
+2. **An environment variable** - start the server with `BSTATS_ENABLED=false`. Useful in
+   Docker and on hosts where the config file is regenerated.
+
+3. **A Java flag** - add `-Dbstats.enabled=false` to the server's startup command.
+
+Nothing else in the mod changes when metrics are off: command logging, the blacklist and
+`logArguments` behave identically.
+
+### Why the Bukkit platform
+
+The service is registered under bStats' Bukkit platform, because bStats has no
+Fabric/Forge/NeoForge platform to register under. The loader name and the Minecraft
+version are therefore also reported as their own charts.
+
+The collection code under `pl.m2x.commandsspy.bstats` is bStats' own `bstats-base`, MIT
+licensed, (c) 2021 Bastian Oppermann, vendored with only its package name changed.
+
 ## About the version lists on the download page
 
 Each file's Minecraft version list is the range that file's metadata **declares** —

@@ -3,6 +3,9 @@ package pl.m2x.commandsspy;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Logger;
 
+import java.io.IOException;
+import java.nio.file.Files;
+
 /**
  * Shared setup/teardown for tests touching CommandsSpy's static state.
  *
@@ -19,6 +22,18 @@ final class CommandsSpyTestSupport {
     static void resetState() {
         CommandsSpy.CONFIG.blacklist.clear();
         CommandsSpy.CONFIG.logArguments = false;
+    }
+
+    /**
+     * The startMetrics guard is static state with the same problem as CONFIG/BLACKLIST, and
+     * config/bStats/config.json is a real file in the project dir under fabric-loader-junit.
+     * Both are cleared so metrics tests are order-independent.
+     *
+     * @throws IOException if the bStats config file exists and cannot be deleted
+     */
+    static void resetMetricsState() throws IOException {
+        CommandsSpy.resetMetricsForTests();
+        Files.deleteIfExists(CommandsSpyMetrics.CONFIG_PATH);
     }
 
     static CapturingAppender attachAppender() {
